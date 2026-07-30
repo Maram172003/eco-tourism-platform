@@ -17,7 +17,7 @@ export class Questionnaire {
   @Column()
   name!: string;
 
-  @Column({ type: 'enum', enum: ['eco_traveler', 'guide', 'eco_project'] })
+  @Column({ type: 'enum', enum: ['eco_traveler', 'guide', 'eco_project', 'provider'] })
   target_type!: string;
 
   @Column({ default: 1 })

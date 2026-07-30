@@ -46,10 +46,31 @@ export class Guide {
   specialties!: string[] | null;
 
   @Column({ type: 'simple-array', nullable: true })
+  domaines!: string[] | null;
+
+  @Column({ type: 'simple-array', nullable: true })
+  expertises!: string[] | null;
+
+  @Column({ type: 'simple-array', nullable: true })
   languages_spoken!: string[] | null;
+
+  @Column({ type: 'varchar', nullable: true })
+  telephone!: string | null;
+
+  @Column({ type: 'varchar', nullable: true })
+  ville_residence!: string | null;
 
   @Column({ type: 'int', nullable: true })
   years_experience!: number | null;
+
+  @Column({ type: 'text', nullable: true })
+  experience_pro!: string | null;
+
+  @Column({ type: 'text', nullable: true })
+  centres_interet!: string | null;
+
+  @Column({ type: 'text', nullable: true })
+  pourquoi_moi!: string | null;
 
   @Column({ type: 'varchar', default: 'pending' })
   status!: string; // pending | active | suspended
@@ -71,6 +92,22 @@ export class Guide {
 
   @Column({ type: 'int', default: 0 })
   score_feedbacks!: number;
+
+  // ── Section 3: Ce que je propose ─────────────────────────────────────────
+  @Column({ type: 'simple-array', nullable: true })
+  zones_couvertes!: string[] | null;
+
+  @Column({ type: 'simple-array', nullable: true })
+  villes_couvertes!: string[] | null;
+
+  @Column({ type: 'simple-array', nullable: true })
+  sites_maitrises!: string[] | null;
+
+  @Column({ type: 'boolean', nullable: true })
+  deplacement_possible!: boolean | null;
+
+  @Column({ type: 'simple-array', nullable: true })
+  publics_accueillis!: string[] | null;
 
   @CreateDateColumn()
   created_at!: Date;

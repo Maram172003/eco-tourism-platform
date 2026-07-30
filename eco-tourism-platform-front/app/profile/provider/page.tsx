@@ -1,7 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
+import CollaborationModal from "@/components/CollaborationModal";
+import OfferDetailView, { type OfferFull } from "@/components/offer/OfferDetailView";
 import dynamic from "next/dynamic";
 import {
   Plus, Edit3, ShieldCheck, MapPin, Calendar, Phone, Building2, Globe, Leaf, ArrowLeft,
@@ -16,9 +18,14 @@ import { PROVIDER_SCHEMA, SUBTYPE_FIELDS, getCategoryByValue } from "@/lib/provi
 import type { FieldConfig } from "@/lib/provider-schema";
 import {
   OFFER_DETAIL_FIELDS, getCapacityLimit,
-  AVAILABILITY_TYPES, CONFIRMATION_TYPES, CANCELLATION_POLICIES, SAISONS,
+  AVAILABILITY_TYPES, SAISONS,
   type CrossValidationRule,
 } from "@/lib/offer-schema";
+import InviteCollaboratorModal, { type CollabSection } from "@/components/guide/offer/InviteCollaboratorModal";
+import { OfferAvailPicker, EMPTY_OFFER_AVAIL, type OfferAvailSlot } from "@/components/offer/OfferAvailPicker";
+import { ConfirmationTypePicker, EMPTY_CONFIRMATION, type ConfirmationData } from "@/components/offer/ConfirmationTypePicker";
+import { PUBLIC_RECOMMANDE } from "@/lib/guideOfferConfig";
+import { Bool, PrestSubBlock, InviteButton, SectionLockedBanner, TRANSPORT_ECO_SUBTYPES, TRANSPORT_STD_SUBTYPES, HEBERGEMENT_PREST_SUBTYPES, RepasBlock, AutreServiceBlock, type RepasBlockData, type AutreServiceBlockData } from "@/components/GuideOfferModal";
 
 const MapPicker = dynamic(
   () => import("@/components/map/MapPicker"),
@@ -178,11 +185,36 @@ type OrgActivity = {
 
 const OFFER_TYPES = [
   { value: "sejour",       label: "Séjour",       icon: "hotel",      gradient: "from-blue-500 to-cyan-400" },
-  { value: "circuit",      label: "Circuit",      icon: "route",      gradient: "from-violet-500 to-purple-400" },
+  { value: "circuit",      label: "Circuit",      icon: "route",      gradient: "from-slate-600 to-slate-500" },
   { value: "activite",     label: "Activité",     icon: "hiking",     gradient: "from-orange-500 to-amber-400" },
   { value: "restauration", label: "Restauration", icon: "restaurant", gradient: "from-red-500 to-rose-400" },
   { value: "hebergement",  label: "Hébergement",  icon: "cabin",      gradient: "from-emerald-500 to-green-400" },
   { value: "autre",        label: "Autre",        icon: "category",   gradient: "from-slate-400 to-slate-500" },
+];
+
+const TYPE_PRESTATION_PROVIDER = [
+  { value: "service_seul",    icon: "handyman",       label: "Prestation seule",      desc: "Le service uniquement" },
+  { value: "avec_transport",  icon: "directions_car", label: "+ Transport",            desc: "Service + transfert inclus" },
+  { value: "transport_repas", icon: "restaurant",     label: "+ Transport & Repas",   desc: "Transport, repas et service" },
+  { value: "immersion",       icon: "camping",        label: "+ Immersion complète",  desc: "Multi-jours, tout inclus" },
+  { value: "sur_mesure",      icon: "tune",           label: "Sur mesure",            desc: "Contenu entièrement personnalisé" },
+];
+
+const PROVIDER_SERVICES = [
+  "Eau / Boissons", "Déjeuner inclus", "Équipement fourni", "Transport inclus",
+  "Guide local", "Assurance incluse", "Wi-Fi disponible", "Photos / Vidéos",
+  "Certificat", "Formation / Initiation", "Traduction", "Service VIP",
+  "Livraison", "Installation / Montage", "Pack famille", "Parking gratuit",
+];
+
+const PROVIDER_STEPS = [
+  { id: 1, title: "Présentation",         subtitle: "Activité, photos, titre & public" },
+  { id: 2, title: "Localisation",         subtitle: "Emplacement et description" },
+  { id: 3, title: "Sous-types & Détails", subtitle: "Types et champs spécifiques" },
+  { id: 4, title: "Disponibilités",       subtitle: "Quand êtes-vous disponible ?" },
+  { id: 5, title: "Ce que vous fournissez", subtitle: "Configuration de votre prestation" },
+  { id: 6, title: "Tarification",         subtitle: "Prix & Acompte" },
+  { id: 7, title: "Conditions",           subtitle: "Confirmation & Annulation" },
 ];
 
 const COUNTRY_LABELS: Record<string, string> = {
@@ -209,7 +241,7 @@ const PROVIDER_ACTIVITY_TYPES = [
   { value: "agriculture",  label: "Agro-tourisme",           icon: "agriculture",    gradient: "from-lime-500 to-green-400" },
   { value: "artisanat",    label: "Artisanat local",         icon: "handshake",      gradient: "from-amber-500 to-yellow-400" },
   { value: "transport",    label: "Transport éco",           icon: "electric_car",   gradient: "from-sky-500 to-blue-400" },
-  { value: "bienetre",     label: "Bien-être & Spa",         icon: "spa",            gradient: "from-purple-500 to-violet-400" },
+  { value: "bienetre",     label: "Bien-être & Spa",         icon: "spa",            gradient: "from-teal-600 to-emerald-500" },
   { value: "culture",      label: "Tourisme culturel",       icon: "museum",         gradient: "from-rose-500 to-pink-400" },
   { value: "aventure",     label: "Aventure & Nature",       icon: "terrain",        gradient: "from-teal-500 to-cyan-400" },
   { value: "formation",    label: "Formation & Éducation",   icon: "school",         gradient: "from-indigo-500 to-blue-400" },
@@ -222,7 +254,7 @@ const CATEGORY_GRADIENT_MAP: Record<string, string> = {
   activite:    "from-orange-500 to-amber-400",
   restauration:"from-red-500 to-rose-400",
   culture:     "from-rose-500 to-pink-400",
-  bien_etre:   "from-purple-500 to-violet-400",
+  bien_etre:   "from-teal-600 to-emerald-500",
   artisanat:   "from-amber-500 to-yellow-400",
   agriculture: "from-lime-500 to-green-400",
   transport:   "from-sky-500 to-blue-400",
@@ -340,7 +372,30 @@ const ACTIVITY_SUSTAINABILITY_STEPS = [
   },
 ];
 
-type Tab = "tout" | "offres" | "activites" | "circuits" | "reseau" | "apropos";
+type Tab = "tout" | "offres" | "activites" | "circuits" | "reseau" | "apropos" | "collaborations";
+
+type MyCollab = {
+  id: string;
+  offer_id: string;
+  offer_title: string;
+  offer_description: string | null;
+  offer_cover: string | null;
+  offer_status: string;
+  guide_id: string;
+  section: string;
+  status: "pending" | "accepted" | "completed" | "declined";
+  message: string | null;
+  created_at: string;
+  invited_user_name: string;
+};
+
+type ProviderCollab = {
+  userId: string;
+  userName: string;
+  userType: string;
+  section: CollabSection;
+  status?: string;
+};
 
 // ── Circuit types ─────────────────────────────────────────────────────────────
 type CircuitEtape = {
@@ -433,6 +488,7 @@ function BotanicalCover() {
 
 export default function ProviderProfilePage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
 
   const [profile,        setProfile]        = useState<ProviderProfile | null>(null);
   const [org,            setOrg]            = useState<OrganizationProfile | null>(null);
@@ -443,6 +499,13 @@ export default function ProviderProfilePage() {
   const [token,     setToken]     = useState("");
   const [loading,   setLoading]   = useState(true);
   const [activeTab, setActiveTab] = useState<Tab>("tout");
+  const [collaborations, setCollaborations] = useState<MyCollab[]>([]);
+  const [collabLoading, setCollabLoading] = useState(false);
+  const [openCollab, setOpenCollab] = useState<MyCollab | null>(null);
+  const [collabResponding, setCollabResponding] = useState(false);
+  const [showCollabForm, setShowCollabForm] = useState(false);
+  const [detailOffer, setDetailOffer] = useState<OfferFull | null>(null);
+  const [detailOfferLoading, setDetailOfferLoading] = useState(false);
 
   // ── OrgActivity detail modal ──────────────────────────────────────────────
   const [viewOrgActivity, setViewOrgActivity] = useState<OrgActivity | null>(null);
@@ -547,6 +610,8 @@ export default function ProviderProfilePage() {
   type NetUser = { user_id: string; full_name: string; photo: string | null; _type: string; sub?: string | null };
   const [following,  setFollowing]  = useState<NetUser[]>([]);
   const [followers,  setFollowers]  = useState<NetUser[]>([]);
+  type FollowRequest = { id: string; created_at: string; sender: { user_id: string; full_name: string | null; photo: string | null; role: string } };
+  const [followRequests, setFollowRequests] = useState<FollowRequest[]>([]);
   const [netSearch,  setNetSearch]  = useState("");
   const [netResults, setNetResults] = useState<NetUser[]>([]);
   const [netLoading, setNetLoading] = useState(false);
@@ -558,6 +623,7 @@ export default function ProviderProfilePage() {
 
   // ── Publish offer modal ──────────────────────────────────────────────────
   const [modalOpen,       setModalOpen]       = useState(false);
+  const [offerStep,       setOfferStep]       = useState(1);
   const [form,            setForm]            = useState({ title: "", offer_type: "", description: "", price: "", duration: "", region: "", inclusions: "", meeting_point: "", min_group_size: "", max_group_size: "", min_age: "", cancellation_policy: "" });
   const [titleError,      setTitleError]      = useState("");
   const [publishing,      setPublishing]      = useState(false);
@@ -616,6 +682,35 @@ export default function ProviderProfilePage() {
   const [offerNbUnites,      setOfferNbUnites]      = useState(1);
   const [unitDetailsArray,   setUnitDetailsArray]   = useState<Array<Record<string, any>>>([{}]);
   const [activeUnitTab,      setActiveUnitTab]      = useState(0);
+  // ── Type de prestation + collaboration prestataire ────────────────────────
+  const [offerTypePrestation,   setOfferTypePrestation]   = useState<string | null>(null);
+  const [providerOfferCollabs,  setProviderOfferCollabs]  = useState<ProviderCollab[]>([]);
+  const [providerInviteSection, setProviderInviteSection] = useState<CollabSection | null>(null);
+  const [providerCollabSaving,  setProviderCollabSaving]  = useState(false);
+  // ── Public ciblé, services inclus, disponibilité OfferAvailPicker, confirmation ──
+  const [offerPublicCible,       setOfferPublicCible]       = useState<string[]>([]);
+  const [providerServicesInclus, setProviderServicesInclus] = useState<string[]>([]);
+  const [offerLocationDesc,          setOfferLocationDesc]          = useState("");
+  const [providerTransportInclus,    setProviderTransportInclus]    = useState<boolean | null>(null);
+  const [providerTransportEcoST,     setProviderTransportEcoST]     = useState("");
+  const [providerTransportEcoDet,    setProviderTransportEcoDet]    = useState<Record<string, any>>({});
+  const [providerTransportStdST,     setProviderTransportStdST]     = useState("");
+  const [providerTransportStdDet,    setProviderTransportStdDet]    = useState<Record<string, any>>({});
+  const [providerRepasFlag,          setProviderRepasFlag]          = useState<boolean | null>(null);
+  const [providerRepasMode,          setProviderRepasMode]          = useState<"guide"|"prestataire">("prestataire");
+  const [providerRepasGastroExp,     setProviderRepasGastroExp]     = useState("");
+  const [providerRepasGastroDet,     setProviderRepasGastroDet]     = useState<Record<string, any>>({});
+  const [providerRepasST,            setProviderRepasST]            = useState("");
+  const [providerRepasDet,           setProviderRepasDet]           = useState<Record<string, any>>({});
+  const [providerHebergementInclus,  setProviderHebergementInclus]  = useState<boolean | null>(null);
+  const [providerHebergementST,      setProviderHebergementST]      = useState("");
+  const [providerHebergementDet,     setProviderHebergementDet]     = useState<Record<string, any>>({});
+  const [providerAutreServiceInclus, setProviderAutreServiceInclus] = useState<boolean | null>(null);
+  const [providerAutreServiceCat,    setProviderAutreServiceCat]    = useState("");
+  const [providerAutreServiceST,     setProviderAutreServiceST]     = useState("");
+  const [providerAutreServiceDet,    setProviderAutreServiceDet]    = useState<Record<string, any>>({});
+  const [offerAvail,             setOfferAvail]             = useState<OfferAvailSlot>(EMPTY_OFFER_AVAIL);
+  const [offerConfirmation,      setOfferConfirmation]      = useState<ConfirmationData>(EMPTY_CONFIRMATION);
   // ── Config par sous-type (disponibilité + tarification — hébergement) ────
   const [subtypeFormConfig,  setSubtypeFormConfig]  = useState<Record<string, Record<string, any>>>({});
   // ── Photos par entité (sous-type ou unité) ───────────────────────────────
@@ -663,6 +758,14 @@ export default function ProviderProfilePage() {
   const [editProfileSaving, setEditProfileSaving] = useState(false);
   const [editProfileError,  setEditProfileError]  = useState("");
 
+  // Lire le tab depuis l'URL (?tab=collaborations)
+  useEffect(() => {
+    const tab = searchParams.get("tab");
+    if (tab && ["tout","offres","activites","circuits","reseau","apropos","collaborations"].includes(tab)) {
+      setActiveTab(tab as Tab);
+    }
+  }, [searchParams]);
+
   useEffect(() => {
     async function init() {
       const tkn = localStorage.getItem("access_token");
@@ -692,8 +795,9 @@ export default function ProviderProfilePage() {
         Promise.all([
           apiFetch<NetUser[]>("/follows/following/profiles", { headers: { Authorization: `Bearer ${tkn}` } }).catch(() => []),
           apiFetch<NetUser[]>("/follows/followers/profiles", { headers: { Authorization: `Bearer ${tkn}` } }).catch(() => []),
-        ]).then(([fwing, fwers]) => {
-          setFollowing(fwing); setFollowers(fwers);
+          apiFetch<FollowRequest[]>("/follows/requests", { headers: { Authorization: `Bearer ${tkn}` } }).catch(() => []),
+        ]).then(([fwing, fwers, reqs]) => {
+          setFollowing(fwing); setFollowers(fwers); setFollowRequests(reqs);
         });
       } catch {
         router.push("/dashboard/provider");
@@ -704,14 +808,36 @@ export default function ProviderProfilePage() {
     init();
   }, [router]);
 
+  // Charger les collaborations à la demande
+  useEffect(() => {
+    if (activeTab !== "collaborations" || !token) return;
+    setCollabLoading(true);
+    const autoOpenId = searchParams.get("openCollab");
+    apiFetch<MyCollab[]>("/guide/collaborations/mine", { headers: { Authorization: `Bearer ${token}` } })
+      .then((list) => {
+        setCollaborations(list);
+        if (autoOpenId) {
+          const target = list.find((x) => x.id === autoOpenId);
+          if (target) setOpenCollab(target);
+        }
+      })
+      .catch(() => setCollaborations([]))
+      .finally(() => setCollabLoading(false));
+  }, [activeTab, token]);
+
   // Network search
   useEffect(() => {
     if (!netSearch.trim() || !token) { setNetResults([]); return; }
     const t = setTimeout(() => {
       setNetLoading(true);
-      apiFetch<any[]>(`/guide/public/search?q=${encodeURIComponent(netSearch)}`, { headers: { Authorization: `Bearer ${token}` } })
-        .then((r) => setNetResults(r.map((g) => ({ user_id: g.user_id, full_name: g.full_name, photo: g.photo, _type: "guide", sub: g.zone ?? null }))))
-        .catch(() => setNetResults([]))
+      Promise.all([
+        apiFetch<any[]>(`/guide/public/search?q=${encodeURIComponent(netSearch)}`, { headers: { Authorization: `Bearer ${token}` } }).catch(() => []),
+        apiFetch<any[]>(`/providers/search?q=${encodeURIComponent(netSearch)}`, { headers: { Authorization: `Bearer ${token}` } }).catch(() => []),
+      ]).then(([guides, providers]) => {
+        const g = guides.map((g: any) => ({ user_id: g.user_id, full_name: g.full_name, photo: g.photo, _type: "guide", sub: g.zone ?? null }));
+        const p = providers.map((p: any) => ({ user_id: p.user_id, full_name: p.full_name ?? p.organization, photo: p.photo, _type: "provider", sub: p.provider_type ?? null }));
+        setNetResults([...g, ...p]);
+      }).catch(() => setNetResults([]))
         .finally(() => setNetLoading(false));
     }, 350);
     return () => clearTimeout(t);
@@ -1009,10 +1135,36 @@ export default function ProviderProfilePage() {
     setForm({ title: "", offer_type: "", description: "", price: "", duration: "", region: "", inclusions: "", meeting_point: "", min_group_size: "", max_group_size: "", min_age: "", cancellation_policy: "" });
     setPublishMapLat(null); setPublishMapLng(null); setShowPublishMap(false);
     setOfferEditMode(false); setOfferEditId(""); setPublishExistingImages([]);
+    setOfferTypePrestation(null);
+    setProviderOfferCollabs([]);
+    setProviderInviteSection(null);
+    setOfferPublicCible([]); setProviderServicesInclus([]);
+    setOfferLocationDesc("");
+    setProviderTransportInclus(null);
+    setProviderTransportEcoST(""); setProviderTransportEcoDet({});
+    setProviderTransportStdST(""); setProviderTransportStdDet({});
+    setProviderRepasFlag(null);
+    setProviderRepasMode("prestataire"); setProviderRepasGastroExp(""); setProviderRepasGastroDet({});
+    setProviderRepasST(""); setProviderRepasDet({});
+    setProviderHebergementInclus(null);
+    setProviderHebergementST(""); setProviderHebergementDet({});
+    setProviderAutreServiceInclus(null);
+    setProviderAutreServiceCat(""); setProviderAutreServiceST(""); setProviderAutreServiceDet({});
+    setOfferAvail(EMPTY_OFFER_AVAIL); setOfferConfirmation(EMPTY_CONFIRMATION);
+    setOfferStep(1);
   }
 
-  async function handlePublish(e: React.SyntheticEvent<HTMLFormElement>) {
-    e.preventDefault();
+  function handleNextProvider() {
+    if (offerStep === 1 && !form.title.trim()) { setTitleError("Le titre est obligatoire."); return; }
+    setTitleError("");
+    if (offerStep < PROVIDER_STEPS.length) {
+      setOfferStep((s) => s + 1);
+    } else {
+      handlePublish();
+    }
+  }
+
+  async function handlePublish() {
     if (!form.title.trim()) { setTitleError("Le titre est obligatoire."); return; }
     setPublishError(""); setPublishing(true);
     try {
@@ -1028,28 +1180,54 @@ export default function ProviderProfilePage() {
       } else {
         Object.values(subtypeDetails).forEach((d) => Object.assign(combinedDetails, d));
       }
-      if (availabilityMode === "weekly")   combinedDetails.available_weekdays = availableWeekdays;
-      if (availabilityMode === "specific") combinedDetails.specific_dates = specificDates;
-      if (availabilityMode === "season")   combinedDetails.available_saisons = availSaisons;
-      if (availHeureDebut) combinedDetails.heure_debut = availHeureDebut;
-      if (availHeureFin)   combinedDetails.heure_fin   = availHeureFin;
-      if (availabilityMode === "on_demand") {
-        combinedDetails.delai_reponse   = availDelaiReponse;
-        combinedDetails.message_accueil = availMessageAccueil;
+      if (offerAvail.type) {
+        combinedDetails.disponibilite = offerAvail;
+        if (offerAvail.dates?.length) combinedDetails.specific_dates = offerAvail.dates;
+        if (offerAvail.days_of_week?.length) combinedDetails.available_weekdays = offerAvail.days_of_week;
       }
       if (form.description.trim()) combinedDetails.description_longue = form.description.trim();
+      if (offerTypePrestation) combinedDetails.type_prestation = offerTypePrestation;
+      if (offerLocationDesc.trim()) combinedDetails.description_localisation = offerLocationDesc.trim();
+      if (providerTransportInclus !== null) combinedDetails.transport_inclus = providerTransportInclus;
+      if (providerTransportEcoST) combinedDetails.transport_eco_sous_type = providerTransportEcoST;
+      if (Object.keys(providerTransportEcoDet).length) combinedDetails.transport_eco_details = providerTransportEcoDet;
+      if (providerTransportStdST) combinedDetails.transport_std_sous_type = providerTransportStdST;
+      if (Object.keys(providerTransportStdDet).length) combinedDetails.transport_std_details = providerTransportStdDet;
+      if (providerRepasFlag !== null) combinedDetails.repas_flag = providerRepasFlag;
+      combinedDetails.repas_mode = providerRepasMode;
+      if (providerRepasGastroExp) combinedDetails.repas_gastro_expertise = providerRepasGastroExp;
+      if (Object.keys(providerRepasGastroDet).length) combinedDetails.repas_gastro_details = providerRepasGastroDet;
+      if (providerRepasST) combinedDetails.repas_prest_sous_type = providerRepasST;
+      if (Object.keys(providerRepasDet).length) combinedDetails.repas_prest_details = providerRepasDet;
+      if (providerHebergementInclus !== null) combinedDetails.hebergement_inclus = providerHebergementInclus;
+      if (providerHebergementST) combinedDetails.hebergement_sous_type = providerHebergementST;
+      if (Object.keys(providerHebergementDet).length) combinedDetails.hebergement_details = providerHebergementDet;
+      if (providerAutreServiceInclus !== null) combinedDetails.autre_service_inclus = providerAutreServiceInclus;
+      if (providerAutreServiceCat) combinedDetails.autre_service_categorie = providerAutreServiceCat;
+      if (providerAutreServiceST) combinedDetails.autre_service_sous_type = providerAutreServiceST;
+      if (Object.keys(providerAutreServiceDet).length) combinedDetails.autre_service_details = providerAutreServiceDet;
+      if (offerPublicCible.length) combinedDetails.public_cible = offerPublicCible;
+
+      const availMode = offerAvail.type === "specific" ? "specific"
+        : offerAvail.type === "range" ? "period"
+        : offerAvail.type === "recurring" ? "weekly"
+        : offerAvail.type === "season" ? "season"
+        : "always";
+
+      const polAnn = offerConfirmation.politique_annulation;
+      const cancPolicy = polAnn === "Personnalisée"
+        ? (offerConfirmation.description_politique || undefined)
+        : (polAnn || undefined);
 
       const payload = {
         activity_id:                 offerActivity?.id                         || undefined,
         offer_subtypes:              offerSubtypes.length > 0 ? offerSubtypes  : undefined,
         offer_subtype:               offerSubtypes[0]                          || undefined,
         offer_mode:                  offerSubtypes.length > 1 ? offerMode      : "single",
-        availability_mode:           availabilityMode,
-        availability_start:          availabilityMode === "period" ? availabilityStart : undefined,
-        availability_end:            availabilityMode === "period" ? availabilityEnd   : undefined,
-        confirmation_mode:           offerConfirmMode,
-        confirmation_deadline_hours: ["24h","48h"].includes(offerConfirmMode) ? Number(offerDeadlineHours) : undefined,
-        deposit_percentage:          offerConfirmMode === "deposit" ? Number(offerDepositPct) : undefined,
+        availability_mode:           availMode,
+        availability_start:          (offerAvail.type === "range" || offerAvail.type === "recurring" || offerAvail.type === "season") ? (offerAvail.start_date ?? undefined) : undefined,
+        availability_end:            (offerAvail.type === "range" || offerAvail.type === "recurring" || offerAvail.type === "season") ? (offerAvail.end_date ?? undefined) : undefined,
+        confirmation_mode:           offerConfirmation.type_confirmation || undefined,
         details: Object.keys(combinedDetails).length > 0 ? combinedDetails : undefined,
         title:               form.title.trim(),
         offer_type:          form.offer_type || offerActivity?.category || undefined,
@@ -1058,16 +1236,14 @@ export default function ProviderProfilePage() {
         price:               form.price  ? Number(form.price)  : undefined,
         duration:            form.duration.trim()      || undefined,
         region:              form.region.trim()        || undefined,
-        inclusions:          form.inclusions.trim()    || undefined,
+        inclusions:          providerServicesInclus.length ? providerServicesInclus.join(", ") : undefined,
         meeting_point:       form.meeting_point.trim() || undefined,
         meeting_lat:         publishMapLat              ?? undefined,
         meeting_lng:         publishMapLng              ?? undefined,
         min_group_size:      form.min_group_size ? Number(form.min_group_size) : undefined,
         max_group_size:      form.max_group_size ? Number(form.max_group_size) : undefined,
         min_age:             form.min_age        ? Number(form.min_age)        : undefined,
-        cancellation_policy: cancellationPolicy !== "custom"
-          ? cancellationPolicy
-          : (cancellationDesc.trim() || undefined),
+        cancellation_policy: cancPolicy,
       };
 
       let finalOffer: Offer;
@@ -1157,6 +1333,36 @@ export default function ProviderProfilePage() {
     } finally {
       setPublishing(false);
     }
+  }
+
+  async function handleProviderInvite(section: CollabSection) {
+    let id = offerEditId;
+    if (!id) {
+      if (!form.title.trim()) { setTitleError("Le titre est obligatoire pour inviter un collaborateur."); return; }
+      setProviderCollabSaving(true);
+      try {
+        const savedOffer = await apiFetch<Offer>("/offers", {
+          method: "POST",
+          headers: { Authorization: `Bearer ${token}` },
+          body: JSON.stringify({
+            organization_id: org?.id || undefined,
+            title: form.title.trim(),
+            offer_type: form.offer_type || offerActivity?.category || undefined,
+            description: offerDescCourte.trim() || undefined,
+            details: offerTypePrestation ? { type_prestation: offerTypePrestation } : undefined,
+          }),
+        });
+        id = savedOffer.id;
+        setOfferEditId(id);
+        setOfferEditMode(true);
+        setOffers((prev) => [savedOffer, ...prev]);
+      } catch {
+        setProviderCollabSaving(false);
+        return;
+      }
+      setProviderCollabSaving(false);
+    }
+    setProviderInviteSection(section);
   }
 
   // ── Offer detail / edit modal ──────────────────────────────────────────────
@@ -1340,22 +1546,101 @@ export default function ProviderProfilePage() {
     setPublishImages([]);
     setPublishCoverIdx(0);
 
-    // 15 – Activer le mode édition et ouvrir le modal
+    // 15 – Type de prestation
+    setOfferTypePrestation((details.type_prestation as string) ?? null);
+
+    // 15a – Localisation description
+    setOfferLocationDesc((details.description_localisation as string) ?? "");
+    // 15b – Prestation config (étape 5 "Ce que vous fournissez")
+    setProviderTransportInclus((details.transport_inclus as boolean | null) ?? null);
+    setProviderTransportEcoST((details.transport_eco_sous_type as string) ?? "");
+    setProviderTransportEcoDet((details.transport_eco_details as Record<string, any>) ?? {});
+    setProviderTransportStdST((details.transport_std_sous_type as string) ?? "");
+    setProviderTransportStdDet((details.transport_std_details as Record<string, any>) ?? {});
+    setProviderRepasFlag((details.repas_flag as boolean | null) ?? null);
+    setProviderRepasMode(((details.repas_mode as string) || "prestataire") as "guide"|"prestataire");
+    setProviderRepasGastroExp((details.repas_gastro_expertise as string) ?? "");
+    setProviderRepasGastroDet((details.repas_gastro_details as Record<string, any>) ?? {});
+    setProviderRepasST((details.repas_prest_sous_type as string) ?? "");
+    setProviderRepasDet((details.repas_prest_details as Record<string, any>) ?? {});
+    setProviderHebergementInclus((details.hebergement_inclus as boolean | null) ?? null);
+    setProviderHebergementST((details.hebergement_sous_type as string) ?? "");
+    setProviderHebergementDet((details.hebergement_details as Record<string, any>) ?? {});
+    setProviderAutreServiceInclus((details.autre_service_inclus as boolean | null) ?? null);
+    setProviderAutreServiceCat((details.autre_service_categorie as string) ?? "");
+    setProviderAutreServiceST((details.autre_service_sous_type as string) ?? "");
+    setProviderAutreServiceDet((details.autre_service_details as Record<string, any>) ?? {});
+
+    // 15b – Public ciblé
+    setOfferPublicCible((details.public_cible as string[]) ?? []);
+
+    // 15c – Services inclus (reconstituer depuis inclusions CSV)
+    const rawInclusions: string = (offer as any).inclusions ?? "";
+    setProviderServicesInclus(
+      rawInclusions ? rawInclusions.split(", ").filter((s: string) => PROVIDER_SERVICES.includes(s)) : []
+    );
+
+    // 15d – OfferAvailSlot (reconstituer depuis format legacy)
+    const am2 = offer.availability_mode ?? "always";
+    const reconAvail: OfferAvailSlot = {
+      type: am2 === "specific" ? "specific" : am2 === "period" ? "range" : am2 === "weekly" ? "recurring" : am2 === "season" ? "season" : null,
+      dates:       (details.specific_dates as string[]) ?? null,
+      start_date:  offer.availability_start ?? null,
+      end_date:    offer.availability_end ?? null,
+      days_of_week:(details.available_weekdays as string[]) ?? null,
+      label: null, time_slots: null,
+    };
+    setOfferAvail(reconAvail.type ? reconAvail : { ...EMPTY_OFFER_AVAIL });
+
+    // 15e – ConfirmationData
+    const rawMode = offer.confirmation_mode ?? "";
+    const rawPol  = offer.cancellation_policy ?? "";
+    const polLabel = rawPol === "flexible" ? "Flexible (100% remboursé jusqu'à 24h avant)"
+      : rawPol === "moderate" ? "Modérée (50% remboursé jusqu'à 48h avant)"
+      : rawPol === "strict"   ? "Stricte (non remboursable)"
+      : rawPol ? "Personnalisée" : "";
+    const polDesc = !["flexible","moderate","strict",""].includes(rawPol) ? rawPol : "";
+    setOfferConfirmation({
+      type_confirmation:   rawMode,
+      politique_annulation: polLabel,
+      description_politique: polDesc,
+      annulation_meteo:    null,
+    });
+
+    // 16 – Charger les collaborations existantes en arrière-plan
+    apiFetch<any[]>(`/guide/offers/${offer.id}/collaborations`, {
+      headers: { Authorization: `Bearer ${token}` },
+    }).then((list) => {
+      setProviderOfferCollabs(
+        (list ?? []).filter((c: any) => c.status !== "declined").map((c: any) => ({
+          userId: c.invited_user_id,
+          userName: c.invited_user_name ?? c.invited_user_id,
+          userType: c.invited_user_type ?? "provider",
+          section: c.section as CollabSection,
+          status: c.status,
+        }))
+      );
+    }).catch(() => {});
+
+    // 17 – Activer le mode édition et ouvrir le modal
     setOfferEditMode(true);
     setOfferEditId(offer.id);
     setModalOpen(true);
   }
 
   async function handleDeleteOffer() {
-    if (!viewOffer) return;
-    if (!confirm(`Supprimer l'offre "${viewOffer.title}" ? Cette action est irréversible.`)) return;
+    const targetId = offerEditId || viewOffer?.id;
+    if (!targetId) return;
+    const offerTitle = offers.find((o) => o.id === targetId)?.title ?? viewOffer?.title ?? "cette offre";
+    if (!confirm(`Supprimer l'offre "${offerTitle}" ? Cette action est irréversible.`)) return;
     setOfferDeleting(true);
     try {
-      await apiFetch(`/offers/${viewOffer.id}`, {
+      await apiFetch(`/offers/${targetId}`, {
         method: "DELETE",
         headers: { Authorization: `Bearer ${token}` },
       });
-      setOffers((prev) => prev.filter((o) => o.id !== viewOffer.id));
+      setOffers((prev) => prev.filter((o) => o.id !== targetId));
+      closeModal();
       closeEditModal();
     } catch {
       alert("Erreur lors de la suppression.");
@@ -1840,8 +2125,8 @@ export default function ProviderProfilePage() {
   // ── Offer card ─────────────────────────────────────────────────────────────
   const OfferCard = ({ offer }: { offer: Offer }) => {
     const typeData    = OFFER_TYPES.find((t) => t.value === offer.offer_type) ?? OFFER_TYPES[OFFER_TYPES.length - 1];
-    const statusLabel = offer.status === "approved" ? "Offre Active" : offer.status === "pending" ? "En attente" : "Refusée";
-    const statusClass = offer.status === "approved" ? "bg-primary text-white border-white/20" : offer.status === "pending" ? "bg-amber-500 text-white border-white/20" : "bg-red-500 text-white border-white/20";
+    const statusLabel = offer.status === "approved" ? "Active" : offer.status === "pending" ? "En attente" : offer.status === "draft" ? "Brouillon" : offer.status === "attente_publication" ? "Prêt à publier" : "Refusée";
+    const statusClass = offer.status === "approved" ? "bg-primary text-white border-white/20" : offer.status === "pending" ? "bg-amber-500 text-white border-white/20" : offer.status === "draft" ? "bg-slate-400 text-white border-white/20" : offer.status === "attente_publication" ? "bg-teal-600 text-white border-white/20" : "bg-red-500 text-white border-white/20";
 
     return (
       <div className="bg-white rounded-3xl border border-slate-100/90 shadow-sm overflow-hidden hover:shadow-md transition-shadow duration-300">
@@ -1908,7 +2193,7 @@ export default function ProviderProfilePage() {
                 🌿 Évaluer la durabilité
               </button>
             )}
-            <div className="flex items-center justify-between border-t border-slate-50 pt-4 mt-3">
+            <div className="flex items-center justify-between border-t border-slate-50 pt-4 mt-3 gap-2 flex-wrap">
               <p className="text-[11px] font-bold text-slate-400">
                 {new Date(offer.created_at).toLocaleDateString("fr-FR", { day: "numeric", month: "long", year: "numeric" })}
               </p>
@@ -1932,6 +2217,19 @@ export default function ProviderProfilePage() {
             itemApiBase="/interactions/offer"
             commentApiBase="/interactions"
           />
+        )}
+        {offer.status === "attente_publication" && (
+          <div className="border-t border-primary/20 bg-primary/5 px-6 py-3 flex items-center gap-3">
+            <span className="material-symbols-outlined text-emerald-600 text-[18px]">pending_actions</span>
+            <p className="text-emerald-700 text-xs font-bold flex-1">Tous les collaborateurs ont complété leur partie. Vérifiez l&apos;offre et confirmez la publication.</p>
+            <button
+              onClick={() => openEditModal(offer)}
+              className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-primary text-slate-900 text-xs font-extrabold hover:bg-primary/90 transition-colors shrink-0"
+            >
+              <span className="material-symbols-outlined text-sm">check_circle</span>
+              Voir et gérer
+            </button>
+          </div>
         )}
       </div>
     );
@@ -4348,8 +4646,8 @@ export default function ProviderProfilePage() {
               className="absolute top-5 right-5 z-10 w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-500 hover:text-slate-700 flex items-center justify-center transition-colors">
               <X size={16} />
             </button>
-            <div className="px-8 pt-8 pb-5 border-b border-slate-100 shrink-0">
-              <div className="flex items-center gap-3">
+            <div className="px-8 pt-8 pb-4 border-b border-slate-100 shrink-0">
+              <div className="flex items-center gap-3 mb-3">
                 <div className="w-10 h-10 rounded-2xl bg-primary/10 flex items-center justify-center">
                   <Sparkles size={20} className="text-primary" />
                 </div>
@@ -4357,17 +4655,28 @@ export default function ProviderProfilePage() {
                   <h3 className="text-xl font-extrabold text-slate-800 tracking-tight">
                     {offerEditMode ? "Modifier l'offre" : "Publier une offre éco"}
                   </h3>
-                  <p className="text-slate-400 text-xs mt-0.5">
-                    {offerEditMode ? "Modifiez les informations et enregistrez." : "Proposez une expérience éco-touristique à la communauté"}
-                  </p>
+                  <p className="text-slate-400 text-xs mt-0.5">{PROVIDER_STEPS[offerStep - 1].title}</p>
                 </div>
               </div>
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-xs font-black text-slate-400 uppercase tracking-wider">{PROVIDER_STEPS[offerStep - 1].subtitle}</span>
+                <span className="text-xs font-black text-slate-400">{offerStep}/{PROVIDER_STEPS.length}</span>
+              </div>
+              <div className="flex gap-1 mt-3">
+                {PROVIDER_STEPS.map((s) => (
+                  <button key={s.id} type="button"
+                    onClick={() => s.id < offerStep && setOfferStep(s.id)}
+                    className={`flex-1 h-1 rounded-full transition-all duration-300 ${s.id < offerStep ? "bg-primary cursor-pointer" : s.id === offerStep ? "bg-primary" : "bg-slate-200"}`}
+                  />
+                ))}
+              </div>
             </div>
-            <div className="overflow-y-auto flex-1">
-              <form id="publish-offer-form" onSubmit={handlePublish} className="px-8 py-6 space-y-5">
+            <div className="flex-1 overflow-y-auto">
+              <div className="px-8 py-6 space-y-5">
 
-                {/* ── SECTION : ACTIVITÉ ─────────────────────────────────── */}
-                {orgActivities.length > 0 && (
+                {/* ── ÉTAPE 1 : PRÉSENTATION ───────────────────────────── */}
+                {/* Lier à une activité */}
+                {offerStep === 1 && orgActivities.length > 0 && (
                   <div>
                     <label className="text-[10px] font-black tracking-widest text-slate-400 uppercase mb-2 block">Lier à une activité</label>
                     <div className="grid grid-cols-2 gap-2">
@@ -4402,8 +4711,8 @@ export default function ProviderProfilePage() {
                   </div>
                 )}
 
-                {/* ── SECTION : SOUS-TYPES ───────────────────────────────── */}
-                {offerActivity && offerActivity.subtypes && offerActivity.subtypes.length > 0 && (
+                {/* ── ÉTAPE 3 : SOUS-TYPES ─────────────────────────────── */}
+                {offerStep === 3 && offerActivity && offerActivity.subtypes && offerActivity.subtypes.length > 0 && (
                   <div>
                     <label className="text-[10px] font-black tracking-widest text-slate-400 uppercase mb-2 block">Sous-type d'offre</label>
                     <div className="flex flex-wrap gap-2">
@@ -4455,37 +4764,43 @@ export default function ProviderProfilePage() {
 
                 {/* Nb d'unités : maintenant intégré dans chaque carte de sous-type */}
 
-                {/* ── BLOC 1 : INFORMATIONS DE BASE ──────────────────── */}
-                <div>
-                  <label className="text-[10px] font-black tracking-widest text-slate-400 uppercase mb-1.5 block">Titre de l'offre *</label>
-                  <input type="text" placeholder="Ex : Séjour éco en forêt de Mogods"
-                    value={form.title}
-                    onChange={(e) => { setForm((f) => ({ ...f, title: e.target.value })); setTitleError(""); }}
-                    className={`w-full px-4 py-3 rounded-xl text-sm font-semibold focus:outline-none focus:ring-2 transition-all placeholder:font-normal ${titleError ? "bg-red-50 border border-red-300 focus:ring-red-200" : "bg-slate-50 border border-slate-200 focus:ring-primary focus:bg-white"}`}
-                  />
-                  {titleError && <p className="text-xs font-semibold text-red-500 mt-1">{titleError}</p>}
-                </div>
-                <div>
-                  <label className="text-[10px] font-black tracking-widest text-slate-400 uppercase mb-1.5 block">
-                    Description courte * <span className="normal-case font-medium text-slate-300">({offerDescCourte.length}/160)</span>
-                  </label>
-                  <textarea rows={2} placeholder="Accroche courte visible dans les résultats de recherche…"
-                    value={offerDescCourte} maxLength={160}
-                    onChange={(e) => setOfferDescCourte(e.target.value)}
-                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:bg-white resize-none placeholder:text-slate-400"
-                  />
-                </div>
-                <div>
-                  <label className="text-[10px] font-black tracking-widest text-slate-400 uppercase mb-1.5 block">Description détaillée</label>
-                  <textarea rows={4} placeholder="Décrivez le concept écologique, les activités durables et l'expérience proposée…"
-                    value={form.description}
-                    onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
-                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:bg-white resize-none placeholder:text-slate-400"
-                  />
-                </div>
+                {/* Titre / Descriptions — Étape 1 */}
+                {offerStep === 1 && (
+                  <div>
+                    <label className="text-[10px] font-black tracking-widest text-slate-400 uppercase mb-1.5 block">Titre de l'offre *</label>
+                    <input type="text" placeholder="Ex : Séjour éco en forêt de Mogods"
+                      value={form.title}
+                      onChange={(e) => { setForm((f) => ({ ...f, title: e.target.value })); setTitleError(""); }}
+                      className={`w-full px-4 py-3 rounded-xl text-sm font-semibold focus:outline-none focus:ring-2 transition-all placeholder:font-normal ${titleError ? "bg-red-50 border border-red-300 focus:ring-red-200" : "bg-slate-50 border border-slate-200 focus:ring-primary focus:bg-white"}`}
+                    />
+                    {titleError && <p className="text-xs font-semibold text-red-500 mt-1">{titleError}</p>}
+                  </div>
+                )}
+                {offerStep === 1 && (
+                  <div>
+                    <label className="text-[10px] font-black tracking-widest text-slate-400 uppercase mb-1.5 block">
+                      Description courte * <span className="normal-case font-medium text-slate-300">({offerDescCourte.length}/160)</span>
+                    </label>
+                    <textarea rows={2} placeholder="Accroche courte visible dans les résultats de recherche…"
+                      value={offerDescCourte} maxLength={160}
+                      onChange={(e) => setOfferDescCourte(e.target.value)}
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:bg-white resize-none placeholder:text-slate-400"
+                    />
+                  </div>
+                )}
+                {offerStep === 1 && (
+                  <div>
+                    <label className="text-[10px] font-black tracking-widest text-slate-400 uppercase mb-1.5 block">Description détaillée</label>
+                    <textarea rows={4} placeholder="Décrivez le concept écologique, les activités durables et l'expérience proposée…"
+                      value={form.description}
+                      onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:bg-white resize-none placeholder:text-slate-400"
+                    />
+                  </div>
+                )}
 
-                {/* Photo de couverture — toujours visible */}
-                <div>
+                {/* Photo de couverture — Étape 1 */}
+                {offerStep === 1 && <div>
                   <label className="text-[10px] font-black tracking-widest text-slate-400 uppercase mb-2 block">Photo de couverture</label>
                   {publishExistingImages.length === 0 && publishImages.length === 0 ? (
                     <label htmlFor="publish-cover-input"
@@ -4558,9 +4873,28 @@ export default function ProviderProfilePage() {
                       )}
                     </>
                   )}
-                </div>
+                </div>}
 
-                {offerActivity && (() => {
+                {/* ── Public ciblé — Étape 1 ─────────────────────────── */}
+                {offerStep === 1 && <div>
+                  <label className="text-[10px] font-black tracking-widest text-slate-400 uppercase mb-2 block">Public ciblé</label>
+                  <div className="flex flex-wrap gap-2">
+                    {PUBLIC_RECOMMANDE.map((p) => {
+                      const active = offerPublicCible.includes(p.value);
+                      return (
+                        <button key={p.value} type="button"
+                          onClick={() => setOfferPublicCible((prev) => active ? prev.filter((x) => x !== p.value) : [...prev, p.value])}
+                          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold border-2 transition-all ${active ? "bg-primary text-white border-primary" : "bg-slate-100 border-slate-200 text-slate-600 hover:border-primary/40"}`}>
+                          <span className="material-symbols-outlined text-sm">{p.icon}</span>
+                          {p.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>}
+
+                {/* ── ÉTAPE 2 : LOCALISATION ───────────────────────────── */}
+                {offerStep === 2 && offerActivity && (() => {
                   const flat = Object.values(offerActivity.fields ?? {}).reduce<Record<string, any>>((a, s) => ({ ...a, ...s }), {});
                   const langs: string[] = flat.langues_guides ?? flat.langues ?? flat.langues_accueil ?? [];
                   if (!langs.length) return null;
@@ -4575,48 +4909,311 @@ export default function ProviderProfilePage() {
                     </div>
                   );
                 })()}
-                <div>
-                  <label className="text-[10px] font-black tracking-widest text-slate-400 uppercase mb-1.5 block">Région / Emplacement</label>
-                  <input type="text" placeholder="Tunis, Djerba, Sfax…"
-                    value={form.region}
-                    onChange={(e) => setForm((f) => ({ ...f, region: e.target.value }))}
-                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:bg-white placeholder:text-slate-400"
-                  />
-                </div>
-                <div>
-                  <div className="flex items-center justify-between mb-1.5">
-                    <label className="text-[10px] font-black tracking-widest text-slate-400 uppercase">Localisation</label>
-                    <button type="button" onClick={() => setShowPublishMap((v) => !v)}
-                      className="flex items-center gap-1 text-[10px] font-extrabold text-primary hover:text-primary/80 transition-colors">
-                      <MapPin size={12} />
-                      {showPublishMap ? "Masquer la carte" : "Choisir sur la carte"}
-                    </button>
-                  </div>
-                  <input type="text" placeholder="Ex : Place de la Kasbah, Tunis"
-                    value={form.meeting_point}
-                    onChange={(e) => setForm((f) => ({ ...f, meeting_point: e.target.value }))}
-                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:bg-white placeholder:text-slate-400 mb-2"
-                  />
-                  {showPublishMap && (
+                {offerStep === 2 && (
+                  <div>
+                    <label className="text-[10px] font-black tracking-widest text-slate-400 uppercase mb-2 block">
+                      Localisation <span className="text-red-500">*</span>
+                    </label>
                     <MapPicker
                       lat={publishMapLat} lng={publishMapLng}
                       onPick={(lat, lng, address) => {
                         setPublishMapLat(lat); setPublishMapLng(lng);
-                        setForm((f) => ({ ...f, meeting_point: address }));
+                        const regionPart = address.split(",").slice(-2).join(",").trim();
+                        setForm((f) => ({ ...f, meeting_point: address, region: regionPart }));
+                        setOfferLocationDesc((prev) => prev.trim() ? prev : address);
                       }}
                     />
-                  )}
-                </div>
-                <div>
-                  <label className="text-[10px] font-black tracking-widest text-slate-400 uppercase mb-1.5 block">Inclusions</label>
-                  <textarea rows={3} placeholder={"Ex :\n• Transport inclus\n• Repas traditionnels\n• Guide bilingue"}
-                    value={form.inclusions}
-                    onChange={(e) => setForm((f) => ({ ...f, inclusions: e.target.value }))}
-                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:bg-white resize-none placeholder:text-slate-400"
-                  />
-                </div>
-                {/* Max. pers. + Âge min. — masqués pour hébergement (capacité par unité dans l'onglet) */}
-                {offerActivity?.category !== 'hebergement' && <div className="grid grid-cols-2 gap-3">
+                  </div>
+                )}
+                {offerStep === 2 && (
+                  <div>
+                    <label className="text-[10px] font-black tracking-widest text-slate-400 uppercase mb-1.5 block">
+                      Description de la localisation <span className="text-red-500">*</span>
+                    </label>
+                    <textarea rows={3}
+                      placeholder="Décrivez l'emplacement, l'accès, les points de repère…"
+                      value={offerLocationDesc}
+                      onChange={(e) => setOfferLocationDesc(e.target.value)}
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:bg-white resize-none placeholder:text-slate-400"
+                    />
+                  </div>
+                )}
+                {/* ── ÉTAPE 1 : TYPE DE PRESTATION ──────────────────────── */}
+                {offerStep === 1 && (
+                  <div>
+                    <label className="text-[10px] font-black tracking-widest text-slate-400 uppercase mb-2 block">Type de prestation <span className="text-red-500">*</span></label>
+                    <div className="grid grid-cols-2 gap-2">
+                      {TYPE_PRESTATION_PROVIDER.map((tp) => {
+                        const active = offerTypePrestation === tp.value;
+                        return (
+                          <button key={tp.value} type="button"
+                            onClick={() => setOfferTypePrestation(active ? null : tp.value)}
+                            className={`relative flex items-center gap-2.5 px-3 py-3 rounded-2xl border-2 text-xs font-bold transition-all duration-150 text-left ${active ? "bg-primary/10 border-primary shadow-sm" : "border-slate-100 bg-white hover:border-primary/30 hover:bg-slate-50/60 text-slate-600"}`}>
+                            {active && (
+                              <span className="absolute top-2 right-2 w-4 h-4 bg-primary rounded-full flex items-center justify-center">
+                                <Check size={9} className="text-slate-900" strokeWidth={3} />
+                              </span>
+                            )}
+                            <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 transition-all ${active ? "bg-primary" : "bg-slate-100"}`}>
+                              <span className={`material-symbols-outlined text-lg ${active ? "text-slate-900" : "text-slate-400"}`}>{tp.icon}</span>
+                            </div>
+                            <div className="flex-1 min-w-0 pr-4">
+                              <p className={`font-extrabold text-xs leading-tight ${active ? "text-slate-900" : "text-slate-700"}`}>{tp.label}</p>
+                              <p className={`text-[10px] mt-0.5 leading-tight ${active ? "text-primary/70" : "text-slate-400"}`}>{tp.desc}</p>
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+                {/* ── ÉTAPE 5 : CE QUE VOUS FOURNISSEZ ─────────────────── */}
+                {offerStep === 5 && (() => {
+                  const tp = offerTypePrestation;
+                  const showTransport    = tp !== null && ["avec_transport", "transport_repas", "immersion", "sur_mesure"].includes(tp);
+                  const showRepas       = tp !== null && ["transport_repas", "immersion", "sur_mesure"].includes(tp);
+                  const showHebergement = tp !== null && ["immersion", "sur_mesure"].includes(tp);
+                  const isSurMesure     = tp === "sur_mesure";
+                  const activeCollab  = (s: CollabSection) =>
+                    providerOfferCollabs.find((c) => c.section === s && c.status !== "declined") ?? null;
+                  const transportCollab   = activeCollab("transport");
+                  const restaurationCollab = activeCollab("restauration");
+
+                  // Activités déclarées par le prestataire (principale + secondaire)
+                  const myActivities = new Set([
+                    ...(profile?.activity_types ?? []),
+                    ...(profile?.secondary_activity_types ?? []),
+                  ]);
+                  const canFill = (cat: string) => myActivities.has(cat);
+
+                  // Bloc "invitation obligatoire" pour les sections hors activité du prestataire
+                  function InviteRequiredProv({ section, icon, message }: { section: CollabSection; icon: string; message: string }) {
+                    return (
+                      <div className="space-y-2">
+                        <div className="flex items-start gap-2 p-3 bg-amber-50 border border-amber-200 rounded-xl">
+                          <span className="material-symbols-outlined text-amber-500 text-base shrink-0 mt-0.5">{icon}</span>
+                          <p className="text-xs font-semibold text-amber-700">{message}</p>
+                        </div>
+                        <InviteButton section={section} onInvite={handleProviderInvite} loading={providerCollabSaving} />
+                      </div>
+                    );
+                  }
+
+                  return (
+                    <div className="space-y-6">
+                      {/* Récap prestation */}
+                      {tp ? (
+                        <div className="flex items-center gap-2 p-3 bg-slate-50 rounded-xl border border-slate-200">
+                          <span className="text-[10px] font-black text-slate-400 uppercase">Prestation :</span>
+                          <span className="px-2.5 py-1 bg-primary/10 rounded-full text-[10px] font-extrabold text-primary">
+                            {TYPE_PRESTATION_PROVIDER.find((o) => o.value === tp)?.label}
+                          </span>
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-2 p-3 bg-amber-50 rounded-xl border border-amber-200">
+                          <span className="material-symbols-outlined text-amber-500 text-base">info</span>
+                          <p className="text-xs font-semibold text-amber-700">Aucun type de prestation sélectionné — retournez à l'étape 1.</p>
+                        </div>
+                      )}
+
+                      {/* Transport */}
+                      {showTransport && (
+                        <div className="space-y-3">
+                          {isSurMesure && (
+                            <Bool label="Transport inclus dans cette offre" icon="directions_car"
+                              value={providerTransportInclus}
+                              onChange={(v) => setProviderTransportInclus(v)} />
+                          )}
+                          {(!isSurMesure || providerTransportInclus === true) && (
+                            transportCollab ? (
+                              <div className="space-y-2">
+                                <SectionLockedBanner collab={transportCollab} />
+                                <div className="pointer-events-none select-none opacity-70 space-y-3">
+                                  <PrestSubBlock title="Transport Éco" icon="electric_bike" subtypes={TRANSPORT_ECO_SUBTYPES}
+                                    sousType={providerTransportEcoST} details={providerTransportEcoDet}
+                                    onSousType={() => {}} onDetails={() => {}} />
+                                  <PrestSubBlock title="Transport" icon="directions_car" subtypes={TRANSPORT_STD_SUBTYPES}
+                                    sousType={providerTransportStdST} details={providerTransportStdDet}
+                                    onSousType={() => {}} onDetails={() => {}} />
+                                </div>
+                              </div>
+                            ) : canFill("transport") || canFill("transport_eco") ? (
+                              <>
+                                <PrestSubBlock
+                                  title="Transport Éco" icon="electric_bike"
+                                  subtypes={TRANSPORT_ECO_SUBTYPES}
+                                  sousType={providerTransportEcoST}
+                                  details={providerTransportEcoDet}
+                                  onSousType={(v) => { setProviderTransportEcoST(v); setProviderTransportEcoDet({}); }}
+                                  onDetails={(k, v) => setProviderTransportEcoDet((prev) => ({ ...prev, [k]: v }))}
+                                />
+                                <PrestSubBlock
+                                  title="Transport" icon="directions_car"
+                                  subtypes={TRANSPORT_STD_SUBTYPES}
+                                  sousType={providerTransportStdST}
+                                  details={providerTransportStdDet}
+                                  onSousType={(v) => { setProviderTransportStdST(v); setProviderTransportStdDet({}); }}
+                                  onDetails={(k, v) => setProviderTransportStdDet((prev) => ({ ...prev, [k]: v }))}
+                                />
+                                <InviteButton section="transport" onInvite={handleProviderInvite} loading={providerCollabSaving} />
+                              </>
+                            ) : (
+                              <InviteRequiredProv section="transport" icon="directions_car"
+                                message="Le transport n'est pas votre activité principale ni secondaire — invitez un prestataire de transport pour compléter cette section." />
+                            )
+                          )}
+                        </div>
+                      )}
+
+                      {/* Restauration */}
+                      {showRepas && (
+                        <div className="space-y-3">
+                          {isSurMesure && (
+                            <Bool label="Repas inclus dans cette offre" icon="restaurant"
+                              value={providerRepasFlag}
+                              onChange={(v) => { setProviderRepasFlag(v); if (!v) { setProviderRepasMode("prestataire"); setProviderRepasGastroExp(""); setProviderRepasGastroDet({}); setProviderRepasST(""); setProviderRepasDet({}); } }} />
+                          )}
+                          {(!isSurMesure || providerRepasFlag === true) && (() => {
+                            const repasData: RepasBlockData = { mode: providerRepasMode, gastroExpertise: providerRepasGastroExp, gastroDet: providerRepasGastroDet, prestSousType: providerRepasST, prestDet: providerRepasDet };
+                            const onRepasUpdate = (patch: Partial<RepasBlockData>) => {
+                              if (patch.mode !== undefined) setProviderRepasMode(patch.mode);
+                              if (patch.gastroExpertise !== undefined) setProviderRepasGastroExp(patch.gastroExpertise);
+                              if (patch.gastroDet !== undefined) setProviderRepasGastroDet(patch.gastroDet);
+                              if (patch.prestSousType !== undefined) setProviderRepasST(patch.prestSousType);
+                              if (patch.prestDet !== undefined) setProviderRepasDet(patch.prestDet);
+                            };
+                            const repasGuidageSlot = (
+                              <InviteRequiredProv section="restauration" icon="hiking"
+                                message="Le guidage gastronomique sera assuré par un guide — invitez-le pour compléter cette section." />
+                            );
+                            const repasPrestSlot = canFill("restaurant_terroir") ? undefined : (
+                              <InviteRequiredProv section="restauration" icon="restaurant"
+                                message="La restauration n'est pas votre activité principale ni secondaire — invitez un restaurateur pour compléter cette section." />
+                            );
+                            return restaurationCollab ? (
+                              <div className="space-y-2">
+                                <SectionLockedBanner collab={restaurationCollab} />
+                                <div className="pointer-events-none select-none opacity-70">
+                                  <RepasBlock data={repasData} onUpdate={() => {}} />
+                                </div>
+                              </div>
+                            ) : (
+                              <RepasBlock data={repasData} onUpdate={onRepasUpdate}
+                                guidageSlot={repasGuidageSlot}
+                                prestataireSlot={repasPrestSlot}
+                              />
+                            );
+                          })()}
+                        </div>
+                      )}
+
+                      {/* Hébergement */}
+                      {showHebergement && (() => {
+                        const hebergementCollab = activeCollab("hebergement");
+                        return (
+                          <div className="space-y-3">
+                            {isSurMesure && (
+                              <Bool label="Hébergement inclus dans cette offre" icon="hotel"
+                                value={providerHebergementInclus}
+                                onChange={(v) => { setProviderHebergementInclus(v); if (!v) { setProviderHebergementST(""); setProviderHebergementDet({}); } }} />
+                            )}
+                            {(!isSurMesure || providerHebergementInclus === true) && (
+                              hebergementCollab ? (
+                                <div className="space-y-2">
+                                  <SectionLockedBanner collab={hebergementCollab} />
+                                  <div className="pointer-events-none select-none opacity-70">
+                                    <PrestSubBlock title="Hébergement" icon="hotel" subtypes={HEBERGEMENT_PREST_SUBTYPES}
+                                      sousType={providerHebergementST} details={providerHebergementDet}
+                                      onSousType={() => {}} onDetails={() => {}} />
+                                  </div>
+                                </div>
+                              ) : canFill("hebergement") ? (
+                                <>
+                                  <PrestSubBlock title="Hébergement" icon="hotel" subtypes={HEBERGEMENT_PREST_SUBTYPES}
+                                    sousType={providerHebergementST} details={providerHebergementDet}
+                                    onSousType={(v) => { setProviderHebergementST(v); setProviderHebergementDet({}); }}
+                                    onDetails={(k, v) => setProviderHebergementDet((prev) => ({ ...prev, [k]: v }))} />
+                                  <InviteButton section="hebergement" onInvite={handleProviderInvite} loading={providerCollabSaving} />
+                                </>
+                              ) : (
+                                <InviteRequiredProv section="hebergement" icon="hotel"
+                                  message="L'hébergement n'est pas votre activité principale ni secondaire — invitez un hébergeur pour compléter cette section." />
+                              )
+                            )}
+                          </div>
+                        );
+                      })()}
+
+                      {/* Autre service */}
+                      {isSurMesure && (() => {
+                        const autreServiceCollab = activeCollab("autre_service");
+                        const autreData: AutreServiceBlockData = { categorie: providerAutreServiceCat, sousType: providerAutreServiceST, details: providerAutreServiceDet };
+                        const onAutreUpdate = (patch: Partial<AutreServiceBlockData>) => {
+                          if (patch.categorie !== undefined) setProviderAutreServiceCat(patch.categorie);
+                          if (patch.sousType  !== undefined) setProviderAutreServiceST(patch.sousType);
+                          if (patch.details   !== undefined) setProviderAutreServiceDet(patch.details);
+                        };
+                        return (
+                          <div className="space-y-3">
+                            <Bool label="Autre service inclus dans cette offre" icon="add_circle"
+                              value={providerAutreServiceInclus}
+                              onChange={(v) => { setProviderAutreServiceInclus(v); if (!v) { setProviderAutreServiceCat(""); setProviderAutreServiceST(""); setProviderAutreServiceDet({}); } }} />
+                            {providerAutreServiceInclus === true && (
+                              autreServiceCollab ? (
+                                <div className="space-y-2">
+                                  <SectionLockedBanner collab={autreServiceCollab} />
+                                  <div className="pointer-events-none select-none opacity-70">
+                                    <AutreServiceBlock data={autreData} onUpdate={() => {}} />
+                                  </div>
+                                </div>
+                              ) : (
+                                <AutreServiceBlock data={autreData} onUpdate={onAutreUpdate}
+                                  guidageSousTypeSlot={(_domaine) =>
+                                    <InviteRequiredProv section="autre_service" icon="hiking"
+                                      message="Le guidage sera assuré par un guide — invitez-le pour compléter cette section." />
+                                  }
+                                  prestataireSousTypeSlot={(cat) =>
+                                    !canFill(cat) ? (
+                                      <InviteRequiredProv section="autre_service" icon="add_circle"
+                                        message="La catégorie sélectionnée n'est pas votre activité — invitez un prestataire pour compléter cette section." />
+                                    ) : undefined
+                                  }
+                                />
+                              )
+                            )}
+                          </div>
+                        );
+                      })()}
+
+                      {/* Prestation seule */}
+                      {!showTransport && !showRepas && !showHebergement && !!tp && tp !== "sur_mesure" && (
+                        <div className="flex items-center gap-3 p-3 bg-primary/5 border border-primary/20 rounded-xl">
+                          <span className="material-symbols-outlined text-primary text-xl">handyman</span>
+                          <p className="text-xs font-bold text-slate-700">Prestation seule — aucun service transport, repas ou hébergement à renseigner.</p>
+                        </div>
+                      )}
+
+                      {/* Services inclus */}
+                      <div className="space-y-3">
+                        <p className="text-[10px] font-black tracking-widest text-slate-400 uppercase">Services inclus</p>
+                        <div className="flex flex-wrap gap-2">
+                          {PROVIDER_SERVICES.map((s) => {
+                            const active = providerServicesInclus.includes(s);
+                            return (
+                              <button key={s} type="button"
+                                onClick={() => setProviderServicesInclus((prev) => active ? prev.filter((x) => x !== s) : [...prev, s])}
+                                className={`px-3 py-1.5 rounded-full text-xs font-bold transition-all border-2 ${active ? "bg-primary border-primary text-slate-900" : "border-slate-200 text-slate-600 hover:border-primary/50 bg-white"}`}>
+                                {s}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })()}
+                {/* Max. pers. + Âge min. — Étape 1, masqués pour hébergement */}
+                {offerStep === 1 && offerActivity?.category !== 'hebergement' && <div className="grid grid-cols-2 gap-3">
                   <div>
                     <label className="text-[10px] font-black tracking-widest text-slate-400 uppercase mb-1.5 block">Max. pers.</label>
                     <input type="number" min="1" placeholder="20"
@@ -4649,8 +5246,8 @@ export default function ProviderProfilePage() {
                     />
                   </div>
                 </div>}
-                {/* Type d'offre — uniquement si le provider n'a aucune activité (fallback) */}
-                {orgActivities.length === 0 && (
+                {/* Type d'offre — fallback si pas d'activité, Étape 1 */}
+                {offerStep === 1 && orgActivities.length === 0 && (
                   <div>
                     <label className="text-[10px] font-black tracking-widest text-slate-400 uppercase mb-2 block">Type d'offre</label>
                     <div className="grid grid-cols-3 gap-2">
@@ -4668,33 +5265,8 @@ export default function ProviderProfilePage() {
                     </div>
                   </div>
                 )}
-                {/* Tarif/Durée génériques — masqués pour hébergement (prix par unité + nuits_min dans les détails) */}
-                {offerActivity?.category !== 'hebergement' && (
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label className="text-[10px] font-black tracking-widest text-slate-400 uppercase mb-1.5 block">Tarif (TND)</label>
-                      <div className="relative">
-                        <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 text-[11px] font-bold">DT</span>
-                        <input type="number" min="0" step="1" placeholder="Ex : 350"
-                          value={form.price} onChange={(e) => setForm((f) => ({ ...f, price: e.target.value }))}
-                          className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-9 pr-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:bg-white font-mono placeholder:text-slate-400 placeholder:font-sans"
-                        />
-                      </div>
-                    </div>
-                    <div>
-                      <label className="text-[10px] font-black tracking-widest text-slate-400 uppercase mb-1.5 block">Durée (jours)</label>
-                      <div className="relative">
-                        <Clock size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
-                        <input type="number" min="1" step="1" placeholder="Ex : 3"
-                          value={form.duration} onChange={(e) => setForm((f) => ({ ...f, duration: e.target.value }))}
-                          className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-9 pr-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:bg-white font-mono placeholder:text-slate-400 placeholder:font-sans"
-                        />
-                      </div>
-                    </div>
-                  </div>
-                )}
-                {/* ── SECTION : DÉTAILS SPÉCIFIQUES PAR SOUS-TYPE ─────── */}
-                {offerSubtypes.length > 0 && (() => {
+                {/* ── ÉTAPE 3 : DÉTAILS SPÉCIFIQUES PAR SOUS-TYPE ───── */}
+                {offerStep === 3 && offerSubtypes.length > 0 && (() => {
                   const isMultiUnit = offerNbUnites > 1 && offerActivity?.category === 'hebergement';
 
                   // ── Résout les options dynamiques depuis les champs d'onboarding ──
@@ -5355,148 +5927,39 @@ export default function ProviderProfilePage() {
                   );
                 })()}
 
-                {/* ── BLOC 3 : DISPONIBILITÉ — global pour non-hébergement seulement ── */}
-                {offerActivity?.category !== 'hebergement' && <div>
-                  <label className="text-[10px] font-black tracking-widest text-slate-400 uppercase mb-2 block">Disponibilité</label>
-                  <div className="grid grid-cols-2 gap-2 mb-3">
-                    {AVAILABILITY_TYPES.map((m) => (
-                      <button key={m.value} type="button" onClick={() => setAvailabilityMode(m.value)}
-                        className={`flex items-center gap-2 px-3 py-2.5 rounded-xl border-2 text-xs font-bold transition-all ${availabilityMode === m.value ? "border-primary bg-primary/10 text-slate-900" : "border-slate-200 bg-slate-50 text-slate-500 hover:border-primary/30"}`}>
-                        <span className={`material-symbols-outlined text-base ${availabilityMode === m.value ? "text-primary" : "text-slate-400"}`}>{m.icon}</span>
-                        {m.label}
-                      </button>
-                    ))}
+                {/* ── ÉTAPE 4 : DISPONIBILITÉS ─────────────────────────── */}
+                {offerStep === 4 && offerActivity?.category !== 'hebergement' && (
+                  <div>
+                    <label className="text-[10px] font-black tracking-widest text-slate-400 uppercase mb-2 block">Quand êtes-vous disponible ?</label>
+                    <OfferAvailPicker value={offerAvail} onChange={setOfferAvail} />
                   </div>
-                  {availabilityMode === "specific" && (
-                    <div className="space-y-2">
-                      <div className="flex gap-2">
-                        <input type="date" value={newSpecificDate} onChange={(e) => setNewSpecificDate(e.target.value)}
-                          className="flex-1 bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
-                        <button type="button"
-                          onClick={() => { if (newSpecificDate && !specificDates.includes(newSpecificDate)) { setSpecificDates((prev) => [...prev, newSpecificDate].sort()); setNewSpecificDate(""); } }}
-                          className="px-4 py-2.5 bg-primary text-white rounded-xl text-xs font-extrabold hover:bg-primary/90 transition-colors">
-                          Ajouter
-                        </button>
-                      </div>
-                      {specificDates.length > 0 && (
-                        <div className="flex flex-wrap gap-1.5">
-                          {specificDates.map((d) => (
-                            <span key={d} className="flex items-center gap-1 px-2.5 py-1 bg-primary/10 text-primary rounded-full text-xs font-bold border border-primary/20">
-                              {d}
-                              <button type="button" onClick={() => setSpecificDates((prev) => prev.filter((x) => x !== d))}><X size={10} /></button>
-                            </span>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  )}
-                  {availabilityMode === "weekly" && (
-                    <div className="space-y-2">
-                      <div className="flex gap-1.5">
-                        {["Lun","Mar","Mer","Jeu","Ven","Sam","Dim"].map((day, i) => (
-                          <button key={i} type="button"
-                            onClick={() => setAvailableWeekdays((prev) => prev.includes(i) ? prev.filter((d) => d !== i) : [...prev, i])}
-                            className={`flex-1 py-2 rounded-xl text-[10px] font-black border-2 transition-all ${availableWeekdays.includes(i) ? "border-primary bg-primary text-white" : "border-slate-200 bg-slate-50 text-slate-500 hover:border-primary/30"}`}>
-                            {day}
-                          </button>
-                        ))}
-                      </div>
-                      <div className="grid grid-cols-2 gap-2">
-                        <div>
-                          <label className="text-[10px] font-black tracking-widest text-slate-400 uppercase mb-1 block">Début période</label>
-                          <input type="date" value={availabilityStart} onChange={(e) => setAvailabilityStart(e.target.value)}
-                            className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
-                        </div>
-                        <div>
-                          <label className="text-[10px] font-black tracking-widest text-slate-400 uppercase mb-1 block">Fin période</label>
-                          <input type="date" value={availabilityEnd} onChange={(e) => setAvailabilityEnd(e.target.value)}
-                            className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
-                        </div>
-                      </div>
-                    </div>
-                  )}
-                  {availabilityMode === "period" && (
-                    <div className="space-y-2">
-                      <div className="grid grid-cols-2 gap-2">
-                        <div>
-                          <label className="text-[10px] font-black tracking-widest text-slate-400 uppercase mb-1 block">Date début *</label>
-                          <input type="date" value={availabilityStart} onChange={(e) => setAvailabilityStart(e.target.value)}
-                            className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
-                        </div>
-                        <div>
-                          <label className="text-[10px] font-black tracking-widest text-slate-400 uppercase mb-1 block">Date fin *</label>
-                          <input type="date" value={availabilityEnd} onChange={(e) => setAvailabilityEnd(e.target.value)}
-                            className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
-                        </div>
-                      </div>
-                      <div>
-                        <label className="text-[10px] font-black tracking-widest text-slate-400 uppercase mb-1 block">Jours disponibles</label>
-                        <div className="flex gap-1.5">
-                          {["Lun","Mar","Mer","Jeu","Ven","Sam","Dim"].map((day, i) => (
-                            <button key={i} type="button"
-                              onClick={() => setAvailableWeekdays((prev) => prev.includes(i) ? prev.filter((d) => d !== i) : [...prev, i])}
-                              className={`flex-1 py-2 rounded-xl text-[10px] font-black border-2 transition-all ${availableWeekdays.includes(i) ? "border-primary bg-primary text-white" : "border-slate-200 bg-slate-50 text-slate-500 hover:border-primary/30"}`}>
-                              {day}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    </div>
-                  )}
-                  {availabilityMode === "on_demand" && (
-                    <div className="space-y-2">
-                      <div>
-                        <label className="text-[10px] font-black tracking-widest text-slate-400 uppercase mb-1 block">Délai de réponse *</label>
-                        <div className="flex gap-2">
-                          {["24h","48h","72h"].map((d) => (
-                            <button key={d} type="button" onClick={() => setAvailDelaiReponse(d)}
-                              className={`px-4 py-2 rounded-xl text-xs font-extrabold border-2 transition-all ${availDelaiReponse === d ? "border-primary bg-primary/10 text-primary" : "border-slate-200 bg-slate-50 text-slate-500 hover:border-primary/30"}`}>
-                              {d}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                      <div>
-                        <label className="text-[10px] font-black tracking-widest text-slate-400 uppercase mb-1 block">Message d'accueil</label>
-                        <textarea rows={2} value={availMessageAccueil} onChange={(e) => setAvailMessageAccueil(e.target.value)}
-                          placeholder="Ex : Contactez-moi pour vérifier la disponibilité…"
-                          className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary resize-none placeholder:text-slate-400" />
-                      </div>
-                    </div>
-                  )}
-                  {availabilityMode === "season" && (
-                    <div>
-                      <label className="text-[10px] font-black tracking-widest text-slate-400 uppercase mb-2 block">Saisons *</label>
-                      <div className="flex gap-2">
-                        {SAISONS.map((s) => (
-                          <button key={s} type="button"
-                            onClick={() => setAvailSaisons((prev) => prev.includes(s) ? prev.filter((x) => x !== s) : [...prev, s])}
-                            className={`flex-1 py-2 rounded-xl text-[10px] font-black border-2 transition-all ${availSaisons.includes(s) ? "border-primary bg-primary text-white" : "border-slate-200 bg-slate-50 text-slate-500 hover:border-primary/30"}`}>
-                            {s}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                  {availabilityMode !== "on_demand" && (
-                    <div className="grid grid-cols-2 gap-2 mt-2">
-                      <div>
-                        <label className="text-[10px] font-black tracking-widest text-slate-400 uppercase mb-1 block">Heure début</label>
-                        <input type="time" value={availHeureDebut} onChange={(e) => setAvailHeureDebut(e.target.value)}
-                          className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
-                      </div>
-                      <div>
-                        <label className="text-[10px] font-black tracking-widest text-slate-400 uppercase mb-1 block">Heure fin</label>
-                        <input type="time" value={availHeureFin} onChange={(e) => setAvailHeureFin(e.target.value)}
-                          className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
-                      </div>
-                    </div>
-                  )}
-                </div>}
+                )}
+                {offerStep === 4 && offerActivity?.category === 'hebergement' && (
+                  <div className="p-4 bg-slate-50 border border-slate-200 rounded-2xl text-sm text-slate-500">
+                    <span className="material-symbols-outlined text-slate-400 text-lg align-middle mr-2">info</span>
+                    Les disponibilités sont gérées par unité dans l&apos;étape Détails.
+                  </div>
+                )}
 
-                {/* ── BLOC 4 : TARIFICATION — global pour non-hébergement seulement ── */}
-                {offerActivity?.category !== 'hebergement' && <div className="space-y-3">
+                {/* ── ÉTAPE 6 : TARIFICATION ───────────────────────────── */}
+                {offerStep === 6 && offerActivity?.category === 'hebergement' && (
+                  <div className="p-4 bg-slate-50 border border-slate-200 rounded-2xl text-sm text-slate-500">
+                    <span className="material-symbols-outlined text-slate-400 text-lg align-middle mr-2">info</span>
+                    La tarification est gérée par unité dans l&apos;étape Détails.
+                  </div>
+                )}
+                {offerStep === 6 && offerActivity?.category !== 'hebergement' && <div className="space-y-3">
                   <label className="text-[10px] font-black tracking-widest text-slate-400 uppercase block">Tarification</label>
+                  <div>
+                    <label className="text-[10px] font-black tracking-widest text-slate-400 uppercase mb-1.5 block">Durée (jours) <span className="normal-case font-medium text-slate-300">(optionnel)</span></label>
+                    <div className="relative">
+                      <Clock size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                      <input type="number" min="1" step="1" placeholder="Ex : 3"
+                        value={form.duration} onChange={(e) => setForm((f) => ({ ...f, duration: e.target.value }))}
+                        className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-9 pr-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:bg-white font-mono placeholder:text-slate-400 placeholder:font-sans"
+                      />
+                    </div>
+                  </div>
 
                   {/* Prix par sous-type en mode VARIANT */}
                   {offerMode === "variant" && offerSubtypes.length > 1 && (
@@ -5595,84 +6058,59 @@ export default function ProviderProfilePage() {
                   </div>
                 </div>}
 
-                {/* ── BLOC 5 : CONFIRMATION ──────────────────────────────── */}
-                <div>
-                  <label className="text-[10px] font-black tracking-widest text-slate-400 uppercase mb-2 block">Mode de confirmation</label>
-                  <div className="grid grid-cols-3 gap-2">
-                    {CONFIRMATION_TYPES.slice(0, 3).map((m) => (
-                      <button key={m.value} type="button" onClick={() => setOfferConfirmMode(m.value)}
-                        className={`flex flex-col items-center gap-1 py-3 px-2 rounded-2xl border-2 text-center transition-all ${offerConfirmMode === m.value ? "border-primary bg-primary/10 text-slate-900 shadow-sm" : "border-slate-200 bg-slate-50 text-slate-500 hover:border-primary/30 hover:bg-white"}`}>
-                        <span className={`material-symbols-outlined text-xl ${offerConfirmMode === m.value ? "text-primary" : "text-slate-400"}`}>{m.icon}</span>
-                        <span className="text-[10px] font-extrabold">{m.label}</span>
-                        <span className="text-[9px] font-medium text-slate-400">{m.desc}</span>
-                      </button>
-                    ))}
-                  </div>
-                  <div className="grid grid-cols-2 gap-2 mt-2">
-                    {CONFIRMATION_TYPES.slice(3).map((m) => (
-                      <button key={m.value} type="button" onClick={() => setOfferConfirmMode(m.value)}
-                        className={`flex items-center gap-2 px-3 py-2.5 rounded-xl border-2 text-xs font-bold transition-all ${offerConfirmMode === m.value ? "border-primary bg-primary/10 text-slate-900" : "border-slate-200 bg-slate-50 text-slate-500 hover:border-primary/30"}`}>
-                        <span className={`material-symbols-outlined text-base ${offerConfirmMode === m.value ? "text-primary" : "text-slate-400"}`}>{m.icon}</span>
-                        <div>
-                          <p className="font-extrabold">{m.label}</p>
-                          <p className="text-[9px] font-medium text-slate-400">{m.desc}</p>
-                        </div>
-                      </button>
-                    ))}
-                  </div>
-                  {offerConfirmMode === "deposit" && (
-                    <div className="mt-3">
-                      <label className="text-[10px] font-black tracking-widest text-slate-400 uppercase mb-1 block">Acompte requis (%)</label>
-                      <input type="number" min="1" max="100" value={offerDepositPct} onChange={(e) => setOfferDepositPct(e.target.value)}
-                        className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary font-mono" />
-                    </div>
-                  )}
-                </div>
-
-                {/* ── BLOC 6 : ANNULATION ────────────────────────────────── */}
-                <div>
-                  <label className="text-[10px] font-black tracking-widest text-slate-400 uppercase mb-2 block">Politique d'annulation *</label>
-                  <div className="space-y-1.5">
-                    {CANCELLATION_POLICIES.map((p) => (
-                      <button key={p.value} type="button" onClick={() => setCancellationPolicy(p.value)}
-                        className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl border-2 text-left transition-all ${cancellationPolicy === p.value ? "border-primary bg-primary/10" : "border-slate-200 bg-slate-50 hover:border-primary/30"}`}>
-                        <div className={`w-3.5 h-3.5 rounded-full border-2 shrink-0 flex items-center justify-center ${cancellationPolicy === p.value ? "border-primary" : "border-slate-300"}`}>
-                          {cancellationPolicy === p.value && <div className="w-1.5 h-1.5 rounded-full bg-primary" />}
-                        </div>
-                        <div>
-                          <p className={`text-xs font-extrabold ${cancellationPolicy === p.value ? "text-slate-900" : "text-slate-600"}`}>{p.label}</p>
-                          <p className="text-[10px] font-medium text-slate-400">{p.desc}</p>
-                        </div>
-                      </button>
-                    ))}
-                  </div>
-                  {cancellationPolicy === "custom" && (
-                    <textarea rows={2} value={cancellationDesc} onChange={(e) => setCancellationDesc(e.target.value)}
-                      placeholder="Décrivez votre politique d'annulation personnalisée…"
-                      className="w-full mt-2 bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary resize-none placeholder:text-slate-400" />
-                  )}
-                </div>
-
-                {publishError && (
-                  <div className="flex items-center gap-2 p-3 bg-red-50 border border-red-100 rounded-xl">
-                    <span className="material-symbols-outlined text-red-500 text-base">error</span>
-                    <p className="text-sm font-semibold text-red-600">{publishError}</p>
-                  </div>
+                {/* ── ÉTAPE 7 : CONDITIONS ─────────────────────────────── */}
+                {offerStep === 7 && (
+                  <ConfirmationTypePicker
+                    value={offerConfirmation}
+                    onChange={(v) => setOfferConfirmation((c) => ({ ...c, ...v }))}
+                    hideMeteо
+                  />
                 )}
-              </form>
+
+
+              </div>
             </div>
-            <div className="px-8 py-5 border-t border-slate-100 bg-slate-50/80 flex items-center justify-end gap-3 shrink-0">
-              <button type="button" onClick={closeModal}
-                className="px-5 py-2.5 border border-slate-200 text-slate-600 bg-white rounded-2xl text-xs font-bold hover:bg-slate-50 transition-colors cursor-pointer">
-                Annuler
-              </button>
-              <button type="submit" form="publish-offer-form" disabled={publishing}
-                className="flex items-center gap-2 px-6 py-2.5 bg-primary hover:bg-primary/90 text-white font-extrabold rounded-2xl text-xs shadow-sm hover:shadow transition-all active:scale-95 disabled:opacity-60 cursor-pointer">
-                {publishing
-                  ? <><div className="w-4 h-4 rounded-full border-2 border-white border-t-transparent animate-spin" />{offerEditMode ? "Enregistrement…" : "Publication…"}</>
-                  : <><Send size={14} />{offerEditMode ? "Enregistrer les modifications" : "Publier l'offre"}</>
-                }
-              </button>
+            <div className="px-8 py-5 border-t border-slate-100 bg-slate-50/80 shrink-0 space-y-3">
+              {publishError && (
+                <div className="flex items-center gap-2 p-3 bg-red-50 border border-red-100 rounded-xl">
+                  <span className="material-symbols-outlined text-red-500 text-base">error</span>
+                  <p className="text-sm font-semibold text-red-600">{publishError}</p>
+                </div>
+              )}
+              <div className="flex gap-2 items-center">
+                {offerEditMode && (
+                  <>
+                    <button type="button" onClick={handleDeleteOffer} disabled={offerDeleting || publishing}
+                      className="flex items-center gap-1.5 px-3 py-2.5 rounded-2xl border-2 border-red-200 text-red-500 hover:bg-red-50 font-bold text-xs transition-all disabled:opacity-50 shrink-0">
+                      {offerDeleting ? <span className="w-3.5 h-3.5 border-2 border-red-300 border-t-red-500 rounded-full animate-spin" /> : <Trash2 size={13} />}
+                      Supprimer
+                    </button>
+                    <button type="button" onClick={closeModal} disabled={publishing}
+                      className="flex items-center gap-1.5 px-3 py-2.5 rounded-2xl border-2 border-slate-200 text-slate-500 hover:bg-slate-50 font-bold text-xs transition-all disabled:opacity-50 shrink-0">
+                      Annuler
+                    </button>
+                  </>
+                )}
+                <div className="flex-1" />
+                {offerStep > 1 && (
+                  <button type="button" onClick={() => { setOfferStep((s) => s - 1); setTitleError(""); }}
+                    className="flex items-center gap-2 px-4 py-2.5 rounded-2xl border-2 border-slate-200 text-slate-600 hover:border-slate-300 font-bold text-sm transition-all shrink-0">
+                    <ArrowLeft size={16} /> Retour
+                  </button>
+                )}
+                <button type="button" onClick={handleNextProvider} disabled={publishing}
+                  className="flex items-center justify-center gap-2 px-5 py-2.5 rounded-2xl bg-primary hover:bg-primary/90 text-slate-900 font-extrabold text-sm transition-all shadow-sm disabled:opacity-60 disabled:cursor-not-allowed shrink-0">
+                  {publishing ? (
+                    <span className="w-4 h-4 border-2 border-slate-900/30 border-t-slate-900 rounded-full animate-spin" />
+                  ) : offerStep < PROVIDER_STEPS.length ? (
+                    <> Continuer <ArrowRight size={16} /> </>
+                  ) : offerEditMode ? (
+                    <> Enregistrer <Check size={16} /> </>
+                  ) : (
+                    <> Publier l'offre <Check size={16} /> </>
+                  )}
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -5693,7 +6131,7 @@ export default function ProviderProfilePage() {
 
         return (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-            <div className="bg-white rounded-3xl w-full max-w-xl shadow-2xl relative overflow-hidden flex flex-col max-h-[90vh]">
+            <div className="bg-white rounded-3xl w-full max-w-3xl h-[90vh] shadow-2xl relative overflow-hidden flex flex-col">
 
               <button onClick={closeEditModal}
                 className="absolute top-4 right-4 z-20 w-8 h-8 rounded-full bg-black/30 hover:bg-black/50 text-white flex items-center justify-center transition-colors">
@@ -5703,299 +6141,28 @@ export default function ProviderProfilePage() {
               {!editMode ? (
                 /* ── VIEW MODE ───────────────────────────────────────────── */
                 <>
-                  <div
-                    className="relative h-56 w-full overflow-hidden shrink-0 select-none"
-                    onTouchStart={(e) => setTouchStartX(e.touches[0].clientX)}
-                    onTouchEnd={(e) => {
-                      if (touchStartX === null || sliderImgs.length <= 1) return;
-                      const diff = touchStartX - e.changedTouches[0].clientX;
-                      if (Math.abs(diff) > 40) {
-                        setSliderIdx((i) => diff > 0
-                          ? Math.min(i + 1, sliderImgs.length - 1)
-                          : Math.max(i - 1, 0));
-                      }
-                      setTouchStartX(null);
-                    }}
-                  >
-                    {sliderImgs.length > 0 ? (
-                      <div
-                        className="flex h-full transition-transform duration-300 ease-out"
-                        style={{ transform: `translateX(-${(safeIdx / sliderImgs.length) * 100}%)`, width: `${sliderImgs.length * 100}%` }}
-                      >
-                        {sliderImgs.map((src, i) => (
-                          <div key={i} className="h-full" style={{ width: `${100 / sliderImgs.length}%` }}>
-                            <img src={src} alt="" className="w-full h-full object-cover" />
-                          </div>
-                        ))}
+                  {/* Owner context banner */}
+                  {(() => {
+                    const s = viewOffer.status;
+                    const slabel = s === "approved" ? "Active" : s === "attente_publication" ? "Prêt à publier" : s === "draft" ? "Brouillon" : s === "pending" ? "En attente" : "Refusée";
+                    const scls   = s === "approved" ? "bg-primary/10 text-primary border-primary/20" : s === "attente_publication" ? "bg-teal-50 text-teal-700 border-teal-200" : s === "draft" ? "bg-slate-100 text-slate-600 border-slate-200" : "bg-amber-50 text-amber-700 border-amber-200";
+                    return (
+                      <div className="shrink-0 px-5 py-2.5 flex items-center gap-2.5 bg-slate-50 border-b border-slate-100">
+                        <div className="w-6 h-6 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
+                          <span className="material-symbols-outlined text-primary text-[14px]">storefront</span>
+                        </div>
+                        <span className="text-[11px] font-extrabold text-slate-500 uppercase tracking-wider flex-1">Mon offre</span>
+                        <span className={`text-[10px] font-black px-2.5 py-1 rounded-xl border ${scls}`}>{slabel}</span>
                       </div>
-                    ) : (
-                      <>
-                        <div className={`absolute inset-0 bg-gradient-to-br ${td.gradient} opacity-90`} />
-                        <span className="material-symbols-outlined text-white/25 absolute inset-0 flex items-center justify-center" style={{ fontSize: 110 }}>{td.icon}</span>
-                      </>
-                    )}
-
-                    {sliderImgs.length > 1 && (
-                      <>
-                        <button type="button"
-                          onClick={() => setSliderIdx((i) => Math.max(i - 1, 0))}
-                          disabled={safeIdx === 0}
-                          className="absolute left-3 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-black/40 hover:bg-black/60 text-white flex items-center justify-center transition-all disabled:opacity-30">
-                          <ChevronLeft size={18} />
-                        </button>
-                        <button type="button"
-                          onClick={() => setSliderIdx((i) => Math.min(i + 1, sliderImgs.length - 1))}
-                          disabled={safeIdx === sliderImgs.length - 1}
-                          className="absolute right-3 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-black/40 hover:bg-black/60 text-white flex items-center justify-center transition-all disabled:opacity-30">
-                          <ChevronRight size={18} />
-                        </button>
-                      </>
-                    )}
-
-                    {sliderImgs.length > 1 && (
-                      <div className="absolute bottom-3 left-1/2 -translate-x-1/2 flex gap-1.5">
-                        {sliderImgs.map((_, i) => (
-                          <button key={i} type="button" onClick={() => setSliderIdx(i)}
-                            className={`h-1.5 rounded-full transition-all duration-200 ${i === safeIdx ? "w-5 bg-white" : "w-1.5 bg-white/50"}`}
-                          />
-                        ))}
-                      </div>
-                    )}
-
-                    {sliderImgs.length > 1 && (
-                      <div className="absolute top-3 left-3 bg-black/40 text-white text-[10px] font-bold px-2 py-1 rounded-lg">
-                        {safeIdx + 1} / {sliderImgs.length}
-                      </div>
-                    )}
+                    );
+                  })()}
+                  <div className="flex-1 overflow-y-auto">
+                    <OfferDetailView offer={viewOffer as OfferFull} />
                   </div>
-
-                  <div className="overflow-y-auto flex-1 px-8 py-6 space-y-5">
-                    <h2 className="text-2xl font-extrabold text-slate-800 tracking-tight leading-tight pr-8">{viewOffer.title}</h2>
-
-                    <div className="flex flex-wrap gap-2.5">
-                      {viewOffer.offer_type && (() => {
-                        const t = OFFER_TYPES.find((x) => x.value === viewOffer.offer_type);
-                        return t ? (
-                          <span className="bg-emerald-50 text-emerald-700 border border-emerald-100 rounded-xl px-3 py-1.5 text-[11px] font-extrabold tracking-wider flex items-center gap-1.5 uppercase">
-                            <span className="material-symbols-outlined text-sm leading-none">{t.icon}</span>{t.label}
-                          </span>
-                        ) : null;
-                      })()}
-                      {viewOffer.price !== null && (
-                        <span className="bg-primary/10 text-primary border border-primary/20 rounded-xl px-3 py-1.5 text-[11px] font-extrabold tracking-wider flex items-center gap-1.5">
-                          <span className="font-extrabold">{viewOffer.price} DT</span>
-                          {viewOffer.duration && <span className="text-slate-400 font-bold">/ {viewOffer.duration}j</span>}
-                        </span>
-                      )}
-                      {viewOffer.duration && viewOffer.price === null && (
-                        <span className="bg-slate-50 text-slate-500 border border-slate-200 rounded-xl px-3 py-1.5 text-[11px] font-extrabold tracking-wider flex items-center gap-1.5">
-                          <Clock size={12} />{viewOffer.duration} jours
-                        </span>
-                      )}
-                    </div>
-
-                    {viewOffer.description && (
-                      <div>
-                        <p className="text-[10px] font-black tracking-widest text-slate-400 uppercase mb-2">Description</p>
-                        <p className="text-slate-600 text-sm leading-relaxed whitespace-pre-line">{viewOffer.description}</p>
-                      </div>
-                    )}
-                    {(viewOffer.details as any)?.description_longue && (
-                      <div>
-                        <p className="text-[10px] font-black tracking-widest text-slate-400 uppercase mb-2">Description détaillée</p>
-                        <p className="text-slate-600 text-sm leading-relaxed whitespace-pre-line">{(viewOffer.details as any).description_longue}</p>
-                      </div>
-                    )}
-
-                    {/* ── Détails spécifiques au(x) sous-type(s) ── */}
-                    {(() => {
-                      const details = viewOffer.details as Record<string, any> | null;
-                      if (!details) return null;
-
-                      function renderFieldValue(type: string, v: any): React.ReactNode {
-                        if (type === "boolean") {
-                          return <span className={`text-xs font-extrabold px-2 py-0.5 rounded-lg ${v ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-500"}`}>{v ? "Oui" : "Non"}</span>;
-                        }
-                        if (type === "multiselect" && Array.isArray(v)) {
-                          return (
-                            <div className="flex flex-wrap gap-1 mt-0.5">
-                              {v.map((item: string) => (
-                                <span key={item} className="bg-primary/10 text-primary text-[10px] font-bold px-2 py-0.5 rounded-lg">{item}</span>
-                              ))}
-                            </div>
-                          );
-                        }
-                        return <span className="text-sm font-semibold text-slate-700">{String(v)}</span>;
-                      }
-
-                      function renderFieldsFromData(data: Record<string, any>, config: { sections: any[] }) {
-                        return config.sections.map((section, si) => {
-                          const rows = section.fields.filter((f: any) => {
-                            const v = data[f.key];
-                            return v !== undefined && v !== null && v !== "" && !(Array.isArray(v) && v.length === 0);
-                          });
-                          if (!rows.length) return null;
-                          return (
-                            <div key={si}>
-                              <p className="text-[10px] font-black tracking-widest text-slate-400 uppercase mb-2">{section.label}</p>
-                              <div className="grid grid-cols-2 gap-2">
-                                {rows.map((field: any) => (
-                                  <div key={field.key} className="bg-slate-50 border border-slate-100 rounded-xl p-3">
-                                    <p className="text-[9px] font-black tracking-widest text-slate-400 uppercase mb-1">{field.label}</p>
-                                    {renderFieldValue(field.type, data[field.key])}
-                                  </div>
-                                ))}
-                              </div>
-                            </div>
-                          );
-                        });
-                      }
-
-                      // ── Cas hébergement : subtypes_units + subtypes_config ──
-                      const subtypesUnits = details.subtypes_units as Record<string, Record<string, any>[]> | undefined;
-                      if (subtypesUnits) {
-                        const allSubtypes = viewOffer.offer_subtypes ?? Object.keys(subtypesUnits);
-                        const PROVIDER_SCHEMA_MAP: Record<string, string> = {
-                          chambre_standard: "Chambre standard", chambre_superieure: "Chambre supérieure",
-                          suite: "Suite", dortoir: "Dortoir", bungalow: "Bungalow",
-                          tente_glamping: "Tente glamping", gite_rural: "Gîte rural",
-                          maison_hotes: "Maison d'hôtes", riad_traditionnel: "Riad",
-                          ecolodge: "Écolodge", camping_sauvage: "Camping", ferme_agritouristique: "Ferme agritouristique",
-                        };
-
-                        return (
-                          <div className="space-y-5">
-                            {allSubtypes.map((st) => {
-                              const stConfig = OFFER_DETAIL_FIELDS[st];
-                              if (!stConfig) return null;
-                              const units = subtypesUnits[st] ?? [];
-                              const stCfg = (details.subtypes_config as Record<string, any> | undefined)?.[st] ?? {};
-                              const stLabel = PROVIDER_SCHEMA_MAP[st] ?? st;
-
-                              return (
-                                <div key={st} className="rounded-2xl border border-slate-100 overflow-hidden">
-                                  <div className="bg-slate-50 px-4 py-2.5 border-b border-slate-100">
-                                    <p className="text-[11px] font-black tracking-widest text-slate-500 uppercase">{stLabel}</p>
-                                  </div>
-                                  <div className="p-4 space-y-4">
-                                    {/* Config partagé (check-in, restauration…) */}
-                                    {Object.keys(stCfg).length > 0 && renderFieldsFromData(stCfg, stConfig)}
-
-                                    {/* Unités */}
-                                    {units.map((unit, ui) => {
-                                      const unitKey = `${st}_unit_${ui}`;
-                                      const photosMap = details.photos as Record<string, string[]> | undefined;
-                                      // fallback sur clé ancienne format (suite) si suite_unit_0 absent
-                                      const unitPhotos = photosMap?.[unitKey] ?? photosMap?.[st] ?? [];
-                                      return (
-                                        <div key={ui} className="space-y-3">
-                                          {units.length > 1 && (
-                                            <p className="text-[10px] font-black tracking-widest text-slate-400 uppercase">Unité {ui + 1}</p>
-                                          )}
-                                          {unitPhotos.length > 0 && (
-                                            <div className="grid grid-cols-3 gap-1.5">
-                                              {unitPhotos.map((url, pi) => (
-                                                <div key={pi} className={`aspect-square rounded-xl overflow-hidden border-2 ${pi === 0 ? "border-primary" : "border-transparent"}`}>
-                                                  <img src={url} alt="" className="w-full h-full object-cover" />
-                                                </div>
-                                              ))}
-                                            </div>
-                                          )}
-                                          {renderFieldsFromData({ ...stCfg, ...unit }, stConfig)}
-                                        </div>
-                                      );
-                                    })}
-                                  </div>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        );
-                      }
-
-                      // ── Cas activité/circuit : champs plats ──
-                      const subtype = viewOffer.offer_subtype ?? viewOffer.offer_subtypes?.[0];
-                      if (!subtype) return null;
-                      const config = OFFER_DETAIL_FIELDS[subtype];
-                      if (!config) return null;
-                      const nodes = renderFieldsFromData(details, config);
-                      if (!nodes.some(Boolean)) return null;
-                      return <div className="space-y-4">{nodes}</div>;
-                    })()}
-
-                    {viewOffer.inclusions && (
-                      <div className="bg-emerald-50/60 border border-emerald-100/70 rounded-2xl p-4">
-                        <div className="flex items-center gap-2 mb-2">
-                          <span className="material-symbols-outlined text-emerald-600 text-base leading-none">check_circle</span>
-                          <p className="text-[10px] font-black tracking-widest text-emerald-700 uppercase">Inclusions</p>
-                        </div>
-                        <p className="text-slate-700 text-sm leading-relaxed whitespace-pre-line">{viewOffer.inclusions}</p>
-                      </div>
-                    )}
-
-                    {viewOffer.meeting_point && (
-                      <div>
-                        <div className="flex items-center gap-2 mb-2">
-                          <span className="material-symbols-outlined text-slate-500 text-base leading-none">location_on</span>
-                          <p className="text-[10px] font-black tracking-widest text-slate-400 uppercase">Localisation</p>
-                        </div>
-                        <p className="text-sm font-semibold text-slate-700 mb-2">{viewOffer.meeting_point}</p>
-                        <LocationMap
-                          lat={viewOffer.meeting_lat ?? null}
-                          lng={viewOffer.meeting_lng ?? null}
-                          address={viewOffer.meeting_point}
-                        />
-                      </div>
-                    )}
-
-                    {(viewOffer.min_group_size !== null || viewOffer.max_group_size !== null || viewOffer.min_age !== null) && (
-                      <div className="grid grid-cols-2 gap-3">
-                        {(viewOffer.min_group_size !== null || viewOffer.max_group_size !== null) && (
-                          <div className="flex items-start gap-3 p-3 bg-slate-50 border border-slate-100 rounded-xl">
-                            <span className="material-symbols-outlined text-slate-500 text-xl mt-0.5">group</span>
-                            <div>
-                              <p className="text-[10px] font-black tracking-widest text-slate-400 uppercase">Groupe</p>
-                              <p className="text-sm font-semibold text-slate-700 mt-0.5">
-                                {viewOffer.min_group_size ?? 1} – {viewOffer.max_group_size ?? "∞"} pers.
-                              </p>
-                            </div>
-                          </div>
-                        )}
-                        {viewOffer.min_age !== null && (
-                          <div className="flex items-start gap-3 p-3 bg-slate-50 border border-slate-100 rounded-xl">
-                            <span className="material-symbols-outlined text-slate-500 text-xl mt-0.5">person</span>
-                            <div>
-                              <p className="text-[10px] font-black tracking-widest text-slate-400 uppercase">Âge minimum</p>
-                              <p className="text-sm font-semibold text-slate-700 mt-0.5">{viewOffer.min_age} ans</p>
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    )}
-
-                    {viewOffer.cancellation_policy && (
-                      <div className="flex items-start gap-3 p-4 bg-amber-50/60 border border-amber-100/70 rounded-2xl">
-                        <span className="material-symbols-outlined text-amber-500 text-xl mt-0.5">policy</span>
-                        <div>
-                          <p className="text-[10px] font-black tracking-widest text-amber-700 uppercase mb-1">Politique d'annulation</p>
-                          <p className="text-slate-700 text-sm leading-relaxed whitespace-pre-line">{viewOffer.cancellation_policy}</p>
-                        </div>
-                      </div>
-                    )}
-
-                    <p className="text-[11px] font-bold text-slate-400">
-                      Publiée le {new Date(viewOffer.created_at).toLocaleDateString("fr-FR", { day: "numeric", month: "long", year: "numeric" })}
-                    </p>
-                  </div>
-
-                  <div className="px-8 py-5 border-t border-slate-100 bg-slate-50/80 flex items-center justify-end gap-3 shrink-0">
-                    <button type="button" onClick={closeEditModal}
-                      className="px-5 py-2.5 border border-slate-200 text-slate-600 bg-white rounded-2xl text-xs font-bold hover:bg-slate-50 transition-colors cursor-pointer">
-                      Fermer
-                    </button>
+                  <div className="px-8 py-5 border-t border-slate-100 bg-slate-50/80 flex items-center justify-end shrink-0">
                     <button type="button"
                       onClick={() => { if (viewOffer) openPublishModalForEdit(viewOffer); }}
-                      className="flex items-center gap-2 px-6 py-2.5 bg-primary hover:bg-primary/90 text-white font-extrabold rounded-2xl text-xs shadow-sm transition-all active:scale-95 cursor-pointer">
+                      className="flex items-center gap-2 px-6 py-2.5 bg-primary text-slate-900 font-extrabold rounded-2xl text-xs shadow-sm hover:bg-primary/90 transition-all active:scale-95">
                       <Edit3 size={14} />Gérer
                     </button>
                   </div>
@@ -6595,12 +6762,13 @@ export default function ProviderProfilePage() {
           <div className="lg:col-span-8 space-y-6">
             <div className="bg-slate-100 p-1.5 rounded-2xl flex flex-wrap gap-1 border border-slate-200/50">
               {[
-                { key: "tout",      label: "Tout",       Icon: LayoutGrid },
-                { key: "offres",    label: "Offres",     Icon: Tag },
-                { key: "activites", label: "Activités",  Icon: Sparkles },
-                { key: "circuits",  label: "Circuits",   Icon: Route },
-                { key: "reseau",    label: "Réseau",     Icon: Users },
-                { key: "apropos",   label: "À propos",   Icon: Info },
+                { key: "tout",           label: "Tout",           Icon: LayoutGrid },
+                { key: "offres",         label: "Offres",         Icon: Tag },
+                { key: "activites",      label: "Activités",      Icon: Sparkles },
+                { key: "circuits",       label: "Circuits",       Icon: Route },
+                { key: "reseau",         label: "Réseau",         Icon: Users },
+                { key: "apropos",        label: "À propos",       Icon: Info },
+                { key: "collaborations", label: "Collaborations", Icon: Users },
               ].map(({ key, label, Icon }) => (
                 <button key={key} onClick={() => setActiveTab(key as Tab)}
                   className={`flex-1 min-w-[60px] py-3 px-3 rounded-xl text-xs font-black tracking-tight flex items-center justify-center gap-1.5 transition-all cursor-pointer ${activeTab === key ? "bg-white text-slate-800 shadow-sm" : "text-slate-500 hover:text-slate-700 hover:bg-slate-50/50"}`}>
@@ -6903,25 +7071,32 @@ export default function ProviderProfilePage() {
               <div className="space-y-5">
                 {/* Search */}
                 <div className="bg-white rounded-3xl border border-slate-100 shadow-sm p-6">
-                  <h3 className="font-extrabold text-slate-800 text-base mb-4 flex items-center gap-2"><Search size={16} className="text-primary" />Rechercher un guide certifié</h3>
+                  <h3 className="font-extrabold text-slate-800 text-base mb-4 flex items-center gap-2"><Search size={16} className="text-primary" />Rechercher un utilisateur à suivre</h3>
                   <div className="relative">
                     <Search size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
-                    <input type="text" value={netSearch} onChange={(e) => setNetSearch(e.target.value)} placeholder="Nom d'un guide…"
+                    <input type="text" value={netSearch} onChange={(e) => setNetSearch(e.target.value)} placeholder="Nom d'un guide ou prestataire…"
                       className="w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-primary focus:bg-white transition-colors" />
                     {netSearch && <button onClick={() => { setNetSearch(""); setNetResults([]); }} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"><X size={14} /></button>}
                   </div>
                   {netLoading && <div className="mt-3 flex items-center gap-2 text-xs text-slate-400"><div className="w-3 h-3 rounded-full border-2 border-primary border-t-transparent animate-spin" />Recherche…</div>}
                   {!netLoading && netResults.length > 0 && (
                     <div className="mt-3 divide-y divide-slate-50">
-                      {netResults.map((r) => (
+                      {netResults.map((r) => {
+                        const path = r._type === "guide" ? `/profile/guide/${r.user_id}` : `/profile/provider/${r.user_id}`;
+                        const typeLabel = r._type === "guide" ? "Guide" : "Prestataire";
+                        return (
                         <div key={r.user_id} className="flex items-center justify-between py-3 gap-3">
-                          <button onClick={() => router.push(`/profile/guide/${r.user_id}`)} className="flex items-center gap-3 flex-1 min-w-0 hover:opacity-80 text-left">
+                          <button onClick={() => router.push(path)} className="flex items-center gap-3 flex-1 min-w-0 hover:opacity-80 text-left">
                             <div className="w-10 h-10 rounded-xl bg-slate-100 overflow-hidden flex items-center justify-center shrink-0">{r.photo ? <img src={r.photo} alt={r.full_name} className="w-full h-full object-cover" /> : <span className="material-symbols-outlined text-slate-400">person</span>}</div>
-                            <div className="min-w-0"><p className="font-extrabold text-slate-800 text-sm truncate">{r.full_name}</p>{r.sub && <p className="text-xs text-slate-400">{r.sub}</p>}</div>
+                            <div className="min-w-0">
+                              <p className="font-extrabold text-slate-800 text-sm truncate">{r.full_name}</p>
+                              <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-slate-100 text-slate-500">{typeLabel}</span>
+                            </div>
                           </button>
-                          <button onClick={() => router.push(`/profile/guide/${r.user_id}`)} className="shrink-0 px-3 py-1.5 bg-primary/10 border border-primary/30 text-primary text-xs font-bold rounded-xl hover:bg-primary hover:text-slate-900 transition-all">Voir</button>
+                          <button onClick={() => router.push(path)} className="shrink-0 px-3 py-1.5 bg-primary/10 border border-primary/30 text-primary text-xs font-bold rounded-xl hover:bg-primary hover:text-slate-900 transition-all">Voir</button>
                         </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   )}
                   {!netLoading && netSearch.trim() && netResults.length === 0 && <p className="mt-3 text-xs text-slate-400 italic">Aucun résultat pour "{netSearch}"</p>}
@@ -6972,6 +7147,53 @@ export default function ProviderProfilePage() {
                     </div>
                   )}
                 </div>
+
+                {/* Demandes de suivi reçues */}
+                {followRequests.length > 0 && (
+                  <div className="bg-white rounded-3xl border border-amber-100 shadow-sm p-6">
+                    <h3 className="font-extrabold text-slate-800 text-base mb-4 flex items-center gap-2">
+                      <UserPlus size={16} className="text-amber-500" />Demandes de suivi
+                      <span className="bg-amber-100 text-amber-700 text-xs font-black px-2 py-0.5 rounded-full">{followRequests.length}</span>
+                    </h3>
+                    <div className="divide-y divide-slate-50">
+                      {followRequests.map((req) => {
+                        const roleLabel = req.sender.role === "eco_traveler" ? "Éco-Voyageur" : req.sender.role === "guide" ? "Guide" : "Prestataire";
+                        return (
+                          <div key={req.id} className="flex items-center justify-between py-3 gap-2">
+                            <div className="flex items-center gap-3 flex-1 min-w-0">
+                              <div className="w-10 h-10 rounded-xl bg-slate-100 overflow-hidden flex items-center justify-center shrink-0">
+                                {req.sender.photo ? <img src={req.sender.photo} alt={req.sender.full_name ?? ""} className="w-full h-full object-cover" /> : <span className="material-symbols-outlined text-slate-400">person</span>}
+                              </div>
+                              <div className="min-w-0">
+                                <p className="font-extrabold text-slate-800 text-sm truncate">{req.sender.full_name ?? "Utilisateur"}</p>
+                                <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-slate-100 text-slate-500">{roleLabel}</span>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-1.5 shrink-0">
+                              <button onClick={async () => {
+                                try {
+                                  await apiFetch(`/follows/${req.id}/accept`, { method: "PATCH", headers: { Authorization: `Bearer ${token}` } });
+                                  setFollowRequests((prev) => prev.filter((r) => r.id !== req.id));
+                                  setFollowers((prev) => [...prev, { user_id: req.sender.user_id, full_name: req.sender.full_name ?? "", photo: req.sender.photo, _type: req.sender.role }]);
+                                } catch {}
+                              }} className="px-3 py-1.5 bg-primary text-slate-900 text-xs font-extrabold rounded-xl hover:bg-primary/90 transition-all">
+                                Accepter
+                              </button>
+                              <button onClick={async () => {
+                                try {
+                                  await apiFetch(`/follows/${req.id}/reject`, { method: "DELETE", headers: { Authorization: `Bearer ${token}` } });
+                                  setFollowRequests((prev) => prev.filter((r) => r.id !== req.id));
+                                } catch {}
+                              }} className="px-3 py-1.5 border border-slate-200 text-slate-500 text-xs font-bold rounded-xl hover:bg-slate-50 transition-all">
+                                Refuser
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
 
                 {/* Mes abonnés */}
                 <div className="bg-white rounded-3xl border border-slate-100 shadow-sm p-6">
@@ -7422,6 +7644,258 @@ export default function ProviderProfilePage() {
               </div>
             )}
 
+            {/* ── Onglet Collaborations ── */}
+            {activeTab === "collaborations" && (() => {
+              const SECTION_META: Record<string, { label: string; icon: string; grad: string }> = {
+                restauration: { label: "Restauration", icon: "restaurant",    grad: "from-emerald-600 to-green-500" },
+                transport:    { label: "Transport",    icon: "directions_bus", grad: "from-slate-600 to-slate-500" },
+                hebergement:  { label: "Hébergement", icon: "hotel",          grad: "from-teal-600 to-emerald-500" },
+                guide:        { label: "Guidage",     icon: "hiking",         grad: "from-emerald-500 to-green-500" },
+                autre:        { label: "Autre",       icon: "category",       grad: "from-slate-500 to-slate-600" },
+              };
+              const STATUS_META: Record<string, { label: string; cls: string; icon: string }> = {
+                pending:   { label: "En attente", cls: "bg-slate-100 text-slate-600 border-slate-200",     icon: "schedule" },
+                accepted:  { label: "Acceptée",   cls: "bg-teal-100 text-teal-700 border-teal-200",       icon: "check_circle" },
+                completed: { label: "Complétée",  cls: "bg-emerald-100 text-emerald-700 border-emerald-200", icon: "task_alt" },
+                declined:  { label: "Refusée",    cls: "bg-red-100 text-red-700 border-red-200",          icon: "cancel" },
+              };
+              return (
+                <div className="space-y-4">
+                  {collabLoading ? (
+                    <div className="flex items-center justify-center py-20 gap-3 text-slate-400">
+                      <span className="w-6 h-6 rounded-full border-2 border-primary border-t-transparent animate-spin" />
+                      <span className="text-sm">Chargement…</span>
+                    </div>
+                  ) : collaborations.length === 0 ? (
+                    <div className="bg-white rounded-3xl border border-slate-100/90 shadow-sm p-14 text-center">
+                      <span className="material-symbols-outlined text-5xl text-slate-300 block mb-3">handshake</span>
+                      <p className="font-extrabold text-slate-700 text-base mb-1">Aucune invitation de collaboration</p>
+                      <p className="text-slate-400 text-sm">Vous recevrez ici les invitations des guides pour leurs offres.</p>
+                    </div>
+                  ) : (
+                    collaborations.map((c) => {
+                      const sm = SECTION_META[c.section] ?? SECTION_META.autre;
+                      const st = STATUS_META[c.status] ?? STATUS_META.pending;
+                      return (
+                        <div key={c.id} className="relative group bg-white rounded-3xl border border-slate-100/90 shadow-sm overflow-hidden hover:shadow-md transition-shadow duration-300">
+                          <button
+                            onClick={async () => {
+                              try {
+                                if (['accepted', 'completed'].includes(c.status)) {
+                                  await apiFetch(`/guide/collaborations/${c.id}/withdraw`, { method: "PATCH", headers: { Authorization: `Bearer ${token}` } });
+                                } else {
+                                  await apiFetch(`/guide/collaborations/${c.id}`, { method: "DELETE", headers: { Authorization: `Bearer ${token}` } });
+                                }
+                                setCollaborations(prev => prev.filter(x => x.id !== c.id));
+                              } catch {
+                                alert("Erreur lors de la suppression. Veuillez réessayer.");
+                              }
+                            }}
+                            className="absolute top-2.5 right-2.5 z-10 w-7 h-7 rounded-full bg-white/80 hover:bg-red-50 border border-slate-100 hover:border-red-200 text-slate-300 hover:text-red-400 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all shadow-sm">
+                            <span className="material-symbols-outlined text-sm">delete</span>
+                          </button>
+                          <div className="flex flex-col lg:flex-row">
+                            {/* Image gauche — même proportion que les cartes d'offre */}
+                            <div className="lg:w-2/5 relative min-h-[200px] bg-slate-50 flex items-center justify-center overflow-hidden border-b lg:border-b-0 lg:border-r border-slate-100">
+                              {c.offer_cover ? (
+                                <img src={c.offer_cover} alt={c.offer_title} className="absolute inset-0 w-full h-full object-cover" />
+                              ) : (
+                                <>
+                                  <div className={`absolute inset-0 bg-gradient-to-br ${sm.grad} opacity-90`} />
+                                  <span className="material-symbols-outlined text-white/40 relative z-10" style={{ fontSize: 100 }}>{sm.icon}</span>
+                                </>
+                              )}
+                              {/* Badge statut */}
+                              <div className={`absolute top-3 left-3 text-[10px] font-black tracking-widest uppercase px-3 py-1 rounded-xl shadow border flex items-center gap-1 ${st.cls}`}>
+                                <span className="material-symbols-outlined text-xs">{st.icon}</span>{st.label}
+                              </div>
+                            </div>
+                            {/* Contenu droite */}
+                            <div className="lg:w-3/5 p-6 md:p-8 flex flex-col justify-between">
+                              <div>
+                                <h3 className="text-lg md:text-xl font-extrabold text-slate-800 tracking-tight leading-tight mb-2">{c.offer_title}</h3>
+                                {c.offer_description && (
+                                  <p className="text-slate-500 text-sm leading-relaxed mb-3 line-clamp-2">{c.offer_description}</p>
+                                )}
+                                {c.message && (
+                                  <p className="text-slate-400 text-xs leading-relaxed mb-3 line-clamp-2 italic border-l-2 border-slate-200 pl-3">&ldquo;{c.message}&rdquo;</p>
+                                )}
+                                <div className="flex flex-wrap gap-2.5 mb-4">
+                                  <span className={`flex items-center gap-1.5 text-[11px] font-extrabold tracking-wider px-3 py-1 rounded-xl text-white bg-gradient-to-r ${sm.grad} uppercase`}>
+                                    <span className="material-symbols-outlined text-sm">{sm.icon}</span>{sm.label}
+                                  </span>
+                                </div>
+                              </div>
+                              <div className="flex items-center justify-between border-t border-slate-50 pt-4 mt-3">
+                                <p className="text-[11px] font-bold text-slate-400">
+                                  {new Date(c.created_at).toLocaleDateString("fr-FR", { day: "numeric", month: "long", year: "numeric" })}
+                                </p>
+                                <button onClick={() => {
+                                  setOpenCollab(c);
+                                  setDetailOffer(null);
+                                  setDetailOfferLoading(true);
+                                  apiFetch<OfferFull>(`/guide/offers/${c.offer_id}/detail`, { headers: { Authorization: `Bearer ${token}` } })
+                                    .then(setDetailOffer).catch(() => setDetailOffer(null)).finally(() => setDetailOfferLoading(false));
+                                }}
+                                  className="text-primary hover:text-primary/80 font-extrabold text-xs inline-flex items-center gap-1 hover:translate-x-1 transition-transform duration-200">
+                                  <span>Voir les détails</span><ArrowRight size={14} strokeWidth={2.5} />
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+              );
+            })()}
+
+            {/* ── Formulaire collaboration (après acceptation) ── */}
+            {openCollab && showCollabForm && (
+              <div className="fixed inset-0 z-[60] bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
+                <div className="w-full max-w-3xl h-[90vh] bg-white dark:bg-slate-900 rounded-3xl shadow-2xl overflow-hidden flex flex-col">
+                  <CollaborationModal
+                    collabId={openCollab.id}
+                    offerId={openCollab.offer_id}
+                    section={openCollab.section}
+                    token={token}
+                    onClose={() => { setShowCollabForm(false); setOpenCollab(null); }}
+                    onContributed={() => {
+                      setCollaborations((prev) => prev.map((x) => x.id === openCollab!.id ? { ...x, status: "completed" as const } : x));
+                      setOpenCollab((prev) => prev ? { ...prev, status: "completed" } : null);
+                    }}
+                    onSaved={() => {
+                      setShowCollabForm(false);
+                      setDetailOfferLoading(true);
+                      apiFetch<OfferFull>(`/guide/offers/${openCollab!.offer_id}/detail`, {
+                        headers: { Authorization: `Bearer ${token}` },
+                      }).then(setDetailOffer).catch(() => setDetailOffer(null)).finally(() => setDetailOfferLoading(false));
+                    }}
+                    onDeleted={() => {
+                      setCollaborations((prev) => prev.map((x) => x.id === openCollab!.id ? { ...x, status: "declined" } : x));
+                      setOpenCollab(null);
+                    }}
+                  />
+                </div>
+              </div>
+            )}
+
+            {/* ── Détail de l'offre (OfferDetailView) + actions ── */}
+            {openCollab && !showCollabForm && (
+              <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
+                <div className="w-full max-w-3xl h-[90vh] bg-white rounded-3xl shadow-2xl overflow-hidden flex flex-col relative">
+                  <button onClick={() => { setOpenCollab(null); setDetailOffer(null); }}
+                    className="absolute top-3 right-3 z-10 w-8 h-8 rounded-full bg-black/40 hover:bg-black/60 flex items-center justify-center transition-colors">
+                    <X size={16} className="text-white" />
+                  </button>
+                  {/* Collaboration context banner */}
+                  {(() => {
+                    const sectionLabels: Record<string, string> = { restauration: "Restauration", transport: "Transport", hebergement: "Hébergement", guide: "Guidage", autre_service: "Autre service", autre: "Autre" };
+                    const statusInfo: Record<string, { label: string; cls: string }> = {
+                      pending:   { label: "En attente", cls: "bg-slate-100 text-slate-600 border-slate-200" },
+                      accepted:  { label: "Acceptée",   cls: "bg-teal-50 text-teal-700 border-teal-200" },
+                      completed: { label: "Complétée",  cls: "bg-emerald-50 text-emerald-700 border-emerald-200" },
+                      declined:  { label: "Refusée",    cls: "bg-red-50 text-red-600 border-red-200" },
+                    };
+                    const si = statusInfo[openCollab.status] ?? { label: openCollab.status, cls: "bg-slate-100 text-slate-600 border-slate-200" };
+                    return (
+                      <div className="shrink-0 px-5 py-2.5 flex items-center gap-2.5 bg-amber-50/80 border-b border-amber-100">
+                        <div className="w-6 h-6 rounded-lg bg-amber-100 flex items-center justify-center shrink-0">
+                          <span className="material-symbols-outlined text-amber-600 text-[14px]">handshake</span>
+                        </div>
+                        <span className="text-[11px] font-extrabold text-amber-700 flex-1">
+                          Collaboration · {sectionLabels[openCollab.section] ?? openCollab.section}
+                        </span>
+                        <span className={`text-[10px] font-black px-2.5 py-1 rounded-xl border ${si.cls}`}>{si.label}</span>
+                      </div>
+                    );
+                  })()}
+                  {/* Corps scrollable : OfferDetailView */}
+                  <div className="flex-1 overflow-y-auto">
+                    {detailOfferLoading ? (
+                      <div className="flex items-center justify-center h-full gap-3 text-slate-400">
+                        <span className="w-7 h-7 rounded-full border-2 border-primary border-t-transparent animate-spin" />
+                        <span className="text-sm">Chargement de l&apos;offre…</span>
+                      </div>
+                    ) : detailOffer ? (
+                      <OfferDetailView offer={detailOffer} />
+                    ) : (
+                      <div className="flex items-center justify-center h-full text-slate-400 text-sm">Impossible de charger l&apos;offre.</div>
+                    )}
+                  </div>
+                  {/* Pied : boutons action */}
+                  <div className="px-6 py-4 border-t border-slate-100 shrink-0 flex gap-3">
+                    {openCollab.status === "pending" && (
+                      <>
+                        <button onClick={async () => {
+                          setCollabResponding(true);
+                          try {
+                            await apiFetch(`/guide/collaborations/${openCollab.id}/respond`, {
+                              method: "PATCH",
+                              headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+                              body: JSON.stringify({ status: "accepted" }),
+                            });
+                            setCollaborations((prev) => prev.map((x) => x.id === openCollab!.id ? { ...x, status: "accepted" } : x));
+                            setOpenCollab((prev) => prev ? { ...prev, status: "accepted" } : null);
+                            setShowCollabForm(true);
+                          } finally { setCollabResponding(false); }
+                        }} disabled={collabResponding}
+                          className="flex-1 flex items-center justify-center gap-2 py-3 rounded-2xl bg-primary text-slate-900 font-extrabold text-sm hover:bg-primary/90 transition-all disabled:opacity-60">
+                          {collabResponding ? <span className="w-4 h-4 rounded-full border-2 border-slate-900 border-t-transparent animate-spin" /> : <span className="material-symbols-outlined text-base">check</span>}
+                          Accepter et remplir ma partie
+                        </button>
+                        <button onClick={async () => {
+                          setCollabResponding(true);
+                          try {
+                            await apiFetch(`/guide/collaborations/${openCollab.id}/respond`, {
+                              method: "PATCH",
+                              headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+                              body: JSON.stringify({ status: "declined" }),
+                            });
+                            setCollaborations((prev) => prev.map((x) => x.id === openCollab!.id ? { ...x, status: "declined" } : x));
+                            setOpenCollab(null);
+                          } finally { setCollabResponding(false); }
+                        }} disabled={collabResponding}
+                          className="flex-1 flex items-center justify-center gap-2 py-3 rounded-2xl border-2 border-slate-200 text-slate-600 font-bold text-sm hover:border-red-300 hover:text-red-600 transition-all disabled:opacity-60">
+                          <span className="material-symbols-outlined text-base">close</span>Refuser
+                        </button>
+                      </>
+                    )}
+                    {openCollab.status === "accepted" && (
+                      <button onClick={() => setShowCollabForm(true)}
+                        className="flex-1 flex items-center justify-center gap-2 py-3 rounded-2xl bg-primary text-slate-900 font-extrabold text-sm hover:bg-primary/90 transition-all">
+                        <span className="material-symbols-outlined text-base">edit</span>Compléter ma contribution
+                      </button>
+                    )}
+                    {openCollab.status === "completed" && openCollab.offer_status === "approved" && (
+                      <button onClick={() => setShowCollabForm(true)}
+                        className="flex-1 flex items-center justify-center gap-2 py-3 rounded-2xl bg-emerald-600 text-white font-extrabold text-sm hover:bg-emerald-700 transition-all">
+                        <span className="material-symbols-outlined text-base">visibility</span>Voir ma contribution
+                      </button>
+                    )}
+                    {openCollab.status === "completed" && openCollab.offer_status !== "approved" && (
+                      <div className="flex-1 flex items-center justify-end gap-3">
+                        <button onClick={() => setOpenCollab(null)}
+                          className="px-5 py-2.5 border border-slate-200 text-slate-600 bg-white rounded-2xl text-xs font-bold hover:bg-slate-50 transition-colors cursor-pointer">
+                          Fermer
+                        </button>
+                        <button onClick={() => setShowCollabForm(true)}
+                          className="flex items-center gap-2 px-6 py-2.5 bg-primary hover:bg-primary/90 text-slate-900 font-extrabold rounded-2xl text-xs shadow-sm transition-all active:scale-95 cursor-pointer">
+                          <span className="material-symbols-outlined text-base">edit</span>Gérer
+                        </button>
+                      </div>
+                    )}
+                    {openCollab.status === "declined" && (
+                      <div className="flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-2xl bg-red-50 border border-red-100 text-red-600 text-sm font-bold">
+                        <span className="material-symbols-outlined text-base">cancel</span>Invitation refusée
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+
           </div>
         </div>
       </div>
@@ -7768,6 +8242,38 @@ export default function ProviderProfilePage() {
         </div>
       );
     })()}
+
+      {providerInviteSection && offerEditId && (
+        <InviteCollaboratorModal
+          section={providerInviteSection}
+          token={token}
+          offerId={offerEditId}
+          offerAvail={offerAvail}
+          filterMode={(() => {
+            if (providerInviteSection === "restauration") {
+              return providerRepasMode === "guide" ? "guide" : "restaurant_terroir";
+            }
+            if (providerInviteSection === "autre_service") {
+              const asMode = (providerAutreServiceDet._mode as string) || "guide";
+              if (asMode === "guide") return "guide";
+              return providerAutreServiceCat || undefined;
+            }
+            return undefined;
+          })()}
+          alreadyInvited={providerOfferCollabs
+            .filter((c) => c.section === providerInviteSection && c.status !== "declined")
+            .map((c) => c.userId)}
+          onClose={() => setProviderInviteSection(null)}
+          onInvited={(collaborator) => {
+            const sec = providerInviteSection;
+            setProviderOfferCollabs((prev) => [
+              ...prev.filter((c) => !(c.section === sec && c.userId === collaborator.user_id)),
+              { userId: collaborator.user_id, userName: collaborator.name, userType: collaborator.type, section: sec, status: "pending" },
+            ]);
+            setProviderInviteSection(null);
+          }}
+        />
+      )}
     </>
   );
 }

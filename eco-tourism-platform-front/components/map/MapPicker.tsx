@@ -12,10 +12,7 @@ const markerIcon = L.icon({
 
 async function reverseGeocode(lat: number, lng: number): Promise<string> {
   try {
-    const res = await fetch(
-      `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json`,
-      { headers: { "Accept-Language": "fr" } }
-    );
+    const res = await fetch(`/api/geocode/reverse?lat=${lat}&lon=${lng}`);
     const data = await res.json();
     return data.display_name ?? `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
   } catch {
@@ -23,23 +20,95 @@ async function reverseGeocode(lat: number, lng: number): Promise<string> {
   }
 }
 
-async function searchPlace(
-  query: string
-): Promise<{ lat: number; lng: number; display_name: string } | null> {
+const GEO_STOP = new Set([
+  "de","du","des","le","la","les","el","al","d","l","sur","en","au","aux",
+  "parking","forestier","route","chemin","col","vallée","cascade","piste",
+  "cimetière","mosquée","église","chapelle","ruines","ancienne","ancien",
+  "national","naturel","naturelle","historique","historiques","régional","régionale",
+  "archéologique","international","municipal","municipale","provincial","provinciale",
+  "oasis","canyon","chott","gorges","parc","dune","dunes","réserve",
+  "forêt","lac","mer","mont","plage","site","souk","porte","zone",
+  "ksour","ksar","musée","grotte","sebkha","jebel","djebel",
+]);
+
+function simplifyQuery(q: string): string {
+  return q.split(/\s+/).filter((w) => !GEO_STOP.has(w.toLowerCase())).join(" ").trim();
+}
+
+async function tryFetch(q: string): Promise<{ lat: number; lng: number } | null> {
   try {
-    const res = await fetch(
-      `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&limit=1&accept-language=fr`
-    );
+    const res = await fetch(`/api/geocode/search?q=${encodeURIComponent(q)}`);
     const data = await res.json();
-    if (!data.length) return null;
-    return {
-      lat: parseFloat(data[0].lat),
-      lng: parseFloat(data[0].lon),
-      display_name: data[0].display_name,
-    };
+    if (!Array.isArray(data) || !data.length) return null;
+    return { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) };
   } catch {
     return null;
   }
+}
+
+async function searchPlace(
+  query: string
+): Promise<{ lat: number; lng: number; display_name: string } | null> {
+  const label = query.trim();
+
+  // 1 — requête exacte
+  let c = await tryFetch(label);
+  if (c) return { ...c, display_name: label };
+
+  // 2 — avant la première virgule
+  const beforeComma = label.split(",")[0].trim();
+  if (beforeComma !== label) {
+    c = await tryFetch(beforeComma);
+    if (c) return { ...c, display_name: label };
+  }
+
+  // 3 — après la première virgule
+  const commaIdx = label.indexOf(",");
+  if (commaIdx !== -1) {
+    const afterComma = label.slice(commaIdx + 1).trim();
+    if (afterComma) { c = await tryFetch(afterComma); if (c) return { ...c, display_name: label }; }
+  }
+
+  // 4 — avant le tiret
+  const beforeDash = label.split(/\s*[-–]\s*/)[0].trim();
+  if (beforeDash !== label) {
+    c = await tryFetch(beforeDash);
+    if (c) return { ...c, display_name: label };
+  }
+
+  // 5 — simplifié (sans mots génériques)
+  const stripped = simplifyQuery(label);
+  if (stripped && stripped !== label) {
+    c = await tryFetch(stripped);
+    if (c) return { ...c, display_name: label };
+  }
+
+  // 6 — avant-virgule simplifié
+  if (beforeComma !== label) {
+    const strippedComma = simplifyQuery(beforeComma);
+    if (strippedComma && strippedComma !== beforeComma) {
+      c = await tryFetch(strippedComma);
+      if (c) return { ...c, display_name: label };
+    }
+  }
+
+  // 7 — mots longs uniquement (noms propres probables, ≥4 chars, non-stop)
+  const properWords = label
+    .replace(/[,\-–]/g, " ")
+    .split(/\s+/)
+    .filter((w) => w.length >= 4 && !GEO_STOP.has(w.toLowerCase()));
+  if (properWords.length > 0 && properWords.join(" ") !== stripped) {
+    c = await tryFetch(properWords.join(" "));
+    if (c) return { ...c, display_name: label };
+  }
+
+  // 8 — le premier mot propre seul (si plusieurs)
+  if (properWords.length > 1) {
+    c = await tryFetch(properWords[0]);
+    if (c) return { ...c, display_name: label };
+  }
+
+  return null;
 }
 
 export default function MapPicker({

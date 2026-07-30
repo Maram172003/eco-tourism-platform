@@ -5,9 +5,13 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { Offer } from './entities/offer.entity';
 import { OfferSession } from './entities/offer-session.entity';
+import { OfferCollaboration } from './entities/offer-collaboration.entity';
 import { CreateOfferDto, OfferSustainabilityDto, UpdateOfferDto } from './dto/offer.dto';
 import { ProviderActivity } from '../provider-activity/entities/provider-activity.entity';
 import { ActivityDetails, ActivityDetailsDocument } from '../provider-activity/schemas/activity-details.schema';
+import { GuideAvailabilitySlot } from '../guide/entities/guide-availability.entity';
+import { NotificationService } from '../notifications/notification.service';
+import { SlotLike, overlappingDays, dispoEqual, toSlotType } from '../shared/slot.utils';
 
 // Champs d'onboarding pouvant contraindre la capacité d'une offre
 const CAPACITY_FIELD_NAMES = [
@@ -29,9 +33,18 @@ export class OfferService {
 
     @InjectModel(ActivityDetails.name)
     private readonly activityDetailsModel: Model<ActivityDetailsDocument>,
+
+    @InjectRepository(OfferCollaboration)
+    private readonly collabRepo: Repository<OfferCollaboration>,
+
+    @InjectRepository(GuideAvailabilitySlot)
+    private readonly availRepo: Repository<GuideAvailabilitySlot>,
+
+    private readonly notifService: NotificationService,
   ) {}
 
-  async create(authorId: string, dto: CreateOfferDto, initialStatus: string = 'pending'): Promise<Offer> {
+  async create(authorId: string, dto: CreateOfferDto, initialStatus: string = 'draft'): Promise<Offer> {
+    if (dto.status) initialStatus = dto.status;
     // Validation des contraintes si une activité est liée
     if (dto.activity_id) {
       await this.validateAgainstActivity(dto);
@@ -126,6 +139,10 @@ export class OfferService {
       await this.validateAgainstActivity({ activity_id: dto.activity_id, capacity: undefined, max_group_size: undefined, details: dto.details } as CreateOfferDto);
     }
 
+    // Capture state before modification to detect changes relevant to collab agenda
+    const oldTitle = offer.title ?? '';
+    const oldDispo = ((offer as any).details as any)?.disponibilite as SlotLike | undefined;
+
     if (dto.title !== undefined) offer.title = dto.title;
     if (dto.organization_id !== undefined) offer.organization_id = dto.organization_id ?? null;
     if (dto.activity_id !== undefined) offer.activity_id = dto.activity_id ?? null;
@@ -155,7 +172,105 @@ export class OfferService {
     if (dto.details !== undefined) offer.details = dto.details ?? null;
     if (dto.status !== undefined) offer.status = dto.status;
 
-    return this.repo.save(offer);
+    const saved = await this.repo.save(offer);
+
+    // Synchronize collaborator agenda slots when title or availability changed
+    const newTitle = saved.title ?? oldTitle;
+    const newDispo = ((saved as any).details as any)?.disponibilite as SlotLike | undefined;
+    const titleChanged = oldTitle !== newTitle;
+    const dispoChanged = !dispoEqual(oldDispo, newDispo);
+
+    if ((titleChanged || dispoChanged) && (newDispo?.type || dispoChanged)) {
+      await this.syncCollabSlots(offerId, oldTitle, newTitle, oldDispo, newDispo, titleChanged, dispoChanged);
+    }
+
+    return saved;
+  }
+
+  private async syncCollabSlots(
+    offerId: string,
+    oldTitle: string,
+    newTitle: string,
+    oldDispo: SlotLike | undefined,
+    newDispo: SlotLike | undefined,
+    titleChanged: boolean,
+    dispoChanged: boolean,
+  ): Promise<void> {
+    const collabs = await this.collabRepo.find({ where: { offer_id: offerId } });
+    const activeCollabs = collabs.filter((c) => (c as any).status !== 'declined');
+
+    for (const c of activeCollabs) {
+      const collabStatus = (c as any).status as string;
+      const oldLabel = `[Collab] ${oldTitle} — ${(c as any).section}`;
+      const newLabel = `[Collab] ${newTitle} — ${(c as any).section}`;
+      const collabUserId = (c as any).invited_user_id as string;
+      const hasSlot = ['accepted', 'completed'].includes(collabStatus);
+
+      if (dispoChanged && newDispo?.type) {
+        const allSlots = await this.availRepo.find({ where: { guide_id: collabUserId } });
+        const oldSlots = allSlots.filter((s) => (s as any).label === oldLabel);
+        const otherSlots = allSlots.filter((s) => (s as any).label !== oldLabel);
+
+        let conflictInfo: { label: string; days: string[] } | null = null;
+        for (const slot of otherSlots) {
+          const days = overlappingDays(newDispo, slot as SlotLike);
+          if (days.length > 0) { conflictInfo = { label: (slot as any).label ?? slot.type, days }; break; }
+        }
+
+        if (hasSlot) {
+          if (oldSlots.length) await this.availRepo.remove(oldSlots);
+          await this.availRepo.save(this.availRepo.create({
+            guide_id: collabUserId,
+            type: toSlotType(newDispo.type),
+            dates: newDispo.dates ?? null,
+            start_date: newDispo.start_date ?? null,
+            end_date: newDispo.end_date ?? null,
+            days_of_week: newDispo.days_of_week ?? null,
+            label: newLabel,
+            time_slots: (newDispo as any).time_slots ?? null,
+          }));
+        }
+
+        if (conflictInfo) {
+          await this.notifService.replaceForOffer(collabUserId, 'offer_schedule_conflict', offerId, {
+            offer_id: offerId,
+            offer_title: newTitle,
+            section: (c as any).section,
+            conflicting_slot: conflictInfo.label,
+            conflict_days: conflictInfo.days,
+            message: `Les horaires de l'offre « ${newTitle} » ont changé et créent un conflit avec votre agenda (${conflictInfo.label}). Réglez votre agenda pour maintenir votre collaboration.`,
+          });
+          await this.notifService.deleteForOffer(collabUserId, 'offer_schedule_changed', offerId).catch(() => {});
+        } else {
+          await this.notifService.deleteForOffer(collabUserId, 'offer_schedule_conflict', offerId).catch(() => {});
+          await this.notifService.create(collabUserId, 'offer_schedule_changed', {
+            offer_id: offerId,
+            offer_title: newTitle,
+            section: (c as any).section,
+            message: hasSlot
+              ? `Les horaires de l'offre « ${newTitle} » ont été mis à jour. Votre agenda a été synchronisé automatiquement.`
+              : `Les horaires de l'offre « ${newTitle} » à laquelle vous êtes invité ont été mis à jour.`,
+          });
+        }
+      } else if (titleChanged && hasSlot && oldTitle !== newTitle) {
+        // Only title changed — rename the existing slot label
+        const oldSlots = await this.availRepo.find({ where: { guide_id: collabUserId, label: oldLabel } });
+        if (oldSlots.length) {
+          const s = oldSlots[0];
+          await this.availRepo.remove(oldSlots);
+          await this.availRepo.save(this.availRepo.create({
+            guide_id: collabUserId,
+            type: s.type,
+            dates: s.dates ?? null,
+            start_date: s.start_date ?? null,
+            end_date: s.end_date ?? null,
+            days_of_week: s.days_of_week ?? null,
+            label: newLabel,
+            time_slots: s.time_slots ?? null,
+          }));
+        }
+      }
+    }
   }
 
   async updateOfferSustainability(authorId: string, offerId: string, dto: OfferSustainabilityDto): Promise<Offer> {
@@ -168,6 +283,28 @@ export class OfferService {
   async remove(authorId: string, offerId: string): Promise<{ message: string }> {
     const offer = await this.findOrFail(offerId);
     if (offer.author_id !== authorId) throw new ForbiddenException('Accès refusé.');
+
+    const offerTitle = offer.title ?? 'une offre';
+
+    // Notify collaborators, remove their agenda slots, then delete collab records
+    const collabs = await this.collabRepo.find({ where: { offer_id: offerId } });
+    await Promise.all(
+      collabs.map((c) =>
+        this.notifService.create((c as any).invited_user_id, 'offer_deleted', {
+          offer_id: offerId,
+          offer_title: offerTitle,
+          section: (c as any).section,
+          message: `L'offre « ${offerTitle} » à laquelle vous collaboriez a été supprimée par son propriétaire.`,
+        }),
+      ),
+    );
+    for (const c of collabs) {
+      const collabLabel = `[Collab] ${offerTitle} — ${(c as any).section}`;
+      const slots = await this.availRepo.find({ where: { guide_id: (c as any).invited_user_id, label: collabLabel } });
+      if (slots.length) await this.availRepo.remove(slots);
+    }
+    if (collabs.length) await this.collabRepo.remove(collabs);
+
     await this.repo.remove(offer);
     return { message: 'Offre supprimée.' };
   }

@@ -172,6 +172,7 @@ export default function PublicProviderProfile() {
   const [sliderIdx, setSliderIdx] = useState(0);
 
   const [following, setFollowing] = useState(false);
+  const [followPending, setFollowPending] = useState(false);
   const [followId, setFollowId] = useState<string | null>(null);
   const [followLoading, setFollowLoading] = useState(false);
 
@@ -197,11 +198,12 @@ export default function PublicProviderProfile() {
     Promise.all([
       apiFetch<Provider>(`/providers/${userId}`),
       apiFetch<Offer[]>(`/offers?authorId=${userId}`).catch(() => [] as Offer[]),
-      apiFetch<{ following: boolean; followId: string | null }>(`/follows/status/${userId}`, { headers: { Authorization: `Bearer ${tkn}` } }).catch(() => ({ following: false, followId: null })),
+      apiFetch<{ following: boolean; pending: boolean; followId: string | null }>(`/follows/status/${userId}`, { headers: { Authorization: `Bearer ${tkn}` } }).catch(() => ({ following: false, pending: false, followId: null })),
     ]).then(([p, o, status]) => {
       setProfile(p);
       setOffers(o);
       setFollowing(status.following);
+      setFollowPending(status.pending);
       setFollowId(status.followId);
     }).catch((e: Error) => setError(e.message))
       .finally(() => setLoading(false));
@@ -221,7 +223,7 @@ export default function PublicProviderProfile() {
     return () => document.removeEventListener("mousedown", handle);
   }, []);
 
-  const canFollow = userRole === "eco_traveler" || userRole === "project";
+  const canFollow = ["eco_traveler", "provider", "guide"].includes(userRole) && userId !== viewerId;
 
   async function toggleFollow() {
     if (!token || !canFollow) return;
@@ -230,9 +232,12 @@ export default function PublicProviderProfile() {
       if (following && followId) {
         await apiFetch(`/follows/${userId}`, { method: "DELETE", headers: { Authorization: `Bearer ${token}` } });
         setFollowing(false); setFollowId(null);
+      } else if (followPending && followId) {
+        await apiFetch(`/follows/${followId}/reject`, { method: "DELETE", headers: { Authorization: `Bearer ${token}` } });
+        setFollowPending(false); setFollowId(null);
       } else {
         const f = await apiFetch<{ id: string }>(`/follows/${userId}/provider`, { method: "POST", headers: { Authorization: `Bearer ${token}` } });
-        setFollowing(true); setFollowId(f.id);
+        setFollowPending(true); setFollowId(f.id);
       }
     } finally { setFollowLoading(false); }
   }
@@ -371,8 +376,12 @@ export default function PublicProviderProfile() {
                   <div className="mt-5 w-full flex items-center gap-2">
                     <button onClick={toggleFollow} disabled={followLoading}
                       className={`flex-1 flex items-center justify-center gap-2 py-3 font-extrabold rounded-2xl text-sm transition-all disabled:opacity-60
-                        ${following ? "border-2 border-slate-200 text-slate-600 hover:border-red-300 hover:text-red-500" : "bg-primary text-slate-900 hover:bg-primary/90 active:scale-95 shadow-sm"}`}>
-                      {following ? <><UserMinus size={15} /> Abonné</> : <><UserPlus size={15} /> Suivre</>}
+                        ${following ? "border-2 border-slate-200 text-slate-600 hover:border-red-300 hover:text-red-500"
+                          : followPending ? "border-2 border-primary/40 text-primary hover:border-red-300 hover:text-red-500"
+                          : "bg-primary text-slate-900 hover:bg-primary/90 active:scale-95 shadow-sm"}`}>
+                      {following ? <><UserMinus size={15} /> Abonné</>
+                        : followPending ? <><span className="w-3 h-3 rounded-full border-2 border-primary border-t-transparent animate-spin inline-block" /> En attente</>
+                        : <><UserPlus size={15} /> Suivre</>}
                     </button>
                     <div className="relative" ref={menuRef}>
                       <button onClick={() => setMenuOpen((v) => !v)}

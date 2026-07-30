@@ -1,6 +1,16 @@
 const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001/api";
 
+export class ApiError extends Error {
+  status: number;
+  data: any;
+  constructor(message: string, status: number, data?: any) {
+    super(message);
+    this.status = status;
+    this.data = data;
+  }
+}
+
 let isRefreshing = false;
 let refreshQueue: Array<(token: string) => void> = [];
 
@@ -84,7 +94,10 @@ export async function apiFetch<T>(
 
   if (!res.ok) {
     const message = data?.message || data?.error || "Une erreur est survenue";
-    throw new Error(Array.isArray(message) ? message.join(", ") : message);
+    const msgStr = typeof message === "object" && message !== null
+      ? (message.message ?? JSON.stringify(message))
+      : Array.isArray(message) ? message.join(", ") : message;
+    throw new ApiError(msgStr, res.status, data);
   }
 
   return data;

@@ -3,7 +3,7 @@ import { apiFetch } from "./api";
 export type RegisterPayload = {
   email: string;
   password: string;
-  role: "eco_traveler" | "provider";
+  role: "eco_traveler" | "provider" | "guide";
 };
 
 export type LoginPayload = {

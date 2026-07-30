@@ -1,12 +1,20 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Leaf, Plus, CheckCircle, XCircle } from "lucide-react";
 import { logoutUser } from "@/lib/auth";
 import { apiFetch } from "@/lib/api";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
+
+type DashNotif = {
+  id: string;
+  type: string;
+  data: Record<string, any>;
+  is_read: boolean;
+  created_at: string;
+};
 
 type User = { id: string; email: string; role: string; full_name: string };
 type Badge = { label: string; obtained_at: string };
@@ -45,6 +53,8 @@ type Offer = {
   offer_type: string | null;
   status: string;
   price: number | null;
+  images?: string[] | null;
+  region?: string | null;
 };
 
 type Reservation = {
@@ -143,6 +153,11 @@ export default function ProviderDashboardPage() {
   const [loading, setLoading] = useState(true);
   const [activeItem, setActiveItem] = useState("Tableau de bord");
   const [showScoreDetail, setShowScoreDetail] = useState(false);
+  const [notifications, setNotifications] = useState<DashNotif[]>([]);
+  const [notifOpen, setNotifOpen] = useState(false);
+  const [notifVisible, setNotifVisible] = useState(5);
+  const [notifMenuOpen, setNotifMenuOpen] = useState<string | null>(null);
+  const notifRef = useRef<HTMLDivElement>(null);
 
   const navItems = [
     { label: "Tableau de bord", icon: "dashboard" },
@@ -162,6 +177,9 @@ export default function ProviderDashboardPage() {
       const parsedUser: User = JSON.parse(storedUser);
       if (parsedUser.role !== "provider") { router.push("/auth/login"); return; }
       setUser(parsedUser);
+
+      apiFetch<DashNotif[]>("/notifications", { headers: { Authorization: `Bearer ${tkn}` } })
+        .then(setNotifications).catch(() => {});
 
       Promise.all([
         apiFetch<Provider>("/providers/me", { headers: { Authorization: `Bearer ${tkn}` } }),
@@ -200,6 +218,80 @@ export default function ProviderDashboardPage() {
       });
       setReservations((prev) => prev.map((r) => r.id === id ? { ...r, status: action } : r));
     } catch {}
+  }
+
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (notifRef.current && !notifRef.current.contains(e.target as Node)) {
+        setNotifOpen(false);
+        setNotifVisible(5);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  function notifLabel(n: DashNotif): { title: string; body: string; icon: string } {
+    const section = n.data?.section ?? "";
+    const offer   = n.data?.offer_title ?? "une offre";
+    const who     = n.data?.inviter_name ?? n.data?.invited_user_name ?? "Quelqu'un";
+    switch (n.type) {
+      case "collaboration_invite":
+        return { title: "Invitation à collaborer", icon: "handshake",
+          body: `${who} vous invite à compléter la section « ${section} » de l'offre « ${offer} »` };
+      case "collab_accepted":
+        return { title: "Collaboration acceptée", icon: "check_circle",
+          body: `${who} a accepté votre invitation pour la section « ${section} » de « ${offer} »` };
+      case "collab_declined":
+        return { title: "Invitation refusée", icon: "cancel",
+          body: `${who} a refusé votre invitation pour la section « ${section} » de « ${offer} »` };
+      case "collab_quit":
+        return { title: "Collaborateur retiré", icon: "person_remove",
+          body: `${who} a quitté la section « ${section} » de « ${offer} »` };
+      case "offer_deleted":
+        return { title: "Offre supprimée", icon: "delete_forever",
+          body: `L'offre « ${offer} » à laquelle vous collaboriez a été supprimée` };
+      case "offer_schedule_changed":
+        return { title: "Horaires mis à jour", icon: "event_available",
+          body: `Les horaires de « ${offer} » (${section}) ont changé. Votre agenda a été synchronisé automatiquement.` };
+      case "offer_schedule_conflict":
+        return { title: "Conflit d'agenda", icon: "event_busy",
+          body: `Les horaires de « ${offer} » (${section}) créent un conflit avec votre agenda. Réglez votre agenda.` };
+      default:
+        return { title: "Notification", icon: "notifications", body: n.data?.message ?? "" };
+    }
+  }
+
+  async function markNotifRead(id: string) {
+    const tkn = localStorage.getItem("access_token") || "";
+    await apiFetch(`/notifications/${id}/read`, { method: "PATCH", headers: { Authorization: `Bearer ${tkn}` } }).catch(() => {});
+    setNotifications((prev) => prev.map((n) => n.id === id ? { ...n, is_read: true } : n));
+  }
+
+  async function markNotifUnread(id: string) {
+    const tkn = localStorage.getItem("access_token") || "";
+    await apiFetch(`/notifications/${id}/unread`, { method: "PATCH", headers: { Authorization: `Bearer ${tkn}` } }).catch(() => {});
+    setNotifications((prev) => prev.map((n) => n.id === id ? { ...n, is_read: false } : n));
+  }
+
+  async function markAllNotifRead() {
+    const tkn = localStorage.getItem("access_token") || "";
+    await apiFetch("/notifications/read-all", { method: "PATCH", headers: { Authorization: `Bearer ${tkn}` } }).catch(() => {});
+    setNotifications((prev) => prev.map((n) => ({ ...n, is_read: true })));
+  }
+
+  async function deleteNotif(id: string) {
+    const tkn = localStorage.getItem("access_token") || "";
+    await apiFetch(`/notifications/${id}`, { method: "DELETE", headers: { Authorization: `Bearer ${tkn}` } }).catch(() => {});
+    setNotifications((prev) => prev.filter((n) => n.id !== id));
+    setNotifMenuOpen(null);
+  }
+
+  async function reportNotif(id: string) {
+    const tkn = localStorage.getItem("access_token") || "";
+    await apiFetch(`/notifications/${id}/report`, { method: "PATCH", headers: { Authorization: `Bearer ${tkn}` } }).catch(() => {});
+    setNotifications((prev) => prev.map((n) => n.id === id ? { ...n, is_read: true } : n));
+    setNotifMenuOpen(null);
   }
 
   const score = provider?.sustainability_score ?? null;
@@ -295,9 +387,113 @@ export default function ProviderDashboardPage() {
                 />
                 <span className="material-symbols-outlined absolute left-4 top-3 text-slate-400 text-xl">search</span>
               </div>
-              <button className="size-11 flex items-center justify-center rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-primary/10 hover:text-primary transition-colors shrink-0">
-                <span className="material-symbols-outlined">notifications</span>
-              </button>
+              <div ref={notifRef} className="relative shrink-0">
+                <button
+                  onClick={() => { setNotifOpen((o) => !o); setNotifMenuOpen(null); }}
+                  className="size-11 flex items-center justify-center rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-primary/10 hover:text-primary transition-colors relative"
+                >
+                  <span className="material-symbols-outlined">notifications</span>
+                  {notifications.filter((n) => !n.is_read).length > 0 && (
+                    <span className="absolute top-1.5 right-1.5 min-w-[16px] h-4 px-1 rounded-full bg-red-500 text-white text-[10px] font-bold flex items-center justify-center leading-none">
+                      {notifications.filter((n) => !n.is_read).length > 9 ? "9+" : notifications.filter((n) => !n.is_read).length}
+                    </span>
+                  )}
+                </button>
+
+                {notifOpen && (
+                  <div className="absolute right-0 top-full mt-2 w-80 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl shadow-xl z-50">
+                    <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100 dark:border-slate-800 rounded-t-2xl">
+                      <span className="font-semibold text-sm">Notifications</span>
+                      {notifications.some((n) => !n.is_read) && (
+                        <button onClick={markAllNotifRead} className="text-xs text-primary hover:underline">
+                          Tout marquer lu
+                        </button>
+                      )}
+                    </div>
+                    <div className="max-h-[26rem] overflow-y-auto divide-y divide-slate-100 dark:divide-slate-800">
+                      {notifications.length === 0 ? (
+                        <div className="px-4 py-8 text-center text-sm text-slate-400">
+                          <span className="material-symbols-outlined text-3xl block mb-2 opacity-40">notifications_none</span>
+                          Aucune notification
+                        </div>
+                      ) : (
+                        notifications.slice(0, notifVisible).map((n, nIdx) => {
+                          const { title, body, icon } = notifLabel(n);
+                          const isUnread = !n.is_read;
+                          const menuOpen = notifMenuOpen === `bell-${n.id}`;
+                          const openUp = nIdx >= Math.min(notifVisible, notifications.length) - 2;
+                          return (
+                            <div key={n.id} className={`relative flex gap-3 items-start px-4 py-3 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors cursor-pointer ${isUnread ? "bg-primary/5" : ""}`}>
+                              <div className="flex-1 min-w-0 flex gap-3 items-start" onClick={() => {
+                                if (!n.is_read) markNotifRead(n.id);
+                                setNotifOpen(false);
+                                if (n.type === "collaboration_invite" || n.type === "collab_accepted" || n.type === "collab_declined" || n.type === "collab_quit") {
+                                  router.push("/profile/provider?tab=collaborations");
+                                } else if (n.type === "offer_schedule_conflict") {
+                                  router.push("/profile/provider?tab=agenda");
+                                } else if (n.type === "offer_schedule_changed") {
+                                  router.push("/profile/provider?tab=collaborations");
+                                }
+                              }}>
+                                <span className={`mt-0.5 material-symbols-outlined text-lg shrink-0 ${isUnread ? "text-primary" : "text-slate-400"}`}>
+                                  {icon}
+                                </span>
+                                <div className="flex-1 min-w-0">
+                                  <p className={`text-xs font-semibold truncate ${isUnread ? "text-slate-900 dark:text-white" : "text-slate-500 dark:text-slate-400"}`}>
+                                    {title}
+                                  </p>
+                                  <p className="text-xs text-slate-400 mt-0.5 line-clamp-2">{body}</p>
+                                  <p className="text-[10px] text-slate-300 mt-1">
+                                    {new Date(n.created_at).toLocaleDateString("fr-FR", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}
+                                  </p>
+                                </div>
+                              </div>
+                              <div className="relative shrink-0">
+                                <button
+                                  onClick={(e) => { e.stopPropagation(); setNotifMenuOpen(menuOpen ? null : `bell-${n.id}`); }}
+                                  className="w-6 h-6 flex items-center justify-center rounded-lg hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-400 transition-colors"
+                                >
+                                  <span className="material-symbols-outlined text-base">more_vert</span>
+                                </button>
+                                {menuOpen && (
+                                  <div className={`absolute right-0 w-52 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-lg z-[60] overflow-hidden ${openUp ? "bottom-7" : "top-7"}`}>
+                                    {n.is_read ? (
+                                      <button onClick={(e) => { e.stopPropagation(); markNotifUnread(n.id); setNotifMenuOpen(null); }} className="w-full text-left px-4 py-2.5 text-xs text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 flex items-center gap-2">
+                                        <span className="material-symbols-outlined text-base text-slate-400">mark_email_unread</span>Marquer comme non lu
+                                      </button>
+                                    ) : (
+                                      <button onClick={(e) => { e.stopPropagation(); markNotifRead(n.id); setNotifMenuOpen(null); }} className="w-full text-left px-4 py-2.5 text-xs text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 flex items-center gap-2">
+                                        <span className="material-symbols-outlined text-base text-slate-400">mark_email_read</span>Marquer comme lu
+                                      </button>
+                                    )}
+                                    <button onClick={(e) => { e.stopPropagation(); reportNotif(n.id); }} className="w-full text-left px-4 py-2.5 text-xs text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 flex items-center gap-2">
+                                      <span className="material-symbols-outlined text-base text-amber-400">flag</span>Signaler
+                                    </button>
+                                    <button onClick={(e) => { e.stopPropagation(); deleteNotif(n.id); }} className="w-full text-left px-4 py-2.5 text-xs text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 flex items-center gap-2">
+                                      <span className="material-symbols-outlined text-base">delete</span>Supprimer
+                                    </button>
+                                  </div>
+                                )}
+                              </div>
+                              {isUnread && <span className="w-2 h-2 rounded-full bg-primary shrink-0 mt-1" />}
+                            </div>
+                          );
+                        })
+                      )}
+                    </div>
+                    {notifVisible < notifications.length && (
+                      <div className="border-t border-slate-100 dark:border-slate-800 rounded-b-2xl overflow-hidden">
+                        <button
+                          onClick={() => setNotifVisible((v) => v + 5)}
+                          className="w-full py-3 text-xs text-primary font-semibold hover:bg-primary/5 transition-colors"
+                        >
+                          Voir plus ({notifications.length - notifVisible} restantes)
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
               <div className="h-10 w-[1px] bg-slate-200 dark:bg-slate-700 shrink-0" />
               <button
                 onClick={() => router.push("/profile/provider")}
@@ -569,37 +765,69 @@ export default function ProviderDashboardPage() {
                 <div>
                   <div className="flex items-center justify-between mb-4">
                     <h3 className="text-xl font-bold">Mes Offres</h3>
+                    <button
+                      onClick={() => router.push("/profile/provider")}
+                      className="flex items-center gap-2 px-4 py-2 bg-primary text-slate-900 font-bold rounded-xl text-xs shadow-lg shadow-primary/20 hover:-translate-y-0.5 transition-all"
+                    >
+                      <span className="material-symbols-outlined text-base">add</span>
+                      Créer une offre
+                    </button>
                   </div>
 
                   {offers.length === 0 ? (
-                    <div className="bg-white dark:bg-slate-900 rounded-2xl border border-dashed border-slate-200 dark:border-slate-700 p-12 flex flex-col items-center justify-center text-center">
-                      <span className="material-symbols-outlined text-slate-300 text-5xl mb-3">storefront</span>
-                      <p className="text-slate-800 dark:text-slate-200 font-extrabold text-lg mb-2">Aucune offre créée</p>
-                      <p className="text-slate-400 font-medium text-sm">Rendez-vous sur votre profil pour publier une offre.</p>
+                    <div className="bg-white dark:bg-slate-900 rounded-2xl border border-dashed border-slate-200 dark:border-slate-700 p-10 text-center">
+                      <span className="material-symbols-outlined text-slate-300 text-5xl mb-3 block">storefront</span>
+                      <p className="text-slate-700 font-bold mb-1">Aucune offre publiée</p>
+                      <p className="text-slate-400 text-sm mb-5">Créez votre première prestation et proposez-la aux voyageurs.</p>
+                      <button
+                        onClick={() => router.push("/profile/provider")}
+                        className="inline-flex items-center gap-2 px-5 py-2.5 bg-primary text-slate-900 rounded-xl text-sm font-bold hover:bg-primary/90 shadow-sm"
+                      >
+                        <span className="material-symbols-outlined text-lg">add</span>
+                        Créer ma première offre
+                      </button>
                     </div>
                   ) : (
-                    <div className="space-y-3">
-                      {offers.slice(0, 4).map((offer) => (
-                        <div key={offer.id} className="bg-white dark:bg-slate-900 rounded-2xl border border-primary/5 p-4 flex items-center gap-4">
-                          <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center flex-shrink-0">
-                            <span className="material-symbols-outlined text-primary text-xl">storefront</span>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {offers.map((offer) => (
+                        <div
+                          key={offer.id}
+                          onClick={() => router.push("/profile/provider")}
+                          className="bg-white dark:bg-slate-900 rounded-2xl border border-primary/10 overflow-hidden hover:shadow-md transition-shadow cursor-pointer"
+                        >
+                          {offer.images?.[0] ? (
+                            <img src={offer.images[0]} alt={offer.title} className="w-full h-36 object-cover" />
+                          ) : (
+                            <div className="w-full h-36 bg-primary/10 flex items-center justify-center">
+                              <span className="material-symbols-outlined text-primary text-4xl">storefront</span>
+                            </div>
+                          )}
+                          <div className="p-4">
+                            <div className="flex items-start justify-between gap-2 mb-2">
+                              <h4 className="font-bold text-slate-800 dark:text-slate-100 text-sm leading-snug">{offer.title}</h4>
+                              <span className={`shrink-0 text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                                offer.status === "approved"            ? "bg-green-100 text-green-700"  :
+                                offer.status === "pending"             ? "bg-amber-100 text-amber-700"  :
+                                offer.status === "draft"               ? "bg-slate-100 text-slate-500"  :
+                                offer.status === "attente_publication" ? "bg-teal-100 text-teal-700"    :
+                                "bg-red-100 text-red-600"
+                              }`}>
+                                {offer.status === "approved"            ? "Approuvée"       :
+                                 offer.status === "pending"             ? "En attente"      :
+                                 offer.status === "draft"               ? "Brouillon"       :
+                                 offer.status === "attente_publication" ? "Prêt à publier"  :
+                                 "Refusée"}
+                              </span>
+                            </div>
+                            {offer.region && (
+                              <p className="text-xs text-slate-400 flex items-center gap-1">
+                                <span className="material-symbols-outlined text-sm">location_on</span>
+                                {offer.region}
+                              </p>
+                            )}
                           </div>
-                          <div className="flex-1 min-w-0">
-                            <p className="font-extrabold text-slate-900 dark:text-slate-100 text-sm line-clamp-1">{offer.title}</p>
-                            <p className="text-xs text-slate-400 font-medium">{offer.price ? `${offer.price} TND` : "Sur devis"}</p>
-                          </div>
-                          <span className={`text-xs font-bold px-2.5 py-1 rounded-full flex-shrink-0 ${
-                            offer.status === "approved" ? "bg-green-100 text-green-700"
-                            : offer.status === "pending" ? "bg-amber-100 text-amber-700"
-                            : "bg-red-100 text-red-700"
-                          }`}>
-                            {offer.status === "approved" ? "Publié" : offer.status === "pending" ? "En attente" : "Rejeté"}
-                          </span>
                         </div>
                       ))}
-                      {offers.length > 4 && (
-                        <p className="text-xs text-slate-400 text-center font-bold">+{offers.length - 4} offres supplémentaires</p>
-                      )}
                     </div>
                   )}
                 </div>

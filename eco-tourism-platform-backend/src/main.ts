@@ -1,4 +1,5 @@
 import 'reflect-metadata';
+import { execSync } from 'child_process';
 import { ValidationPipe } from '@nestjs/common';
 import { NestFactory, Reflector } from '@nestjs/core';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
@@ -7,6 +8,13 @@ import { AppModule } from './app.module';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
 import { RolesGuard } from './common/guards/roles.guard';
 
+function freePort(port: number) {
+  try {
+    execSync(`lsof -ti :${port} | xargs kill -9`, { stdio: 'ignore' });
+    // Laisser le temps au OS de libérer le port
+    execSync('sleep 0.5', { stdio: 'ignore' });
+  } catch { /* port déjà libre */ }
+}
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, {
@@ -72,6 +80,7 @@ async function bootstrap() {
 
   const port = Number(process.env.PORT || 4000);
 
+  freePort(port);
   await app.listen(port);
 
   console.log(`✅ API: http://localhost:${port}/api`);

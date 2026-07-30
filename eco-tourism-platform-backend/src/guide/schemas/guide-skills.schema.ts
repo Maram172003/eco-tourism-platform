@@ -20,6 +20,9 @@ export class GuideSkills {
   })
   certifications!: { label: string; proof: string }[];
 
+  @Prop({ type: { name: String, proof: String }, default: null })
+  assurance!: { name: string; proof: string } | null;
+
   @Prop({ type: Boolean, default: false })
   updated_by_behavior!: boolean;
 }

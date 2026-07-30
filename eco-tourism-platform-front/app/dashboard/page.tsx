@@ -6,6 +6,8 @@ import dynamic from "next/dynamic";
 import { Leaf, Plus, X, Check, MapPin } from "lucide-react";
 import { logoutUser } from "@/lib/auth";
 import { apiFetch } from "@/lib/api";
+import OfferDetailView, { type OfferFull } from "@/components/offer/OfferDetailView";
+import CollaborationModal from "@/components/CollaborationModal";
 
 const MapPicker = dynamic(
   () => import("@/components/map/MapPicker"),
@@ -968,6 +970,23 @@ export default function DashboardPage() {
   type DashConv = { id: string; other_user: { full_name: string | null; photo: string | null }; last_message: { content: string; is_mine: boolean } | null; unread_count: number };
   const [dashConvos, setDashConvos] = useState<DashConv[]>([]);
 
+  type DashNotif = { id: string; type: string; data: Record<string, any>; is_read: boolean; created_at: string };
+  type NotifOffer = OfferFull & { price_type?: string | null; status?: string; };
+  const [notifications, setNotifications] = useState<DashNotif[]>([]);
+  const [notifOpen, setNotifOpen] = useState(false);
+  const [expandedNotif, setExpandedNotif] = useState<string | null>(null);
+  const [notifVisible, setNotifVisible] = useState(5);
+  const [respondingNotif, setRespondingNotif] = useState<string | null>(null);
+  const [notifResponses, setNotifResponses] = useState<Record<string, "accepted" | "declined">>({});
+  const [notifOffers, setNotifOffers] = useState<Record<string, NotifOffer>>({});
+  const [loadingOffer, setLoadingOffer] = useState<string | null>(null);
+  const [notifMenuOpen, setNotifMenuOpen] = useState<string | null>(null);
+  const [failedOfferIds, setFailedOfferIds] = useState<Set<string>>(new Set());
+  const [notifToast, setNotifToast] = useState<string | null>(null);
+  const [collabModal, setCollabModal] = useState<{ collabId: string; offerId: string; section: string; inviterName?: string } | null>(null);
+  const fetchedOfferIds = useRef<Set<string>>(new Set());
+  const notifRef = useRef<HTMLDivElement>(null);
+
   useEffect(() => {
     async function init() {
       const storedUser = localStorage.getItem("user");
@@ -985,6 +1004,8 @@ export default function DashboardPage() {
         setToken(tkn);
         apiFetch<DashConv[]>("/messages/conversations", { headers: { Authorization: `Bearer ${tkn}` } })
           .then(setDashConvos).catch(() => {});
+        apiFetch<DashNotif[]>("/notifications", { headers: { Authorization: `Bearer ${tkn}` } })
+          .then(setNotifications).catch(() => {});
 
         const apiPath = userRole === "eco_traveler" ? "/eco-traveler/profile"
           : userRole === "guide" ? "/guide/profile"
@@ -1006,7 +1027,12 @@ export default function DashboardPage() {
             const pubs = await apiFetch<Publication[]>("/publications/mine", { headers: { Authorization: `Bearer ${tkn}` } });
             setPublications(pubs);
           } catch {}
-        } else {
+        } else if (userRole === "guide") {
+          try {
+            const myOffers = await apiFetch<Offer[]>("/guide/offers", { headers: { Authorization: `Bearer ${tkn}` } });
+            setOffers(myOffers);
+          } catch {}
+        } else if (userRole === "provider") {
           try {
             const myOffers = await apiFetch<Offer[]>("/offers/mine", { headers: { Authorization: `Bearer ${tkn}` } });
             setOffers(myOffers);
@@ -1131,6 +1157,155 @@ export default function DashboardPage() {
     document.addEventListener("mousedown", handle);
     return () => document.removeEventListener("mousedown", handle);
   }, []);
+
+  useEffect(() => {
+    function handle(e: MouseEvent) {
+      if (notifRef.current && !notifRef.current.contains(e.target as Node)) { setNotifOpen(false); setNotifVisible(5); }
+    }
+    document.addEventListener("mousedown", handle);
+    return () => document.removeEventListener("mousedown", handle);
+  }, []);
+
+  async function markNotifRead(id: string) {
+    if (!token) return;
+    setNotifications((prev) => prev.map((n) => n.id === id ? { ...n, is_read: true } : n));
+    await apiFetch(`/notifications/${id}/read`, { method: "PATCH", headers: { Authorization: `Bearer ${token}` } }).catch(() => {});
+  }
+
+  async function markNotifUnread(id: string) {
+    if (!token) return;
+    setNotifications((prev) => prev.map((n) => n.id === id ? { ...n, is_read: false } : n));
+    await apiFetch(`/notifications/${id}/unread`, { method: "PATCH", headers: { Authorization: `Bearer ${token}` } }).catch(() => {});
+  }
+
+  async function markAllNotifsRead() {
+    if (!token) return;
+    setNotifications((prev) => prev.map((n) => ({ ...n, is_read: true })));
+    await apiFetch("/notifications/read-all", { method: "PATCH", headers: { Authorization: `Bearer ${token}` } }).catch(() => {});
+  }
+
+  async function fetchNotifOffer(offerId: string) {
+    if (notifOffers[offerId] || fetchedOfferIds.current.has(offerId)) return;
+    fetchedOfferIds.current.add(offerId);
+    setLoadingOffer(offerId);
+    try {
+      const offer = await apiFetch<NotifOffer>(`/guide/offers/${offerId}/detail`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      setNotifOffers((prev) => ({ ...prev, [offerId]: offer }));
+    } catch {
+      setFailedOfferIds((prev) => new Set([...prev, offerId]));
+    } finally {
+      setLoadingOffer(null);
+    }
+  }
+
+  async function deleteNotif(id: string) {
+    setNotifications((prev) => prev.filter((n) => n.id !== id));
+    if (expandedNotif === id) setExpandedNotif(null);
+    setNotifMenuOpen(null);
+    await apiFetch(`/notifications/${id}`, { method: "DELETE", headers: { Authorization: `Bearer ${token}` } }).catch(() => {});
+  }
+
+  async function reportNotif(id: string) {
+    setNotifMenuOpen(null);
+    markNotifRead(id);
+    await apiFetch(`/notifications/${id}/report`, { method: "PATCH", headers: { Authorization: `Bearer ${token}` } }).catch(() => {});
+    setNotifToast("Signalement envoyé. Merci pour votre retour.");
+    setTimeout(() => setNotifToast(null), 3000);
+  }
+
+  async function respondToInvite(notifId: string, collabId: string, offerId: string, section: string, status: "accepted" | "declined") {
+    if (!token || respondingNotif) return;
+    setRespondingNotif(notifId);
+    try {
+      await apiFetch(`/guide/collaborations/${collabId}/respond`, {
+        method: "PATCH",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ status }),
+      });
+      setNotifResponses((prev) => ({ ...prev, [notifId]: status }));
+      markNotifRead(notifId);
+      if (status === "accepted") {
+        const n = notifications.find((x) => x.id === notifId);
+        setCollabModal({
+          collabId,
+          offerId,
+          section,
+          inviterName: n?.data?.inviter_name as string | undefined,
+        });
+      }
+    } catch { /* non-bloquant */ } finally {
+      setRespondingNotif(null);
+    }
+  }
+
+  function notifLabel(n: DashNotif): { title: string; body: string } {
+    const sectionLabel: Record<string, string> = {
+      hebergement: "hébergement", restauration: "restauration",
+      transport: "transport", guide: "guidage", autre: "autre",
+    };
+    if (n.type === "collaboration_invite") {
+      const section = n.data.section ?? "";
+      const inviter = n.data.inviter_name ?? "Un guide";
+      const offerTitle = n.data.offer_title ?? "une offre";
+      return {
+        title: "Invitation à collaborer",
+        body: `${inviter} vous invite pour la section « ${sectionLabel[section] ?? section} » de l'offre « ${offerTitle} »`,
+      };
+    }
+    if (n.type === "collab_accepted") {
+      const name = n.data.invited_user_name ?? "Un collaborateur";
+      const section = n.data.section ?? "";
+      const offerTitle = n.data.offer_title ?? "votre offre";
+      return {
+        title: "Collaboration acceptée ✓",
+        body: `${name} a accepté votre invitation pour la section « ${sectionLabel[section] ?? section} » de « ${offerTitle} »`,
+      };
+    }
+    if (n.type === "collab_declined") {
+      const name = n.data.invited_user_name ?? "Un collaborateur";
+      const section = n.data.section ?? "";
+      const offerTitle = n.data.offer_title ?? "votre offre";
+      return {
+        title: "Collaboration refusée",
+        body: `${name} a refusé votre invitation pour la section « ${sectionLabel[section] ?? section} » de « ${offerTitle} »`,
+      };
+    }
+    if (n.type === "collab_quit") {
+      const name = n.data.invited_user_name ?? "Un collaborateur";
+      const section = n.data.section ?? "";
+      const offerTitle = n.data.offer_title ?? "votre offre";
+      return {
+        title: "Collaborateur retiré",
+        body: `${name} a quitté la collaboration pour la section « ${sectionLabel[section] ?? section} » de « ${offerTitle} »`,
+      };
+    }
+    if (n.type === "offer_deleted") {
+      const offerTitle = n.data.offer_title ?? "une offre";
+      return {
+        title: "Offre supprimée",
+        body: `L'offre « ${offerTitle} » à laquelle vous collaboriez a été supprimée.`,
+      };
+    }
+    if (n.type === "offer_schedule_changed") {
+      const section = sectionLabel[n.data?.section ?? ""] ?? (n.data?.section ?? "");
+      const offerTitle = n.data?.offer_title ?? "une offre";
+      return {
+        title: "Horaires mis à jour",
+        body: `Les horaires de « ${offerTitle} » (${section}) ont changé. Votre agenda a été synchronisé automatiquement.`,
+      };
+    }
+    if (n.type === "offer_schedule_conflict") {
+      const section = sectionLabel[n.data?.section ?? ""] ?? (n.data?.section ?? "");
+      const offerTitle = n.data?.offer_title ?? "une offre";
+      return {
+        title: "Conflit d'agenda",
+        body: `Les horaires de « ${offerTitle} » (${section}) créent un conflit avec votre agenda. Réglez votre agenda.`,
+      };
+    }
+    return { title: "Notification", body: n.data?.message ?? "" };
+  }
 
   if (!role || !profile) {
     return (
@@ -1286,9 +1461,126 @@ export default function DashboardPage() {
                   </div>
                 )}
               </div>
-              <button className="size-11 flex items-center justify-center rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-primary/10 hover:text-primary transition-colors shrink-0">
-                <span className="material-symbols-outlined">notifications</span>
-              </button>
+              <div ref={notifRef} className="relative shrink-0">
+                <button
+                  onClick={() => setNotifOpen((o) => !o)}
+                  className="size-11 flex items-center justify-center rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-primary/10 hover:text-primary transition-colors relative"
+                >
+                  <span className="material-symbols-outlined">notifications</span>
+                  {notifications.filter((n) => !n.is_read).length > 0 && (
+                    <span className="absolute top-1.5 right-1.5 min-w-[16px] h-4 px-1 rounded-full bg-red-500 text-white text-[10px] font-bold flex items-center justify-center leading-none">
+                      {notifications.filter((n) => !n.is_read).length > 9 ? "9+" : notifications.filter((n) => !n.is_read).length}
+                    </span>
+                  )}
+                </button>
+
+                {notifOpen && (
+                  <div className="absolute right-0 top-full mt-2 w-80 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl shadow-xl z-50">
+                    <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100 dark:border-slate-800 rounded-t-2xl">
+                      <span className="font-semibold text-sm">Notifications</span>
+                      {notifications.some((n) => !n.is_read) && (
+                        <button onClick={markAllNotifsRead} className="text-xs text-primary hover:underline">
+                          Tout marquer lu
+                        </button>
+                      )}
+                    </div>
+                    <div className="max-h-[26rem] overflow-y-auto divide-y divide-slate-100 dark:divide-slate-800">
+                      {notifications.length === 0 ? (
+                        <div className="px-4 py-8 text-center text-sm text-slate-400">
+                          <span className="material-symbols-outlined text-3xl block mb-2 opacity-40">notifications_none</span>
+                          Aucune notification
+                        </div>
+                      ) : (
+                        notifications.slice(0, notifVisible).map((n, nIdx) => {
+                          const { title, body } = notifLabel(n);
+                          const isUnread = !n.is_read && !notifResponses[n.id];
+                          const menuOpen = notifMenuOpen === `bell-${n.id}`;
+                          const openUp = nIdx >= Math.min(notifVisible, notifications.length) - 2;
+                          return (
+                            <div key={n.id} className={`relative flex gap-3 items-start px-4 py-3 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors cursor-pointer ${isUnread ? "bg-primary/5" : ""}`}>
+                              <div className="flex-1 min-w-0 flex gap-3 items-start" onClick={() => {
+                                if (!n.is_read) markNotifRead(n.id);
+                                setNotifOpen(false);
+                                const base = role === "guide" ? "/profile/guide" : "/profile/provider";
+                                if (n.type === "collaboration_invite") {
+                                  const collabId = n.data?.collab_id as string | undefined;
+                                  router.push(collabId ? `${base}?tab=collaborations&openCollab=${collabId}` : `${base}?tab=collaborations`);
+                                } else if (["collab_accepted", "collab_declined", "collab_quit"].includes(n.type)) {
+                                  const offerId = n.data?.offer_id as string | undefined;
+                                  router.push(offerId ? `/profile/guide?tab=offres&openOffer=${offerId}` : "/profile/guide?tab=offres");
+                                } else if (n.type === "offer_schedule_conflict") {
+                                  router.push(`${base}?tab=agenda`);
+                                } else if (n.type === "offer_schedule_changed") {
+                                  router.push(`${base}?tab=collaborations`);
+                                }
+                              }}>
+                                <span className={`mt-0.5 material-symbols-outlined text-lg shrink-0 ${isUnread ? "text-primary" : "text-slate-400"}`}>
+                                  {n.type === "collaboration_invite" ? "handshake" : n.type === "collab_accepted" ? "check_circle" : n.type === "collab_declined" ? "cancel" : n.type === "collab_quit" ? "person_remove" : n.type === "offer_deleted" ? "delete_forever" : n.type === "offer_schedule_conflict" ? "event_busy" : n.type === "offer_schedule_changed" ? "event_available" : "notifications"}
+                                </span>
+                                <div className="flex-1 min-w-0">
+                                  <p className={`text-xs font-semibold truncate ${isUnread ? "text-slate-900 dark:text-white" : "text-slate-500 dark:text-slate-400"}`}>
+                                    {title}
+                                  </p>
+                                  <p className="text-xs text-slate-400 mt-0.5 line-clamp-2">{body}</p>
+                                  <p className="text-[10px] text-slate-300 mt-1">
+                                    {new Date(n.created_at).toLocaleDateString("fr-FR", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}
+                                  </p>
+                                </div>
+                              </div>
+                              <div className="relative shrink-0">
+                                <button
+                                  onClick={(e) => { e.stopPropagation(); setNotifMenuOpen(menuOpen ? null : `bell-${n.id}`); }}
+                                  className="w-6 h-6 flex items-center justify-center rounded-lg hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-400 transition-colors"
+                                >
+                                  <span className="material-symbols-outlined text-base">more_vert</span>
+                                </button>
+                                {menuOpen && (
+                                  <div className={`absolute right-0 w-52 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-lg z-[60] overflow-hidden ${openUp ? "bottom-7" : "top-7"}`}>
+                                    {n.is_read ? (
+                                      <button onClick={(e) => { e.stopPropagation(); markNotifUnread(n.id); setNotifMenuOpen(null); }} className="w-full text-left px-4 py-2.5 text-xs text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 flex items-center gap-2">
+                                        <span className="material-symbols-outlined text-base text-slate-400">mark_email_unread</span>Marquer comme non lu
+                                      </button>
+                                    ) : (
+                                      <button onClick={(e) => { e.stopPropagation(); markNotifRead(n.id); setNotifMenuOpen(null); }} className="w-full text-left px-4 py-2.5 text-xs text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 flex items-center gap-2">
+                                        <span className="material-symbols-outlined text-base text-slate-400">mark_email_read</span>Marquer comme lu
+                                      </button>
+                                    )}
+                                    <button onClick={(e) => { e.stopPropagation(); reportNotif(n.id); }} className="w-full text-left px-4 py-2.5 text-xs text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 flex items-center gap-2">
+                                      <span className="material-symbols-outlined text-base text-amber-400">flag</span>Signaler
+                                    </button>
+                                    <button onClick={(e) => { e.stopPropagation(); deleteNotif(n.id); }} className="w-full text-left px-4 py-2.5 text-xs text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 flex items-center gap-2">
+                                      <span className="material-symbols-outlined text-base">delete</span>Supprimer
+                                    </button>
+                                  </div>
+                                )}
+                              </div>
+                              {isUnread && <span className="w-2 h-2 rounded-full bg-primary shrink-0 mt-1" />}
+                            </div>
+                          );
+                        })
+                      )}
+                    </div>
+                    {notifVisible < notifications.length && (
+                      <div className="border-t border-slate-100 dark:border-slate-800 overflow-hidden">
+                        <button
+                          onClick={() => setNotifVisible((v) => v + 5)}
+                          className="w-full py-2.5 text-xs text-primary font-semibold hover:bg-primary/5 transition-colors"
+                        >
+                          Voir plus ({notifications.length - notifVisible} restantes)
+                        </button>
+                      </div>
+                    )}
+                    <div className="border-t border-slate-100 dark:border-slate-800 rounded-b-2xl overflow-hidden">
+                      <button
+                        onClick={() => { setNotifOpen(false); router.push("/notifications"); }}
+                        className="w-full py-3 text-xs font-bold text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors flex items-center justify-center gap-1.5">
+                        <span className="material-symbols-outlined text-sm">open_in_new</span>
+                        Voir toutes les notifications
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
               <div className="h-10 w-[1px] bg-slate-200 dark:bg-slate-700 shrink-0" />
               <button onClick={() => router.push(profilePath)}
                 className="size-11 rounded-full bg-slate-200 border-2 border-primary overflow-hidden shrink-0 hover:opacity-80 transition-opacity" title="Voir mon profil">
@@ -1899,6 +2191,266 @@ export default function DashboardPage() {
               </div>
             )}
 
+            {/* ── Notifications panel supprimé — géré directement dans le popup bell ── */}
+            {false && (
+              <div className="flex gap-5" style={{ height: "calc(100vh - 112px)" }}>
+
+                {/* ── Liste gauche ── */}
+                <div className="w-80 flex-shrink-0 bg-white dark:bg-slate-900 rounded-2xl border border-slate-100 dark:border-slate-800 flex flex-col overflow-hidden">
+                  <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100 dark:border-slate-800 shrink-0">
+                    <span className="font-bold text-base">Notifications</span>
+                    {notifications.some((n) => !n.is_read) && (
+                      <button onClick={markAllNotifsRead} className="text-xs text-primary hover:underline font-medium">
+                        Tout marquer lu
+                      </button>
+                    )}
+                  </div>
+                  <div className="flex-1 overflow-y-auto divide-y divide-slate-100 dark:divide-slate-800">
+                    {notifications.length === 0 ? (
+                      <div className="flex flex-col items-center justify-center h-full text-slate-400 gap-3">
+                        <span className="material-symbols-outlined text-5xl opacity-30">notifications_none</span>
+                        <p className="text-sm">Aucune notification</p>
+                      </div>
+                    ) : (
+                      notifications.map((n) => {
+                        const { title, body } = notifLabel(n);
+                        const isSelected = expandedNotif === n.id;
+                        const responded = notifResponses[n.id];
+                        const isUnread = !n.is_read && !responded;
+                        const menuOpen = notifMenuOpen === `panel-${n.id}`;
+                        return (
+                          <div
+                            key={n.id}
+                            className={`relative flex gap-3 items-start px-4 py-3.5 transition-colors cursor-pointer
+                              ${isSelected ? "bg-primary/10 border-l-2 border-primary" : "hover:bg-slate-50 dark:hover:bg-slate-800"}
+                              ${isUnread && !isSelected ? "bg-primary/5" : ""}`}
+                          >
+                            <div className="flex-1 min-w-0 flex gap-3 items-start" onClick={() => {
+                              if (!n.is_read) markNotifRead(n.id);
+                              const base = role === "guide" ? "/profile/guide" : "/profile/provider";
+                              if (n.type === "collaboration_invite") {
+                                const collabProfilePath = `${base}?tab=collaborations`;
+                                router.push(collabProfilePath);
+                              } else if (["collab_accepted", "collab_declined", "collab_quit"].includes(n.type)) {
+                                router.push("/profile/guide?tab=offres");
+                              } else if (n.type === "offer_schedule_conflict") {
+                                router.push(`${base}?tab=agenda`);
+                              } else if (n.type === "offer_schedule_changed") {
+                                router.push(`${base}?tab=collaborations`);
+                              } else {
+                                setExpandedNotif(n.id);
+                              }
+                            }}>
+                              <span className={`mt-0.5 material-symbols-outlined text-xl shrink-0 ${isUnread ? "text-primary" : "text-slate-400"}`}>
+                                {n.type === "collaboration_invite" ? "handshake" : n.type === "collab_accepted" ? "check_circle" : n.type === "collab_declined" ? "cancel" : n.type === "collab_quit" ? "person_remove" : n.type === "offer_deleted" ? "delete_forever" : n.type === "offer_schedule_conflict" ? "event_busy" : n.type === "offer_schedule_changed" ? "event_available" : "notifications"}
+                              </span>
+                              <div className="flex-1 min-w-0">
+                                <p className={`text-xs font-semibold leading-tight ${isUnread ? "text-slate-900 dark:text-white" : "text-slate-500 dark:text-slate-400"}`}>
+                                  {title}
+                                </p>
+                                <p className="text-xs text-slate-400 mt-1 line-clamp-2 leading-snug">{body}</p>
+                                <p className="text-[10px] text-slate-300 mt-1.5">
+                                  {new Date(n.created_at).toLocaleDateString("fr-FR", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}
+                                </p>
+                              </div>
+                            </div>
+                            <div className="relative shrink-0 flex items-center gap-1">
+                              {isUnread && <span className="w-2 h-2 rounded-full bg-primary" />}
+                              <button
+                                onClick={(e) => { e.stopPropagation(); setNotifMenuOpen(menuOpen ? null : `panel-${n.id}`); }}
+                                className="w-7 h-7 flex items-center justify-center rounded-lg hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-400 transition-colors"
+                              >
+                                <span className="material-symbols-outlined text-lg">more_vert</span>
+                              </button>
+                              {menuOpen && (
+                                <div className="absolute right-0 top-8 w-52 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-lg z-50 overflow-hidden">
+                                  {n.is_read ? (
+                                    <button onClick={(e) => { e.stopPropagation(); markNotifUnread(n.id); setNotifMenuOpen(null); }} className="w-full text-left px-4 py-2.5 text-sm text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 flex items-center gap-2.5">
+                                      <span className="material-symbols-outlined text-base text-slate-400">mark_email_unread</span>Marquer comme non lu
+                                    </button>
+                                  ) : (
+                                    <button onClick={(e) => { e.stopPropagation(); markNotifRead(n.id); setNotifMenuOpen(null); }} className="w-full text-left px-4 py-2.5 text-sm text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 flex items-center gap-2.5">
+                                      <span className="material-symbols-outlined text-base text-slate-400">mark_email_read</span>Marquer comme lu
+                                    </button>
+                                  )}
+                                  <button onClick={(e) => { e.stopPropagation(); reportNotif(n.id); }} className="w-full text-left px-4 py-2.5 text-sm text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 flex items-center gap-2.5">
+                                    <span className="material-symbols-outlined text-base text-amber-400">flag</span>Signaler
+                                  </button>
+                                  <button onClick={(e) => { e.stopPropagation(); deleteNotif(n.id); }} className="w-full text-left px-4 py-2.5 text-sm text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 flex items-center gap-2.5">
+                                    <span className="material-symbols-outlined text-base">delete</span>Supprimer
+                                  </button>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+                </div>
+
+                {/* ── Détail droite ── */}
+                <div className="flex-1 bg-white dark:bg-slate-900 rounded-2xl border border-slate-100 dark:border-slate-800 overflow-hidden flex flex-col">
+                  {collabModal ? (
+                    <CollaborationModal
+                      collabId={collabModal.collabId}
+                      offerId={collabModal.offerId}
+                      section={collabModal.section}
+                      inviterName={collabModal.inviterName}
+                      token={token}
+                      onClose={() => setCollabModal(null)}
+                      onContributed={() => {
+                        const n = notifications.find(
+                          (x) => x.data?.collab_id === collabModal.collabId
+                        );
+                        if (n && !n.is_read) markNotifRead(n.id);
+                      }}
+                    />
+                  ) : !expandedNotif ? (
+                    <div className="flex flex-col items-center justify-center h-full text-slate-300 gap-4">
+                      <span className="material-symbols-outlined text-6xl opacity-40">notifications</span>
+                      <p className="text-sm text-slate-400">Sélectionnez une notification pour voir les détails</p>
+                    </div>
+                  ) : (() => {
+                    const n = notifications.find((x) => x.id === expandedNotif);
+                    if (!n) return null;
+                    const responded = notifResponses[n.id];
+                    const collabId = n.data.collab_id as string | undefined;
+                    const offerId = n.data.offer_id as string | undefined;
+                    const section = n.data.section as string | undefined;
+                    const offer = offerId ? notifOffers[offerId] : undefined;
+                    const sectionLabel: Record<string, string> = {
+                      hebergement: "Hébergement", restauration: "Restauration",
+                      transport: "Transport", guide: "Guidage", autre: "Autre",
+                    };
+                    const offerTypeLabel: Record<string, string> = {
+                      eco_tour: "Éco-Tour", activity: "Activité", workshop: "Atelier",
+                      transfer: "Transfert", sejour: "Séjour", circuit: "Circuit",
+                      activite: "Activité", restauration: "Restauration",
+                      hebergement: "Hébergement", autre: "Autre",
+                    };
+                    // Fetch l'offre si pas encore chargée
+                    if (offerId && !offer && loadingOffer !== offerId) fetchNotifOffer(offerId);
+
+                    return (
+                      <div className="flex flex-col h-full">
+                        {/* En-tête */}
+                        <div className="px-8 py-5 border-b border-slate-100 dark:border-slate-800 shrink-0 flex items-center gap-4">
+                          <span className="w-12 h-12 rounded-2xl bg-primary flex items-center justify-center text-white shrink-0">
+                            <span className="material-symbols-outlined text-2xl">handshake</span>
+                          </span>
+                          <div className="flex-1 min-w-0">
+                            <h2 className="text-lg font-bold leading-tight">Invitation à collaborer</h2>
+                            <p className="text-xs text-slate-400 mt-0.5">
+                              {new Date(n.created_at).toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long", hour: "2-digit", minute: "2-digit" })}
+                            </p>
+                          </div>
+                          {section && (
+                            <span className="shrink-0 px-3 py-1 rounded-full bg-primary/10 text-primary text-xs font-bold">
+                              {sectionLabel[section] ?? section}
+                            </span>
+                          )}
+                        </div>
+
+                        {/* Corps scrollable */}
+                        <div className="flex-1 overflow-y-auto px-8 py-6 space-y-6">
+
+                          {/* ── Invitation info ── */}
+                          <div className="flex items-start gap-3 p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/60">
+                            <span className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
+                              <span className="material-symbols-outlined text-base text-primary">person</span>
+                            </span>
+                            <div>
+                              <p className="text-[11px] uppercase tracking-wide font-semibold text-slate-400">Invitation de</p>
+                              <p className="font-bold text-slate-800 dark:text-white mt-0.5">{n.data.inviter_name ?? "—"}</p>
+                              {n.data.message && (
+                                <p className="text-sm text-slate-500 dark:text-slate-400 mt-1 italic">« {n.data.message} »</p>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* ── Offre complète ── */}
+                          {loadingOffer === offerId ? (
+                            <div className="flex items-center justify-center py-8 gap-3 text-slate-400">
+                              <span className="w-5 h-5 rounded-full border-2 border-primary border-t-transparent animate-spin" />
+                              <span className="text-sm">Chargement de l&apos;offre…</span>
+                            </div>
+                          ) : offer ? (
+                            <OfferDetailView offer={offer} />
+                          ) : offerId && failedOfferIds.has(offerId) ? (
+                            <div className="rounded-2xl border border-red-100 dark:border-red-900/40 bg-red-50 dark:bg-red-900/20 px-5 py-5 flex items-start gap-3">
+                              <span className="material-symbols-outlined text-2xl text-red-400 shrink-0">error_outline</span>
+                              <div>
+                                <p className="font-bold text-red-700 dark:text-red-400 text-sm">Cette offre n&apos;est plus disponible</p>
+                                <p className="text-xs text-red-500/80 dark:text-red-400/70 mt-1">L&apos;offre a peut-être été supprimée ou modifiée par son propriétaire.</p>
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="rounded-2xl border border-slate-100 dark:border-slate-800 px-5 py-4">
+                              <p className="text-sm font-bold text-slate-700 dark:text-slate-200">{n.data.offer_title ?? "Offre"}</p>
+                            </div>
+                          )}
+
+                          {/* ── Boutons réponse ── */}
+                          {offerId && failedOfferIds.has(offerId) ? (
+                            <div className="flex items-center gap-3 rounded-2xl px-6 py-4 font-bold text-sm bg-slate-50 dark:bg-slate-800/60 text-slate-400 border border-slate-200 dark:border-slate-700">
+                              <span className="material-symbols-outlined text-2xl">block</span>
+                              Impossible de répondre — l&apos;offre n&apos;existe plus
+                            </div>
+                          ) : responded === "accepted" ? (
+                            <div className="flex flex-col gap-3">
+                              <div className="flex items-center gap-3 rounded-2xl px-6 py-4 font-bold text-sm bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-400 border border-green-200 dark:border-green-800">
+                                <span className="material-symbols-outlined text-2xl">check_circle</span>
+                                Invitation acceptée
+                              </div>
+                              {collabId && offerId && section && (
+                                <button
+                                  onClick={() => setCollabModal({ collabId, offerId, section, inviterName: n.data?.inviter_name as string | undefined })}
+                                  className="w-full flex items-center justify-center gap-2 rounded-2xl bg-primary hover:bg-primary/90 active:scale-95 text-slate-900 font-bold py-3.5 transition-all text-sm"
+                                >
+                                  <span className="material-symbols-outlined text-xl">edit_note</span>
+                                  Remplir / Modifier ma contribution
+                                </button>
+                              )}
+                            </div>
+                          ) : responded === "declined" ? (
+                            <div className="flex items-center gap-3 rounded-2xl px-6 py-4 font-bold text-sm bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400 border border-red-200 dark:border-red-800">
+                              <span className="material-symbols-outlined text-2xl">cancel</span>
+                              Invitation refusée
+                            </div>
+                          ) : (
+                            <div className="flex gap-3 pb-2">
+                              <button
+                                disabled={respondingNotif === n.id}
+                                onClick={() => collabId && offerId && section && respondToInvite(n.id, collabId, offerId, section, "accepted")}
+                                className="flex-1 flex items-center justify-center gap-2 rounded-2xl bg-green-500 hover:bg-green-600 active:scale-95 disabled:opacity-60 text-white font-bold py-3.5 transition-all text-sm shadow-lg shadow-green-200 dark:shadow-none"
+                              >
+                                {respondingNotif === n.id ? (
+                                  <span className="w-4 h-4 rounded-full border-2 border-white border-t-transparent animate-spin" />
+                                ) : (
+                                  <span className="material-symbols-outlined text-xl">check_circle</span>
+                                )}
+                                Accepter &amp; Compléter ma partie
+                              </button>
+                              <button
+                                disabled={respondingNotif === n.id}
+                                onClick={() => collabId && offerId && section && respondToInvite(n.id, collabId, offerId, section, "declined")}
+                                className="flex items-center justify-center gap-2 rounded-2xl bg-white dark:bg-slate-800 hover:bg-red-50 dark:hover:bg-red-900/20 active:scale-95 disabled:opacity-60 text-red-500 font-bold px-5 py-3.5 transition-all text-sm border border-red-200 dark:border-red-800"
+                              >
+                                <span className="material-symbols-outlined text-xl">cancel</span>
+                                Refuser
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })()}
+                </div>
+
+              </div>
+            )}
+
           </div>
         </main>
       </div>
@@ -1919,6 +2471,19 @@ export default function DashboardPage() {
       {role === "project" && showAddProject && (
         <AddProjectModal token={token} onClose={() => setShowAddProject(false)}
           onSuccess={(p) => { setProfile((prev) => prev ? { ...prev, projects: [...(prev.projects ?? []), p] } : prev); setShowAddProject(false); }} />
+      )}
+
+      {/* ── Toast notifications ── */}
+      {notifToast && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[200] flex items-center gap-3 px-5 py-3.5 bg-slate-800 dark:bg-slate-700 text-white text-sm font-semibold rounded-2xl shadow-xl animate-in fade-in slide-in-from-bottom-4 duration-300">
+          <span className="material-symbols-outlined text-amber-400 text-xl">flag</span>
+          {notifToast}
+        </div>
+      )}
+
+      {/* Fermer menu 3 points en cliquant ailleurs */}
+      {notifMenuOpen && (
+        <div className="fixed inset-0 z-40" onClick={() => setNotifMenuOpen(null)} />
       )}
     </div>
   );

@@ -70,7 +70,24 @@ export class Offer {
   @Column({ type: 'jsonb', nullable: true })
   details!: Record<string, unknown> | null;
 
-  @Column({ type: 'simple-array', nullable: true })
+  @Column({
+    type: 'text',
+    nullable: true,
+    transformer: {
+      to: (v: string[] | null): string | null => (v?.length ? JSON.stringify(v) : null),
+      from: (v: string | null): string[] | null => {
+        if (!v) return null;
+        // New format: JSON array string
+        if (v.trimStart().startsWith('[')) {
+          try { return JSON.parse(v); } catch { return null; }
+        }
+        // Legacy simple-array format: raw string (single image or comma-joined)
+        // Recover single image by returning the raw value as-is
+        if (v.startsWith('data:') || v.startsWith('http')) return [v];
+        return null;
+      },
+    },
+  })
   images!: string[] | null;
 
   @Column({ type: 'text', nullable: true })

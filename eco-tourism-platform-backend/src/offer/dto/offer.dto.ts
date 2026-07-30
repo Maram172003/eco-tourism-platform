@@ -151,6 +151,10 @@ export class CreateOfferDto {
   @IsOptional()
   @IsString()
   cancellation_policy?: string;
+
+  @IsOptional()
+  @IsString()
+  status?: string;
 }
 
 export class OfferSustainabilityDto {

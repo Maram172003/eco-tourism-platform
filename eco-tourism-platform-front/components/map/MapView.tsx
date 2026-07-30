@@ -1,18 +1,17 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import L from "leaflet";
 
-const markerIcon = L.icon({
-  iconUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png",
-  shadowUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
-  iconSize: [25, 41],
-  iconAnchor: [12, 41],
-});
+const PIN_HTML = `
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 42" width="32" height="42">
+  <ellipse cx="16" cy="40" rx="6" ry="2" fill="rgba(0,0,0,.2)"/>
+  <path d="M16 0C9.37 0 4 5.37 4 12c0 9 12 28 12 28S28 21 28 12C28 5.37 22.63 0 16 0z" fill="#10b981" stroke="white" stroke-width="2"/>
+  <circle cx="16" cy="12" r="5" fill="white"/>
+</svg>`;
 
-export default function MapView({ lat, lng }: { lat: number; lng: number }) {
+export default function MapView({ lat, lng, label }: { lat: number; lng: number; label?: string }) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const mapRef = useRef<L.Map | null>(null);
+  const mapRef = useRef<any>(null);
   const [cssReady, setCssReady] = useState(false);
 
   useEffect(() => {
@@ -26,30 +25,20 @@ export default function MapView({ lat, lng }: { lat: number; lng: number }) {
 
   useEffect(() => {
     if (!cssReady || !containerRef.current) return;
-
-    // Initialize map only once per mount
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const L = require("leaflet") as typeof import("leaflet");
+    if (mapRef.current) { mapRef.current.remove(); mapRef.current = null; }
     const map = L.map(containerRef.current, { scrollWheelZoom: false, zoomControl: true });
-    map.setView([lat, lng], 13);
-
+    map.setView([lat, lng], 14);
     L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
       attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
     }).addTo(map);
-
-    L.marker([lat, lng], { icon: markerIcon }).addTo(map);
+    const icon = L.divIcon({ className: "", iconSize: [32, 42], iconAnchor: [16, 42], html: PIN_HTML });
+    const marker = L.marker([lat, lng], { icon }).addTo(map);
+    if (label) marker.bindTooltip(label, { permanent: true, direction: "top", offset: [0, -44], className: "leaflet-meeting-label" });
     mapRef.current = map;
-
-    return () => {
-      map.remove();
-      mapRef.current = null;
-    };
-  }, [cssReady]);
-
-  // Update view when coords change without remounting
-  useEffect(() => {
-    if (mapRef.current) {
-      mapRef.current.setView([lat, lng], 13);
-    }
-  }, [lat, lng]);
+    return () => { map.remove(); mapRef.current = null; };
+  }, [cssReady, lat, lng, label]);
 
   return (
     <div
