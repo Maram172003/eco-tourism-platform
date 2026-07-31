@@ -1,4 +1,4 @@
-import { IsArray, IsDateString, IsInt, IsNotEmpty, IsNumber, IsOptional, IsString, IsUUID, Max, Min } from 'class-validator';
+import { IsArray, IsBoolean, IsDateString, IsInt, IsNotEmpty, IsNumber, IsOptional, IsString, IsUUID, Max, Min } from 'class-validator';
 import { Type } from 'class-transformer';
 
 export class CreateOfferDto {
@@ -165,6 +165,10 @@ export class OfferSustainabilityDto {
 }
 
 export class UpdateOfferDto {
+  @IsOptional()
+  @IsBoolean()
+  _finalize?: boolean;
+
   @IsOptional()
   @IsString()
   title?: string;

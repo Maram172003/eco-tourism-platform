@@ -1502,16 +1502,23 @@ export default function DashboardPage() {
                                 if (!n.is_read) markNotifRead(n.id);
                                 setNotifOpen(false);
                                 const base = role === "guide" ? "/profile/guide" : "/profile/provider";
-                                if (n.type === "collaboration_invite") {
+                                if (n.type === "collaboration_invite" || n.type === "collab_kicked") {
                                   const collabId = n.data?.collab_id as string | undefined;
                                   router.push(collabId ? `${base}?tab=collaborations&openCollab=${collabId}` : `${base}?tab=collaborations`);
                                 } else if (["collab_accepted", "collab_declined", "collab_quit"].includes(n.type)) {
                                   const offerId = n.data?.offer_id as string | undefined;
                                   router.push(offerId ? `/profile/guide?tab=offres&openOffer=${offerId}` : "/profile/guide?tab=offres");
+                                } else if (n.type === "offer_deleted") {
+                                  const collabId = n.data?.collab_id as string | undefined;
+                                  const offerId = n.data?.offer_id as string | undefined;
+                                  if (collabId) router.push(`${base}?tab=collaborations&openCollab=${collabId}`);
+                                  else if (offerId) router.push(`${base}?tab=collaborations&openCollabByOffer=${offerId}`);
+                                  else router.push(`${base}?tab=collaborations`);
                                 } else if (n.type === "offer_schedule_conflict") {
                                   router.push(`${base}?tab=agenda`);
                                 } else if (n.type === "offer_schedule_changed") {
-                                  router.push(`${base}?tab=collaborations`);
+                                  const offerId = n.data?.offer_id as string | undefined;
+                                  router.push(offerId ? `${base}?tab=collaborations&openCollabByOffer=${offerId}` : `${base}?tab=collaborations`);
                                 }
                               }}>
                                 <span className={`mt-0.5 material-symbols-outlined text-lg shrink-0 ${isUnread ? "text-primary" : "text-slate-400"}`}>
@@ -2228,15 +2235,23 @@ export default function DashboardPage() {
                             <div className="flex-1 min-w-0 flex gap-3 items-start" onClick={() => {
                               if (!n.is_read) markNotifRead(n.id);
                               const base = role === "guide" ? "/profile/guide" : "/profile/provider";
-                              if (n.type === "collaboration_invite") {
-                                const collabProfilePath = `${base}?tab=collaborations`;
-                                router.push(collabProfilePath);
+                              if (n.type === "collaboration_invite" || n.type === "collab_kicked") {
+                                const collabId = n.data?.collab_id as string | undefined;
+                                router.push(collabId ? `${base}?tab=collaborations&openCollab=${collabId}` : `${base}?tab=collaborations`);
                               } else if (["collab_accepted", "collab_declined", "collab_quit"].includes(n.type)) {
-                                router.push("/profile/guide?tab=offres");
+                                const offerId = n.data?.offer_id as string | undefined;
+                                router.push(offerId ? `/profile/guide?tab=offres&openOffer=${offerId}` : "/profile/guide?tab=offres");
+                              } else if (n.type === "offer_deleted") {
+                                const collabId = n.data?.collab_id as string | undefined;
+                                const offerId = n.data?.offer_id as string | undefined;
+                                if (collabId) router.push(`${base}?tab=collaborations&openCollab=${collabId}`);
+                                else if (offerId) router.push(`${base}?tab=collaborations&openCollabByOffer=${offerId}`);
+                                else router.push(`${base}?tab=collaborations`);
                               } else if (n.type === "offer_schedule_conflict") {
                                 router.push(`${base}?tab=agenda`);
                               } else if (n.type === "offer_schedule_changed") {
-                                router.push(`${base}?tab=collaborations`);
+                                const offerId = n.data?.offer_id as string | undefined;
+                                router.push(offerId ? `${base}?tab=collaborations&openCollabByOffer=${offerId}` : `${base}?tab=collaborations`);
                               } else {
                                 setExpandedNotif(n.id);
                               }

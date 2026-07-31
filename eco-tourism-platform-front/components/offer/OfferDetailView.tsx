@@ -5,6 +5,8 @@ import dynamic from "next/dynamic";
 import { ChevronLeft, ChevronRight, Globe, X } from "lucide-react";
 import { DOMAIN_CASCADE_CONFIG } from "@/lib/domainCascadeConfig";
 import { OFFER_DETAIL_FIELDS } from "@/lib/offer-schema";
+import { DOMAINES } from "@/lib/guideOfferConfig";
+import { TRANSPORT_ECO_SUBTYPES, TRANSPORT_STD_SUBTYPES } from "@/components/GuideOfferModal";
 
 const MapView = dynamic(() => import("@/components/map/MapView"), { ssr: false });
 
@@ -622,7 +624,10 @@ export default function OfferDetailView({ offer }: { offer: OfferFull }) {
           const sectionCollabs = Array.isArray(d.collaborators)
             ? (d.collaborators as Array<{ id: string; name: string; section: string; status?: string }>)
             : [];
-          const collabFor = (section: string) => sectionCollabs.find((c) => c.section === section && c.status !== "declined");
+          const collabFor = (section: string) => {
+            const candidates = sectionCollabs.filter((c) => c.section === section);
+            return candidates.find((c) => c.status !== "declined") ?? candidates[0] ?? null;
+          };
           const CollabBadge = ({ section }: { section: string }) => {
             const c = collabFor(section);
             if (!c) return null;
@@ -653,6 +658,7 @@ export default function OfferDetailView({ offer }: { offer: OfferFull }) {
                   <CollabBadge section="transport" />
                 </div>
                 <div className="px-4 py-3 space-y-4">
+                  {/* Format multi-type (prestataire transport classique) */}
                   {Array.isArray(d.transport_types) && (d.transport_types as string[]).map((type) => {
                     const svcEntry = (d.transport_svcs as Record<string, any>)?.[type];
                     const fields: Record<string, any> = svcEntry?.fields ?? {};
@@ -688,40 +694,33 @@ export default function OfferDetailView({ offer }: { offer: OfferFull }) {
                       </div>
                     );
                   })}
-                </div>
-              </div>
-            )}
-            {d.repas_flag === true && (
-              <div className="border border-emerald-100 rounded-2xl overflow-hidden">
-                <div className="flex items-center gap-2 px-4 py-3 bg-emerald-50 border-b border-emerald-100">
-                  <span className="material-symbols-outlined text-emerald-600 text-lg">restaurant</span>
-                  <p className="text-xs font-extrabold text-emerald-700">Restauration</p>
-                  <CollabBadge section="restauration" />
-                </div>
-                <div className="px-4 py-3 space-y-4">
-                  {Array.isArray(d.restauration_types) && (d.restauration_types as string[]).map((type) => {
-                    const svcEntry = (d.restauration_svcs as Record<string, any>)?.[type];
-                    const fields: Record<string, any> = svcEntry?.fields ?? {};
-                    const photos: string[] = svcEntry?.photos ?? [];
-                    const fieldDefs = OFFER_DETAIL_FIELDS[type]?.sections?.flatMap((s: any) => s.fields) ?? [];
+                  {/* Format PrestSubBlock (collab transport : transport_eco_sous_type / transport_std_sous_type) */}
+                  {[
+                    { sousType: d.transport_eco_sous_type as string | undefined, details: (d.transport_eco_details as Record<string, any>) ?? {}, subtypes: TRANSPORT_ECO_SUBTYPES, label: "Transport Éco" },
+                    { sousType: d.transport_std_sous_type as string | undefined, details: (d.transport_std_details as Record<string, any>) ?? {}, subtypes: TRANSPORT_STD_SUBTYPES, label: "Transport" },
+                  ].filter(({ sousType }) => !!sousType).map(({ sousType, details, subtypes, label }) => {
+                    const subLabel = subtypes.find((s) => s.value === sousType)?.label ?? sousType!.replace(/_/g, " ");
+                    const fieldDefs = OFFER_DETAIL_FIELDS[sousType!]?.sections?.flatMap((s: any) => s.fields) ?? [];
                     return (
-                      <div key={type} className="space-y-3">
-                        <span className="inline-flex items-center bg-emerald-50 text-emerald-700 text-[11px] font-bold px-2.5 py-1 rounded-lg">{type.replace(/_/g, " ")}</span>
-                        <ServicePhotosGrid photos={photos} accentCls="border-emerald-100" />
+                      <div key={sousType} className="space-y-3">
+                        <div className="flex items-center gap-2">
+                          <span className="text-[10px] font-black tracking-widest text-secondary/60 uppercase">{label}</span>
+                          <span className="inline-flex items-center bg-secondary/10 text-secondary text-[11px] font-bold px-2.5 py-1 rounded-lg">{subLabel}</span>
+                        </div>
                         {fieldDefs.filter((f: any) => {
-                          const v = fields[f.key];
+                          const v = details[f.key];
                           if (v === null || v === undefined || v === "" || v === false) return false;
                           if (Array.isArray(v) && v.length === 0) return false;
-                          if (f.conditionalOn && fields[f.conditionalOn.field] !== f.conditionalOn.value) return false;
+                          if (f.conditionalOn && details[f.conditionalOn.field] !== f.conditionalOn.value) return false;
                           return true;
                         }).map((f: any) => {
-                          const v = fields[f.key];
+                          const v = details[f.key];
                           return (
                             <div key={f.key} className="flex flex-col gap-0.5">
-                              <p className="text-[9px] font-black tracking-widest text-emerald-600 uppercase">{f.label}</p>
+                              <p className="text-[9px] font-black tracking-widest text-secondary/80 uppercase">{f.label}</p>
                               {Array.isArray(v) ? (
                                 <div className="flex flex-wrap gap-1.5">
-                                  {v.map((item: string) => <span key={item} className="text-[11px] bg-emerald-50 text-emerald-700 border border-emerald-100 px-2 py-0.5 rounded-lg font-bold">{item}</span>)}
+                                  {v.map((item: string) => <span key={item} className="text-[11px] bg-secondary/10 text-secondary border border-secondary/20 px-2 py-0.5 rounded-lg font-bold">{item}</span>)}
                                 </div>
                               ) : v === true ? (
                                 <span className="text-xs text-slate-700 font-semibold">Oui</span>
@@ -734,6 +733,116 @@ export default function OfferDetailView({ offer }: { offer: OfferFull }) {
                       </div>
                     );
                   })}
+                </div>
+              </div>
+            )}
+            {d.repas_flag === true && (
+              <div className="border border-emerald-100 rounded-2xl overflow-hidden">
+                <div className="flex items-center gap-2 px-4 py-3 bg-emerald-50 border-b border-emerald-100">
+                  <span className="material-symbols-outlined text-emerald-600 text-lg">restaurant</span>
+                  <p className="text-xs font-extrabold text-emerald-700">Restauration</p>
+                  <CollabBadge section="restauration" />
+                </div>
+                <div className="px-4 py-3 space-y-4">
+                  {d.restauration_mode === "guide" ? (() => {
+                    // Mode guidage gastronomie locale (offre guide)
+                    const gastroCfg = DOMAIN_CASCADE_CONFIG["gastronomie_locale"];
+                    const gastroDetails = (d.restauration_gastro_details as Record<string, string[]>) ?? {};
+                    const pill = (v: string) => (
+                      <span className="text-[11px] bg-emerald-50 text-emerald-700 border border-emerald-100 px-2 py-0.5 rounded-lg font-bold">{v}</span>
+                    );
+                    return (
+                      <div className="space-y-3">
+                        {d.restauration_gastro_expertise && (
+                          <div className="flex items-center gap-2">
+                            <span className="material-symbols-outlined text-emerald-500 text-sm">hiking</span>
+                            <span className="text-[10px] font-black tracking-widest text-emerald-600 uppercase">Guidage Gastronomie locale</span>
+                            <span className="text-xs font-bold bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full">{d.restauration_gastro_expertise as string}</span>
+                          </div>
+                        )}
+                        {Array.isArray(gastroDetails.types) && gastroDetails.types.length > 0 && (
+                          <div>
+                            <p className="text-[9px] font-black tracking-widest text-emerald-600 uppercase mb-1.5">{gastroCfg?.labelType ?? "Types"}</p>
+                            <div className="flex flex-wrap gap-1.5">{gastroDetails.types.map((t) => <span key={t}>{pill(t)}</span>)}</div>
+                          </div>
+                        )}
+                        {Array.isArray(gastroDetails.experiences) && gastroDetails.experiences.length > 0 && (
+                          <div>
+                            <p className="text-[9px] font-black tracking-widest text-emerald-600 uppercase mb-1.5">{gastroCfg?.labelExperiences ?? "Expériences"}</p>
+                            <div className="flex flex-wrap gap-1.5">{gastroDetails.experiences.map((e) => <span key={e}>{pill(e)}</span>)}</div>
+                          </div>
+                        )}
+                        {Array.isArray(gastroDetails.mediation) && gastroDetails.mediation.length > 0 && (
+                          <div>
+                            <p className="text-[9px] font-black tracking-widest text-emerald-600 uppercase mb-1.5">{gastroCfg?.labelMediation ?? "Médiation"}</p>
+                            <div className="flex flex-wrap gap-1.5">{gastroDetails.mediation.map((m) => <span key={m}>{pill(m)}</span>)}</div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })() : d.restauration_mode === "prestataire" ? (() => {
+                    // Mode service prestataire restaurant (offre guide)
+                    const sous = d.restauration_prest_sous_type as string | undefined;
+                    const details = (d.restauration_prest_details as Record<string, any>) ?? {};
+                    if (!sous) return null;
+                    const fieldDefs = OFFER_DETAIL_FIELDS[sous]?.sections?.flatMap((s: any) => s.fields) ?? [];
+                    return (
+                      <div className="space-y-3">
+                        <span className="inline-flex items-center bg-emerald-50 text-emerald-700 text-[11px] font-bold px-2.5 py-1 rounded-lg">{sous.replace(/_/g, " ")}</span>
+                        {fieldDefs.filter((f: any) => {
+                          const v = details[f.key];
+                          if (v === null || v === undefined || v === "" || v === false) return false;
+                          if (Array.isArray(v) && v.length === 0) return false;
+                          return true;
+                        }).map((f: any) => {
+                          const v = details[f.key];
+                          return (
+                            <div key={f.key} className="flex flex-col gap-0.5">
+                              <p className="text-[9px] font-black tracking-widest text-emerald-600 uppercase">{f.label}</p>
+                              {Array.isArray(v) ? (
+                                <div className="flex flex-wrap gap-1.5">{v.map((item: string) => <span key={item} className="text-[11px] bg-emerald-50 text-emerald-700 border border-emerald-100 px-2 py-0.5 rounded-lg font-bold">{item}</span>)}</div>
+                              ) : <p className="text-sm text-slate-700 leading-relaxed">{String(v)}</p>}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    );
+                  })() : (
+                    // Fallback : offre prestataire format (restauration_types / OFFER_DETAIL_FIELDS)
+                    Array.isArray(d.restauration_types) && (d.restauration_types as string[]).map((type) => {
+                      const svcEntry = (d.restauration_svcs as Record<string, any>)?.[type];
+                      const fields: Record<string, any> = svcEntry?.fields ?? {};
+                      const photos: string[] = svcEntry?.photos ?? [];
+                      const fieldDefs = OFFER_DETAIL_FIELDS[type]?.sections?.flatMap((s: any) => s.fields) ?? [];
+                      return (
+                        <div key={type} className="space-y-3">
+                          <span className="inline-flex items-center bg-emerald-50 text-emerald-700 text-[11px] font-bold px-2.5 py-1 rounded-lg">{type.replace(/_/g, " ")}</span>
+                          <ServicePhotosGrid photos={photos} accentCls="border-emerald-100" />
+                          {fieldDefs.filter((f: any) => {
+                            const v = fields[f.key];
+                            if (v === null || v === undefined || v === "" || v === false) return false;
+                            if (Array.isArray(v) && v.length === 0) return false;
+                            if (f.conditionalOn && fields[f.conditionalOn.field] !== f.conditionalOn.value) return false;
+                            return true;
+                          }).map((f: any) => {
+                            const v = fields[f.key];
+                            return (
+                              <div key={f.key} className="flex flex-col gap-0.5">
+                                <p className="text-[9px] font-black tracking-widest text-emerald-600 uppercase">{f.label}</p>
+                                {Array.isArray(v) ? (
+                                  <div className="flex flex-wrap gap-1.5">{v.map((item: string) => <span key={item} className="text-[11px] bg-emerald-50 text-emerald-700 border border-emerald-100 px-2 py-0.5 rounded-lg font-bold">{item}</span>)}</div>
+                                ) : v === true ? (
+                                  <span className="text-xs text-slate-700 font-semibold">Oui</span>
+                                ) : (
+                                  <p className="text-sm text-slate-700 leading-relaxed">{String(v)}</p>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      );
+                    })
+                  )}
                 </div>
               </div>
             )}
@@ -794,6 +903,110 @@ export default function OfferDetailView({ offer }: { offer: OfferFull }) {
                 </div>
               </div>
             )}
+            {d.autre_service_inclus === true && (() => {
+              const autreMode = ((d.autre_service_details as Record<string, any>)?._mode as "guide" | "prestataire") || "guide";
+              const autreCat = d.autre_service_categorie as string | undefined;
+              const autreSub = d.autre_service_sous_type as string | undefined;
+              const autreDetails = (d.autre_service_details as Record<string, any>) ?? {};
+              const autreCascade = autreCat ? (DOMAIN_CASCADE_CONFIG[autreCat] ?? null) : null;
+              return (
+                <div className="border border-slate-200 rounded-2xl overflow-hidden">
+                  <div className="flex items-center gap-2 px-4 py-3 bg-slate-50 border-b border-slate-200">
+                    <span className="material-symbols-outlined text-slate-600 text-lg">category</span>
+                    <p className="text-xs font-extrabold text-slate-700">Autre service</p>
+                    <CollabBadge section="autre_service" />
+                  </div>
+                  <div className="px-4 py-3 space-y-3">
+                    {autreMode === "guide" && autreCat && (
+                      <>
+                        <div>
+                          <p className="text-[9px] font-black tracking-widest text-slate-500 uppercase mb-1">Domaine</p>
+                          <span className="inline-flex items-center gap-1.5 bg-primary/10 text-primary text-xs font-bold px-2.5 py-1 rounded-lg">
+                            <span className="material-symbols-outlined text-sm">{DOMAINES[autreCat]?.icon ?? "category"}</span>
+                            {DOMAINES[autreCat]?.label ?? autreCat.replace(/_/g, " ")}
+                          </span>
+                        </div>
+                        {autreSub && (
+                          <div>
+                            <p className="text-[9px] font-black tracking-widest text-slate-500 uppercase mb-1">Expertise</p>
+                            <span className="inline-flex items-center bg-primary/10 text-primary text-xs font-bold px-2.5 py-1 rounded-lg">{autreSub}</span>
+                          </div>
+                        )}
+                        {Array.isArray(autreDetails.types) && (autreDetails.types as string[]).length > 0 && (
+                          <div>
+                            <p className="text-[9px] font-black tracking-widest text-slate-500 uppercase mb-1">Types</p>
+                            <div className="flex flex-wrap gap-1.5">
+                              {(autreDetails.types as string[]).map((t: string) => (
+                                <span key={t} className="text-[11px] bg-slate-100 text-slate-700 px-2 py-0.5 rounded-lg font-bold">{t}</span>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                        {Array.isArray(autreDetails.experiences) && (autreDetails.experiences as string[]).length > 0 && (
+                          <div>
+                            <p className="text-[9px] font-black tracking-widest text-slate-500 uppercase mb-1">
+                              {autreCascade?.labelExperiences ?? "Expériences"}
+                            </p>
+                            <div className="flex flex-wrap gap-1.5">
+                              {(autreDetails.experiences as string[]).map((e: string) => (
+                                <span key={e} className="text-[11px] bg-primary/10 text-primary px-2 py-0.5 rounded-lg font-bold">{e}</span>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                        {Array.isArray(autreDetails.mediation) && (autreDetails.mediation as string[]).length > 0 && (
+                          <div>
+                            <p className="text-[9px] font-black tracking-widest text-slate-500 uppercase mb-1">
+                              {autreCascade?.labelMediation ?? "Médiation"}
+                            </p>
+                            <div className="flex flex-wrap gap-1.5">
+                              {(autreDetails.mediation as string[]).map((m: string) => (
+                                <span key={m} className="text-[11px] bg-slate-100 text-slate-700 px-2 py-0.5 rounded-lg font-bold">{m}</span>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </>
+                    )}
+                    {autreMode === "prestataire" && autreCat && (
+                      <>
+                        <span className="inline-flex items-center bg-slate-100 text-slate-700 text-[11px] font-bold px-2.5 py-1 rounded-lg">
+                          {autreCat.replace(/_/g, " ")}
+                          {autreSub && ` · ${autreSub.replace(/_/g, " ")}`}
+                        </span>
+                        {autreSub && (() => {
+                          const fieldDefs = OFFER_DETAIL_FIELDS[autreSub]?.sections?.flatMap((s: any) => s.fields) ?? [];
+                          return fieldDefs.filter((f: any) => {
+                            const v = autreDetails[f.key];
+                            if (v === null || v === undefined || v === "" || v === false) return false;
+                            if (Array.isArray(v) && v.length === 0) return false;
+                            if (f.conditionalOn && autreDetails[f.conditionalOn.field] !== f.conditionalOn.value) return false;
+                            return true;
+                          }).map((f: any) => {
+                            const v = autreDetails[f.key];
+                            return (
+                              <div key={f.key} className="flex flex-col gap-0.5">
+                                <p className="text-[9px] font-black tracking-widest text-slate-500 uppercase">{f.label}</p>
+                                {Array.isArray(v) ? (
+                                  <div className="flex flex-wrap gap-1.5">
+                                    {(v as string[]).map((item: string) => <span key={item} className="text-[11px] bg-slate-100 text-slate-700 border border-slate-200 px-2 py-0.5 rounded-lg font-bold">{item}</span>)}
+                                  </div>
+                                ) : v === true ? (
+                                  <span className="text-xs text-slate-700 font-semibold">Oui</span>
+                                ) : (
+                                  <p className="text-sm text-slate-700 leading-relaxed">{String(v)}</p>
+                                )}
+                              </div>
+                            );
+                          });
+                        })()}
+                      </>
+                    )}
+                  </div>
+                </div>
+              );
+            })()}
+
             {inclus.length > 0 && (
               <div className="bg-emerald-50 border border-emerald-100 rounded-2xl p-4">
                 <p className="text-[9px] font-black tracking-widest text-emerald-700 uppercase mb-2.5 flex items-center gap-1.5">

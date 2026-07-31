@@ -248,6 +248,9 @@ export default function ProviderDashboardPage() {
       case "collab_quit":
         return { title: "Collaborateur retiré", icon: "person_remove",
           body: `${who} a quitté la section « ${section} » de « ${offer} »` };
+      case "collab_kicked":
+        return { title: "Retiré de la collaboration", icon: "person_remove",
+          body: `Vous avez été retiré de la section « ${section} » de l'offre « ${offer} »` };
       case "offer_deleted":
         return { title: "Offre supprimée", icon: "delete_forever",
           body: `L'offre « ${offer} » à laquelle vous collaboriez a été supprimée` };
@@ -427,12 +430,24 @@ export default function ProviderDashboardPage() {
                               <div className="flex-1 min-w-0 flex gap-3 items-start" onClick={() => {
                                 if (!n.is_read) markNotifRead(n.id);
                                 setNotifOpen(false);
-                                if (n.type === "collaboration_invite" || n.type === "collab_accepted" || n.type === "collab_declined" || n.type === "collab_quit") {
-                                  router.push("/profile/provider?tab=collaborations");
+                                if (n.type === "collaboration_invite" || n.type === "collab_kicked") {
+                                  const collabId = n.data?.collab_id as string | undefined;
+                                  router.push(collabId ? `/profile/provider?tab=collaborations&openCollab=${collabId}` : "/profile/provider?tab=collaborations");
+                                } else if (n.type === "collab_accepted" || n.type === "collab_declined" || n.type === "collab_quit") {
+                                  // Provider est propriétaire → naviguer vers l'offre
+                                  const offerId = n.data?.offer_id as string | undefined;
+                                  router.push(offerId ? `/profile/provider?tab=offres&openOffer=${offerId}` : "/profile/provider?tab=offres");
+                                } else if (n.type === "offer_deleted") {
+                                  const collabId = n.data?.collab_id as string | undefined;
+                                  const offerId = n.data?.offer_id as string | undefined;
+                                  if (collabId) router.push(`/profile/provider?tab=collaborations&openCollab=${collabId}`);
+                                  else if (offerId) router.push(`/profile/provider?tab=collaborations&openCollabByOffer=${offerId}`);
+                                  else router.push("/profile/provider?tab=collaborations");
                                 } else if (n.type === "offer_schedule_conflict") {
                                   router.push("/profile/provider?tab=agenda");
                                 } else if (n.type === "offer_schedule_changed") {
-                                  router.push("/profile/provider?tab=collaborations");
+                                  const offerId = n.data?.offer_id as string | undefined;
+                                  router.push(offerId ? `/profile/provider?tab=collaborations&openCollabByOffer=${offerId}` : "/profile/provider?tab=collaborations");
                                 }
                               }}>
                                 <span className={`mt-0.5 material-symbols-outlined text-lg shrink-0 ${isUnread ? "text-primary" : "text-slate-400"}`}>

@@ -892,7 +892,7 @@ function MultiTypeSection<TSvc>({
   );
 }
 
-export function SectionLockedBanner({ collab }: { collab: Collab }) {
+export function SectionLockedBanner({ collab, onKick }: { collab: Collab; onKick?: () => void }) {
   const st = COLLAB_STATUS[collab.status ?? "pending"] ?? COLLAB_STATUS.pending;
   return (
     <div className="flex items-center gap-2 px-3 py-2 bg-primary/5 border border-primary/20 rounded-xl">
@@ -901,6 +901,12 @@ export function SectionLockedBanner({ collab }: { collab: Collab }) {
         Géré par <span className="text-primary">{collab.userName}</span>
       </p>
       <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold shrink-0 ${st.cls}`}>{st.label}</span>
+      {onKick && (
+        <button type="button" onClick={onKick} title="Retirer ce collaborateur"
+          className="ml-1 w-5 h-5 rounded-full bg-red-50 border border-red-200 text-red-400 hover:bg-red-100 hover:text-red-600 flex items-center justify-center shrink-0 transition-colors">
+          <X size={10} strokeWidth={3} />
+        </button>
+      )}
     </div>
   );
 }
@@ -959,9 +965,11 @@ function PillToggle({ label, active, onClick }: { label: string; active: boolean
 
 type AutreMode = "guide" | "prestataire";
 
-function AutreServiceFields({ d, u, prestataireSlot, prestataireSousTypeSlot, guidageSlot, guidageSousTypeSlot, guidageInviteSlot }: {
+function AutreServiceFields({ d, u, lockMeta, lockMode, prestataireSlot, prestataireSousTypeSlot, guidageSlot, guidageSousTypeSlot, guidageInviteSlot }: {
   d: FormData;
   u: (x: Partial<FormData>) => void;
+  lockMeta?: boolean;
+  lockMode?: boolean;
   prestataireSlot?: React.ReactNode;
   prestataireSousTypeSlot?: (cat: string) => React.ReactNode | null | undefined;
   guidageSlot?: React.ReactNode;
@@ -1021,7 +1029,7 @@ function AutreServiceFields({ d, u, prestataireSlot, prestataireSousTypeSlot, gu
     <div className="space-y-5 p-4 bg-slate-50 border border-slate-200 rounded-2xl">
 
       {/* ── Sélecteur de mode ──────────────────────────────────────────────────── */}
-      <div className="flex gap-2">
+      <div className={`flex gap-2${(lockMeta || lockMode) ? " pointer-events-none select-none opacity-70" : ""}`}>
         {(["guide", "prestataire"] as const).map((m) => (
           <button key={m} type="button" onClick={() => setMode(m)}
             className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl border-2 text-xs font-black transition-all ${
@@ -1043,7 +1051,7 @@ function AutreServiceFields({ d, u, prestataireSlot, prestataireSousTypeSlot, gu
         guidageSlot != null ? guidageSlot : (
         <>
           {/* Étape 1 : Domaine (sans gastronomie_locale → géré dans Repas) */}
-          <div>
+          <div className={lockMeta ? "pointer-events-none select-none opacity-70" : ""}>
             <CascadeLabel step="1" label="Domaine" />
             <div className="grid grid-cols-2 gap-2">
               {Object.entries(DOMAINES).filter(([key]) => key !== "gastronomie_locale").map(([key, dom]) => {
@@ -1155,7 +1163,7 @@ function AutreServiceFields({ d, u, prestataireSlot, prestataireSousTypeSlot, gu
         prestataireSlot != null ? prestataireSlot : (
         <>
           {/* Étape 1 : Catégorie (sans hebergement, restaurant_terroir, transport_eco, transport) */}
-          <div>
+          <div className={lockMeta ? "pointer-events-none select-none opacity-70" : ""}>
             <CascadeLabel step="1" label="Catégorie de service" />
             <div className="grid grid-cols-2 gap-2">
               {PROVIDER_SCHEMA.filter((c) => !["hebergement", "restaurant_terroir", "transport_eco", "transport"].includes(c.value)).map((cat) => {
@@ -1700,7 +1708,7 @@ function GastroGuideBlock({
   );
 }
 
-function Step5({ d, u, collaborations, onInvite, savingDraft, collabSectionOnly }: { d: FormData; u: (x: Partial<FormData>) => void; collaborations: Collab[]; onInvite: (s: CollabSection) => void; savingDraft?: boolean; collabSectionOnly?: string }) {
+function Step5({ d, u, collaborations, onInvite, onKickCollab, savingDraft, collabSectionOnly }: { d: FormData; u: (x: Partial<FormData>) => void; collaborations: Collab[]; onInvite: (s: CollabSection) => void; onKickCollab?: (collabId: string) => void; savingDraft?: boolean; collabSectionOnly?: string }) {
   const tp = d.type_prestation;
   const isSurMesure = tp === "sur_mesure";
   const togArr = (field: keyof FormData, v: string) => {
@@ -1709,9 +1717,17 @@ function Step5({ d, u, collaborations, onInvite, savingDraft, collabSectionOnly 
   };
   const servicesPool = [...new Set([...(SERVICES_DEFAUT[d.domaine] ?? []), ...EQUIP_SECURITE, ...EQUIP_CONFORT])];
 
-  const showTransport   = (!collabSectionOnly || collabSectionOnly === "transport")   && tp !== null && ["avec_transport", "transport_repas", "immersion", "sur_mesure"].includes(tp);
-  const showRepas       = (!collabSectionOnly || collabSectionOnly === "restauration") && tp !== null && ["transport_repas", "immersion", "sur_mesure"].includes(tp);
-  const showHebergement = (!collabSectionOnly || collabSectionOnly === "hebergement")  && tp !== null && ["immersion", "sur_mesure"].includes(tp);
+  // Visibilité des sections : basée sur le type d'offre uniquement (indép. de collabSectionOnly)
+  const showTransport   = tp !== null && ["avec_transport", "transport_repas", "immersion", "sur_mesure"].includes(tp);
+  const showRepas       = tp !== null && ["transport_repas", "immersion", "sur_mesure"].includes(tp);
+  const showHebergement = tp !== null && ["immersion", "sur_mesure"].includes(tp);
+  const showAutreService = isSurMesure;
+
+  // Vue collab : sections étrangères visibles mais verrouillées (pointer-events-none)
+  const lockTransport    = !!collabSectionOnly && collabSectionOnly !== "transport";
+  const lockRepas        = !!collabSectionOnly && collabSectionOnly !== "restauration";
+  const lockHebergement  = !!collabSectionOnly && collabSectionOnly !== "hebergement";
+  const lockAutreService = !!collabSectionOnly && collabSectionOnly !== "autre_service";
 
   // Collab actif (non-refusé) pour chaque section → verrouille la section pour le propriétaire
   const activeCollab = (s: CollabSection) =>
@@ -1748,16 +1764,51 @@ function Step5({ d, u, collaborations, onInvite, savingDraft, collabSectionOnly 
 
       {/* Transport */}
       {showTransport && (
-        <div className="space-y-3">
+        <div className={lockTransport ? "space-y-3 pointer-events-none select-none opacity-60" : "space-y-3"}>
           {isSurMesure && (
             <Bool label="Transport inclus dans cette offre" icon="directions_car"
               value={d.transport_inclus}
-              onChange={(v) => u({ transport_inclus: v, transport_types: v ? d.transport_types : [], transport_active: "", transport_svcs: v ? d.transport_svcs : {} })} />
+              onChange={(v) => {
+                if (!v && transportCollab?.id) onKickCollab?.(transportCollab.id);
+                u({ transport_inclus: v, transport_types: v ? d.transport_types : [], transport_active: "", transport_svcs: v ? d.transport_svcs : {} });
+              }} />
           )}
           {(!isSurMesure || d.transport_inclus === true) && (
-            transportCollab ? (
+            collabSectionOnly === "transport" ? (
+              <div className="space-y-3">
+                <PrestSubBlock
+                  title="Transport Éco" icon="electric_bike"
+                  subtypes={TRANSPORT_ECO_SUBTYPES}
+                  sousType={d.transport_eco_sous_type} details={d.transport_eco_details}
+                  onSousType={(v) => u({ transport_eco_sous_type: v })}
+                  onDetails={(k, v) => u({ transport_eco_details: { ...d.transport_eco_details, [k]: v } })}
+                />
+                <PrestSubBlock
+                  title="Transport" icon="directions_car"
+                  subtypes={TRANSPORT_STD_SUBTYPES}
+                  sousType={d.transport_std_sous_type} details={d.transport_std_details}
+                  onSousType={(v) => u({ transport_std_sous_type: v })}
+                  onDetails={(k, v) => u({ transport_std_details: { ...d.transport_std_details, [k]: v } })}
+                />
+              </div>
+            ) : lockTransport ? (
+              <div className="space-y-3">
+                <PrestSubBlock
+                  title="Transport Éco" icon="electric_bike"
+                  subtypes={TRANSPORT_ECO_SUBTYPES}
+                  sousType={d.transport_eco_sous_type} details={d.transport_eco_details}
+                  onSousType={() => {}} onDetails={() => {}}
+                />
+                <PrestSubBlock
+                  title="Transport" icon="directions_car"
+                  subtypes={TRANSPORT_STD_SUBTYPES}
+                  sousType={d.transport_std_sous_type} details={d.transport_std_details}
+                  onSousType={() => {}} onDetails={() => {}}
+                />
+              </div>
+            ) : transportCollab ? (
               <div className="space-y-2">
-                <SectionLockedBanner collab={transportCollab} />
+                <SectionLockedBanner collab={transportCollab} onKick={transportCollab.id ? () => onKickCollab?.(transportCollab.id!) : undefined} />
                 <div className="pointer-events-none select-none opacity-70 space-y-3">
                   <PrestSubBlock
                     title="Transport Éco" icon="electric_bike"
@@ -1783,16 +1834,21 @@ function Step5({ d, u, collaborations, onInvite, savingDraft, collabSectionOnly 
 
       {/* Restauration */}
       {showRepas && (
-        <div className="space-y-3">
+        <div className={lockRepas ? "space-y-3 pointer-events-none select-none opacity-60" : "space-y-3"}>
           {isSurMesure && (
             <Bool label="Repas inclus dans cette offre" icon="restaurant"
               value={d.repas_flag}
-              onChange={(v) => u({ repas_flag: v, restauration_types: v ? d.restauration_types : [], restauration_active: "", restauration_svcs: v ? d.restauration_svcs : {} })} />
+              onChange={(v) => {
+                if (!v && restaurationCollab?.id) onKickCollab?.(restaurationCollab.id);
+                u({ repas_flag: v, restauration_types: v ? d.restauration_types : [], restauration_active: "", restauration_svcs: v ? d.restauration_svcs : {} });
+              }} />
           )}
           {(!isSurMesure || d.repas_flag === true) && (
-            restaurationCollab ? (
+            lockRepas ? (
+              <RepasFields d={d} u={() => {}} />
+            ) : restaurationCollab ? (
               <div className="space-y-2">
-                <SectionLockedBanner collab={restaurationCollab} />
+                <SectionLockedBanner collab={restaurationCollab} onKick={restaurationCollab.id ? () => onKickCollab?.(restaurationCollab.id!) : undefined} />
                 <div className="pointer-events-none select-none opacity-70">
                   <RepasFields d={d} u={() => {}} />
                 </div>
@@ -1814,16 +1870,43 @@ function Step5({ d, u, collaborations, onInvite, savingDraft, collabSectionOnly 
 
       {/* Hébergement */}
       {showHebergement && (
-        <div className="space-y-3">
+        <div className={lockHebergement ? "space-y-3 pointer-events-none select-none opacity-60" : "space-y-3"}>
           {isSurMesure && (
             <Bool label="Hébergement inclus dans cette offre" icon="hotel"
               value={d.hebergement_inclus}
-              onChange={(v) => u({ hebergement_inclus: v, hebergement_types: v ? d.hebergement_types : [], hebergement_active: "", hebergement_svcs: v ? d.hebergement_svcs : {} })} />
+              onChange={(v) => {
+                if (!v && hebergementCollab?.id) onKickCollab?.(hebergementCollab.id);
+                u({ hebergement_inclus: v, hebergement_types: v ? d.hebergement_types : [], hebergement_active: "", hebergement_svcs: v ? d.hebergement_svcs : {} });
+              }} />
           )}
           {(!isSurMesure || d.hebergement_inclus === true) && (
-            hebergementCollab ? (
+            collabSectionOnly === "hebergement" ? (
+              <MultiTypeSection
+                title="Hébergement" icon="hotel"
+                options={GUIDE_HEBERGEMENT_TYPES}
+                types={d.hebergement_types} active={d.hebergement_active} svcs={d.hebergement_svcs}
+                emptyFn={() => ({ ...EMPTY_HEBERG })}
+                onToggleType={(types, active, svcs) => u({ hebergement_types: types, hebergement_active: active, hebergement_svcs: svcs })}
+                onSetActive={(a) => u({ hebergement_active: a })}
+                onSvcChange={(t, s) => u({ hebergement_svcs: { ...d.hebergement_svcs, [t]: s } })}
+                renderBlock={(type, svc) => (
+                  <HebergBlock subtype={type} value={svc} onChange={(s) => u({ hebergement_svcs: { ...d.hebergement_svcs, [type]: s } })} />
+                )}
+              />
+            ) : lockHebergement ? (
+              <MultiTypeSection
+                title="Hébergement" icon="hotel"
+                options={GUIDE_HEBERGEMENT_TYPES}
+                types={d.hebergement_types} active={d.hebergement_active} svcs={d.hebergement_svcs}
+                emptyFn={() => ({ ...EMPTY_HEBERG })}
+                onToggleType={() => {}} onSetActive={() => {}} onSvcChange={() => {}}
+                renderBlock={(type, svc) => (
+                  <HebergBlock subtype={type} value={svc} onChange={() => {}} />
+                )}
+              />
+            ) : hebergementCollab ? (
               <div className="space-y-2">
-                <SectionLockedBanner collab={hebergementCollab} />
+                <SectionLockedBanner collab={hebergementCollab} onKick={hebergementCollab.id ? () => onKickCollab?.(hebergementCollab.id!) : undefined} />
                 <div className="pointer-events-none select-none opacity-70">
                   <MultiTypeSection
                     title="Hébergement" icon="hotel"
@@ -1846,24 +1929,38 @@ function Step5({ d, u, collaborations, onInvite, savingDraft, collabSectionOnly 
       )}
 
       {/* Autre service */}
-      {isSurMesure && (
-        <div className="space-y-3">
+      {showAutreService && (
+        <div className={lockAutreService ? "space-y-3 pointer-events-none select-none opacity-60" : "space-y-3"}>
           <Bool
             label="Autre service inclus dans cette offre"
             icon="add_circle"
             value={d.autre_service_inclus}
-            onChange={(v) => u({ autre_service_inclus: v, autre_service_categorie: "", autre_service_sous_type: "", autre_service_details: {} })}
+            onChange={(v) => {
+              if (!v && autreServiceCollab?.id) onKickCollab?.(autreServiceCollab.id);
+              u({ autre_service_inclus: v, autre_service_categorie: "", autre_service_sous_type: "", autre_service_details: {} });
+            }}
           />
           {d.autre_service_inclus === true && (
-            autreServiceCollab ? (
-              <div className="space-y-2">
-                <SectionLockedBanner collab={autreServiceCollab} />
-                <div className="pointer-events-none select-none opacity-70">
-                  <AutreServiceFields d={d} u={() => {}} />
+            lockAutreService ? (
+              <AutreServiceFields d={d} u={() => {}} lockMeta={true} />
+            ) : autreServiceCollab ? (() => {
+              const autreMode = (d.autre_service_details._mode as string) || "guide";
+              const domaineManquant = autreMode === "guide" && !d.autre_service_categorie;
+              return (
+                <div className="space-y-2">
+                  <SectionLockedBanner collab={autreServiceCollab} onKick={autreServiceCollab.id ? () => onKickCollab?.(autreServiceCollab.id!) : undefined} />
+                  {domaineManquant ? (
+                    <AutreServiceFields d={d} u={u} lockMode={true} />
+                  ) : (
+                    <div className="pointer-events-none select-none opacity-70">
+                      <AutreServiceFields d={d} u={() => {}} />
+                    </div>
+                  )}
                 </div>
-              </div>
-            ) : (
+              );
+            })() : (
               <AutreServiceFields d={d} u={u}
+                lockMeta={collabSectionOnly === "autre_service"}
                 guidageInviteSlot={
                   <InviteButton section="autre_service" onInvite={onInvite} loading={savingDraft} />
                 }
@@ -1887,8 +1984,8 @@ function Step5({ d, u, collaborations, onInvite, savingDraft, collabSectionOnly 
         </div>
       )}
 
-      {/* Services inclus */}
-      <div className="space-y-3">
+      {/* Services inclus / À apporter / Non inclus — verrouillés en vue collab (champs du guide) */}
+      <div className={collabSectionOnly ? "space-y-3 pointer-events-none select-none opacity-60" : "space-y-3"}>
         <p className="text-[10px] font-black tracking-widest text-slate-400 uppercase">Services inclus</p>
         {servicesPool.length > 0 ? (
           <Chips options={servicesPool} selected={d.services_inclus}
@@ -1898,15 +1995,19 @@ function Step5({ d, u, collaborations, onInvite, savingDraft, collabSectionOnly 
         )}
       </div>
 
-      <Field label="À apporter par le participant" required>
-        <Txt value={d.equipement_a_apporter} onChange={(v) => u({ equipement_a_apporter: v })} rows={4}
-          placeholder="Chaussures de randonnée, vêtements chauds, gourde…" />
-      </Field>
+      <div className={collabSectionOnly ? "pointer-events-none select-none opacity-60" : ""}>
+        <Field label="À apporter par le participant" required>
+          <Txt value={d.equipement_a_apporter} onChange={(v) => u({ equipement_a_apporter: v })} rows={4}
+            placeholder="Chaussures de randonnée, vêtements chauds, gourde…" />
+        </Field>
+      </div>
 
-      <Field label="Non inclus (à prévoir par le participant)">
-        <Txt value={d.non_inclus} onChange={(v) => u({ non_inclus: v })} rows={2}
-          placeholder="Assurance voyage personnelle, pourboire…" />
-      </Field>
+      <div className={collabSectionOnly ? "pointer-events-none select-none opacity-60" : ""}>
+        <Field label="Non inclus (à prévoir par le participant)">
+          <Txt value={d.non_inclus} onChange={(v) => u({ non_inclus: v })} rows={2}
+            placeholder="Assurance voyage personnelle, pourboire…" />
+        </Field>
+      </div>
     </div>
   );
 }
@@ -2048,10 +2149,12 @@ export function GuideOfferReadOnlySteps({
   data,
   step,
   collabSection,
+  locked = false,
 }: {
   data: FormData;
   step: number;
   collabSection?: CollabEditSection;
+  locked?: boolean;
 }) {
   const profile: GuideProfile = {
     domaines: data.domaine ? [data.domaine] : [],
@@ -2083,18 +2186,13 @@ export function GuideOfferReadOnlySteps({
     const svcsKey  = `${name}_svcs`   as keyof FormData;
     const activeKey = `${name}_active` as keyof FormData;
     const typesKey  = `${name}_types`  as keyof FormData;
-    // Svcs fusionnés : données du collab en priorité, fallback sur les données vides
+    // Svcs fusionnés : données du collab en priorité, fallback selon la section
+    const emptySvc = name === 'hebergement' ? { ...EMPTY_HEBERG } : { ...EMPTY_SIMPLE_SERVICE };
     const mergedSvcs = Object.fromEntries(
-      types.map((t) => [t, svcs[t] ?? { ...EMPTY_SIMPLE_SERVICE }])
+      types.map((t) => [t, svcs[t] ?? emptySvc])
     );
-    // Masquer les sections qui n'appartiennent pas à ce collaborateur
-    const hiddenSections: Partial<FormData> = {};
-    if (name !== 'transport')    { hiddenSections.transport_inclus = false; }
-    if (name !== 'restauration') { hiddenSections.repas_flag = false; }
-    if (name !== 'hebergement')  { hiddenSections.hebergement_inclus = false; }
     return {
       ...filledData,
-      ...hiddenSections,
       [typesKey]:  types,                              // types choisis par le collaborateur
       [svcsKey]:   mergedSvcs,
       [activeKey]: active || types[0] || "",
@@ -2109,9 +2207,16 @@ export function GuideOfferReadOnlySteps({
     ? (patch: Partial<FormData>) => {
         const { name } = collabSection;
         // Bloquer les toggles Bool (verrouillés - choix du guide)
-        if ((patch as any).repas_flag !== undefined)         return;
-        if ((patch as any).transport_inclus !== undefined)   return;
-        if ((patch as any).hebergement_inclus !== undefined) return;
+        if ((patch as any).repas_flag !== undefined)           return;
+        if ((patch as any).transport_inclus !== undefined)     return;
+        if ((patch as any).hebergement_inclus !== undefined)   return;
+        if ((patch as any).autre_service_inclus !== undefined) return;
+        // Bloquer les champs globaux de l'offre (gérés par le guide seul)
+        if ((patch as any).services_inclus !== undefined)       return;
+        if ((patch as any).equipement_a_apporter !== undefined) return;
+        if ((patch as any).non_inclus !== undefined)            return;
+        // Pour autre_service : bloquer le mode et le domaine (choix du guide)
+        if (name === 'autre_service' && (patch as any).autre_service_categorie !== undefined) return;
 
         const typesKey  = `${name}_types`  as keyof FormData;
         const activeKey = `${name}_active` as keyof FormData;
@@ -2156,8 +2261,8 @@ export function GuideOfferReadOnlySteps({
 
   return (
     // Étape 6 collab : pas de pointer-events-none global (le SimpleServiceBlock doit être interactif)
-    // Toutes les autres étapes : totalement verrouillées
-    <div className={isStep6Collab ? "" : "pointer-events-none select-none opacity-80"}>
+    // Sauf si locked=true (offre publiée) : tout verrouillé dans tous les cas
+    <div className={(isStep6Collab && !locked) ? "" : "pointer-events-none select-none opacity-80"}>
       {stepContents[step] ?? null}
     </div>
   );
@@ -2196,7 +2301,15 @@ function canProceed(step: number, d: FormData, collabs: Collab[] = []): boolean 
       if (repasRequired && d.restauration_types.length === 0 && !collabs.some((c) => c.section === "restauration")) return false;
       if (hebergementRequired && d.hebergement_types.length === 0 && !collabs.some((c) => c.section === "hebergement")) return false;
       // Sur mesure : toutes les décisions doivent être prises
-      if (isSurMesure) return d.transport_inclus !== null && d.repas_flag !== null && d.hebergement_inclus !== null;
+      if (isSurMesure) {
+        if (d.transport_inclus === null || d.repas_flag === null || d.hebergement_inclus === null) return false;
+        // Autre service (guidage) : domaine obligatoire si mode guide sélectionné
+        if (d.autre_service_inclus === true) {
+          const autreMode = (d.autre_service_details._mode as string) || "guide";
+          if (autreMode === "guide" && !d.autre_service_categorie) return false;
+        }
+        return true;
+      }
       return true;
     }
     case 7: return !!d.pricing.prix_par_personne;
@@ -2310,7 +2423,7 @@ interface Props {
   editOffer?: Record<string, any> | null;
 }
 
-export interface Collab { userId: string; userName: string; userType: string; section: CollabSection; status?: string; }
+export interface Collab { id?: string; userId: string; userName: string; userType: string; section: CollabSection; status?: string; }
 
 export default function GuideOfferModal({ open, onClose, onSuccess, onDelete, profile, token, editOffer }: Props) {
   const [step, setStep] = useState(1);
@@ -2342,6 +2455,7 @@ export default function GuideOfferModal({ open, onClose, onSuccess, onDelete, pr
         }).then((collabs) => {
           if (Array.isArray(collabs)) {
             setCollaborations(collabs.map((c) => ({
+              id: c.id,
               userId: c.invited_user_id,
               userName: c.invited_user_name,
               userType: c.invited_user_type,
@@ -2385,9 +2499,19 @@ export default function GuideOfferModal({ open, onClose, onSuccess, onDelete, pr
       setSavingDraft(true);
       id = await saveAsDraft();
       setSavingDraft(false);
-      if (!id) return; // échec de la sauvegarde, ne pas ouvrir
+      if (!id) return;
     }
     setInviteSection(s);
+  }
+
+  async function kickCollab(collabId: string) {
+    try {
+      await apiFetch(`/guide/collaborations/${collabId}/kick`, {
+        method: "PATCH",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      setCollaborations((prev) => prev.filter((c) => c.id !== collabId));
+    } catch { /* silent */ }
   }
 
   async function handleDelete() {
@@ -2428,6 +2552,11 @@ export default function GuideOfferModal({ open, onClose, onSuccess, onDelete, pr
         return "Hébergement : sélectionnez au moins un type ou invitez un collaborateur.";
       if (isSurMesure && (d.transport_inclus === null || d.repas_flag === null || d.hebergement_inclus === null))
         return "Veuillez confirmer Oui ou Non pour chaque service proposé.";
+      if (isSurMesure && d.autre_service_inclus === true) {
+        const autreMode = (d.autre_service_details._mode as string) || "guide";
+        if (autreMode === "guide" && !d.autre_service_categorie)
+          return "Autre service · Guidage : sélectionnez un domaine de guidage avant de continuer.";
+      }
     }
     return "Veuillez compléter les champs obligatoires (*).";
   }
@@ -2540,7 +2669,7 @@ export default function GuideOfferModal({ open, onClose, onSuccess, onDelete, pr
           {step === 3 && <Step3 d={data} u={upd} profile={profile} />}
           {step === 4 && <Step4 d={data} u={upd} profile={profile} />}
           {step === 5 && <Step6 d={data} u={upd} token={token} editOfferTitle={editOffer?.title} editOfferId={editOffer?.id} onCollabConflictsChange={(c) => { setCollabConflicts(c); setShowCollabConfirm(false); collabAckedRef.current = false; }} />}
-          {step === 6 && <Step5 d={data} u={upd} collaborations={collaborations} onInvite={handleInvite} savingDraft={savingDraft} />}
+          {step === 6 && <Step5 d={data} u={upd} collaborations={collaborations} onInvite={handleInvite} onKickCollab={kickCollab} savingDraft={savingDraft} />}
           {step === 7 && <Step7 d={data} u={upd} />}
           {step === 8 && <Step8 d={data} u={upd} />}
         </div>
@@ -2652,10 +2781,10 @@ export default function GuideOfferModal({ open, onClose, onSuccess, onDelete, pr
         alreadyInvited={collaborations.filter((c) => c.section === inviteSection && c.status !== "declined").map((c) => c.userId)}
         onClose={() => setInviteSection(null)}
         onInvited={(c) => {
+          // Optimistic update, puis re-fetch pour récupérer les IDs
           setCollaborations((prev) => {
             const exists = prev.findIndex((x) => x.userId === c.user_id && x.section === inviteSection);
             if (exists >= 0) {
-              // réinvitation après refus : remettre à pending
               const updated = [...prev];
               updated[exists] = { ...updated[exists], status: "pending" };
               return updated;
@@ -2663,6 +2792,23 @@ export default function GuideOfferModal({ open, onClose, onSuccess, onDelete, pr
             return [...prev, { userId: c.user_id, userName: c.name, userType: c.type, section: inviteSection!, status: "pending" }];
           });
           setInviteSection(null);
+          // Re-fetch pour avoir les IDs de collab (nécessaires pour kick)
+          const offerId = draftOfferId;
+          if (offerId) {
+            apiFetch<any[]>(`/guide/offers/${offerId}/collaborations`, { headers: { Authorization: `Bearer ${token}` } })
+              .then((collabs) => {
+                if (Array.isArray(collabs)) {
+                  setCollaborations(collabs.map((x) => ({
+                    id: x.id,
+                    userId: x.invited_user_id,
+                    userName: x.invited_user_name,
+                    userType: x.invited_user_type,
+                    section: x.section as CollabSection,
+                    status: x.status,
+                  })));
+                }
+              }).catch(() => {});
+          }
         }}
       />
     )}

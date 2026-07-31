@@ -12,7 +12,7 @@ import {
 
 // ── Sections service (étape 6) vs custom (étape 9) ───────────────────────────
 
-const SERVICE_SECTIONS = ["restauration", "transport", "hebergement"] as const;
+const SERVICE_SECTIONS = ["restauration", "transport", "hebergement", "autre_service"] as const;
 type ServiceSection = (typeof SERVICE_SECTIONS)[number];
 const isServiceSection = (s: string): s is ServiceSection =>
   (SERVICE_SECTIONS as readonly string[]).includes(s);
@@ -40,14 +40,23 @@ const CUSTOM_SECTION_FIELDS: Record<string, { title: string; icon: string; color
       { key: "note",        label: "Note complémentaire",          type: "textarea", placeholder: "Informations supplémentaires…" },
     ],
   },
+  autre_service: {
+    title: "Autre service", icon: "category", color: "slate",
+    fields: [
+      { key: "description", label: "Description de votre service", type: "textarea", placeholder: "Décrivez votre contribution…", required: true },
+      { key: "tarif",       label: "Tarif (TND)",                  type: "number",   placeholder: "Ex : 50" },
+      { key: "note",        label: "Note complémentaire",          type: "textarea", placeholder: "Informations supplémentaires…" },
+    ],
+  },
 };
 
 const SECTION_META: Record<string, { title: string; icon: string; color: string }> = {
-  restauration: { title: "Restauration", icon: "restaurant",    color: "orange" },
-  transport:    { title: "Transport",    icon: "directions_bus", color: "violet" },
-  hebergement:  { title: "Hébergement", icon: "hotel",          color: "blue"   },
-  guide:        { title: "Guidage",     icon: "hiking",         color: "green"  },
-  autre:        { title: "Autre",       icon: "category",       color: "slate"  },
+  restauration:  { title: "Restauration",  icon: "restaurant",    color: "orange" },
+  transport:     { title: "Transport",     icon: "directions_bus", color: "violet" },
+  hebergement:   { title: "Hébergement",  icon: "hotel",          color: "blue"   },
+  guide:         { title: "Guidage",      icon: "hiking",         color: "green"  },
+  autre:         { title: "Autre",        icon: "category",       color: "slate"  },
+  autre_service: { title: "Autre",        icon: "category",       color: "slate"  },
 };
 
 const SECTION_GRAD: Record<string, string> = {
@@ -66,6 +75,7 @@ type Props = {
   section: string;
   inviterName?: string;
   token: string;
+  offerApproved?: boolean;
   onClose: () => void;
   onContributed?: () => void;
   onSaved?: () => void;
@@ -75,7 +85,8 @@ type Props = {
 // ── Composant ─────────────────────────────────────────────────────────────────
 
 export default function CollaborationModal({
-  collabId, offerId, section, inviterName, token, onClose, onContributed, onSaved, onDeleted,
+  collabId, offerId, section, inviterName, token, offerApproved = false,
+  onClose, onContributed, onSaved, onDeleted,
 }: Props) {
   const isService = isServiceSection(section);
   // Service  : 8 étapes (1-5 verrouillées, 6 éditable pour leur section, 7-8 verrouillées)
@@ -164,7 +175,7 @@ export default function CollaborationModal({
   }
 
   function handleClose() {
-    if (!contributionDone) {
+    if (!contributionDone && !offerApproved) {
       setError("Veuillez remplir et enregistrer votre contribution avant de fermer.");
       goTo(TARGET_STEP);
       return;
@@ -257,13 +268,14 @@ export default function CollaborationModal({
         <GuideOfferReadOnlySteps
           data={offerData}
           step={step}
-          collabSection={isEditStep && isService && !saved ? {
+          locked={offerApproved}
+          collabSection={isEditStep && isService ? {
             name: section,
             types: svcTypes,
             svcs: svcData,
             active: svcActive,
             formData: svcFormData as Partial<GuideOfferFormData>,
-            onUpdate: ({ types, svcs, active, formData: fd }) => {
+            onUpdate: (saved || offerApproved) ? () => {} : ({ types, svcs, active, formData: fd }) => {
               if (types  !== undefined) { setSvcTypes(types); setSvcActive(active ?? types[0] ?? ""); }
               if (svcs   !== undefined) setSvcData(svcs);
               if (active !== undefined) setSvcActive(active);
@@ -312,11 +324,11 @@ export default function CollaborationModal({
                 </label>
                 {f.type === "textarea" ? (
                   <textarea rows={3} value={form[f.key] ?? ""} onChange={(e) => setForm((p) => ({ ...p, [f.key]: e.target.value }))}
-                    placeholder={f.placeholder} disabled={saved}
+                    placeholder={f.placeholder} disabled={saved || offerApproved}
                     className="w-full rounded-2xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 px-4 py-3 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-primary/40 transition disabled:opacity-60 disabled:cursor-not-allowed" />
                 ) : (
                   <input type={f.type} value={form[f.key] ?? ""} onChange={(e) => setForm((p) => ({ ...p, [f.key]: e.target.value }))}
-                    placeholder={f.placeholder} disabled={saved}
+                    placeholder={f.placeholder} disabled={saved || offerApproved}
                     className="w-full rounded-2xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary/40 transition disabled:opacity-60 disabled:cursor-not-allowed" />
                 )}
               </div>
@@ -378,6 +390,14 @@ export default function CollaborationModal({
         </div>
       </div>
 
+      {/* Bandeau lecture seule si offre publiée */}
+      {offerApproved && (
+        <div className="shrink-0 px-8 py-2.5 flex items-center gap-2 bg-amber-50 border-b border-amber-100">
+          <span className="material-symbols-outlined text-amber-500 text-base">lock</span>
+          <p className="text-xs font-bold text-amber-700">Offre publiée — votre contribution est en lecture seule</p>
+        </div>
+      )}
+
       {/* ── Corps ── */}
       <div ref={scrollRef} className="flex-1 overflow-y-auto px-8 py-5">
         {renderBody()}
@@ -399,8 +419,8 @@ export default function CollaborationModal({
             </button>
           ) : <div />}
 
-          {/* Supprimer — visible à l'étape édition quand une contribution existe */}
-          {isEditStep && wasComplete && (
+          {/* Supprimer — visible à l'étape édition quand une contribution existe (pas si offre publiée) */}
+          {isEditStep && wasComplete && !offerApproved && (
             <button type="button" onClick={handleDelete} disabled={deleting}
               className="flex items-center gap-1.5 px-4 py-2.5 rounded-2xl border-2 border-red-200 text-red-500 hover:bg-red-50 font-bold text-sm transition-all shrink-0 disabled:opacity-60">
               <span className="material-symbols-outlined text-base">delete</span>
@@ -427,13 +447,15 @@ export default function CollaborationModal({
             ) : (
               /* Pas encore enregistré → bouton Enregistrer + flèche → pour naviguer librement */
               <>
-                <button type="button" onClick={handleSave} disabled={saving || !!getValidationError()}
-                  className="flex items-center justify-center gap-2 px-6 py-2.5 rounded-2xl bg-primary hover:bg-primary/90 text-slate-900 font-extrabold text-sm transition-all shadow-sm disabled:opacity-60 disabled:cursor-not-allowed shrink-0">
-                  {saving
-                    ? <span className="w-4 h-4 rounded-full border-2 border-slate-900 border-t-transparent animate-spin" />
-                    : <span className="material-symbols-outlined text-base">{wasComplete ? "sync" : "save"}</span>}
-                  {wasComplete ? "Mettre à jour" : "Enregistrer"}
-                </button>
+                {!offerApproved && (
+                  <button type="button" onClick={handleSave} disabled={saving || !!getValidationError()}
+                    className="flex items-center justify-center gap-2 px-6 py-2.5 rounded-2xl bg-primary hover:bg-primary/90 text-slate-900 font-extrabold text-sm transition-all shadow-sm disabled:opacity-60 disabled:cursor-not-allowed shrink-0">
+                    {saving
+                      ? <span className="w-4 h-4 rounded-full border-2 border-slate-900 border-t-transparent animate-spin" />
+                      : <span className="material-symbols-outlined text-base">{wasComplete ? "sync" : "save"}</span>}
+                    {wasComplete ? "Mettre à jour" : "Enregistrer"}
+                  </button>
+                )}
                 {step < TOTAL_STEPS && (
                   <button type="button" onClick={() => goTo(step + 1)} disabled={loading || !offerData}
                     className="w-10 h-10 flex items-center justify-center rounded-full border-2 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:border-slate-300 transition-all shrink-0 disabled:opacity-60">

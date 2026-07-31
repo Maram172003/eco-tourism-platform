@@ -91,10 +91,24 @@ export class OfferService {
   }
 
   async findByAuthor(authorId: string): Promise<Offer[]> {
-    return this.repo.find({
+    const offers = await this.repo.find({
       where: { author_id: authorId },
       order: { created_at: 'DESC' },
     });
+    // Corriger les offres en attente_publication qui ont encore un collab non terminé
+    for (const offer of offers) {
+      if ((offer as any).status === 'attente_publication') {
+        const collabs = await this.collabRepo.find({ where: { offer_id: offer.id } });
+        const hasIncomplete = collabs.some(
+          (c) => (c as any).status === 'pending' || (c as any).status === 'accepted',
+        );
+        if (hasIncomplete) {
+          await this.repo.update({ id: offer.id }, { status: 'draft' } as any);
+          (offer as any).status = 'draft';
+        }
+      }
+    }
+    return offers;
   }
 
   async findByOrganization(organizationId: string): Promise<Offer[]> {
@@ -134,6 +148,9 @@ export class OfferService {
   async update(authorId: string, offerId: string, dto: UpdateOfferDto): Promise<Offer> {
     const offer = await this.findOrFail(offerId);
     if (offer.author_id !== authorId) throw new ForbiddenException('Accès refusé.');
+    if ((offer as any).status === 'approved') {
+      throw new BadRequestException('Cette offre est publiée et ne peut plus être modifiée. Supprimez-la si nécessaire.');
+    }
 
     if (dto.activity_id) {
       await this.validateAgainstActivity({ activity_id: dto.activity_id, capacity: undefined, max_group_size: undefined, details: dto.details } as CreateOfferDto);
@@ -171,6 +188,19 @@ export class OfferService {
     if (dto.deposit_percentage !== undefined) offer.deposit_percentage = dto.deposit_percentage ?? null;
     if (dto.details !== undefined) offer.details = dto.details ?? null;
     if (dto.status !== undefined) offer.status = dto.status;
+
+    // Logique _finalize : draft → attente_publication si tous les collabs sont terminés/refusés
+    if ((dto as any)._finalize) {
+      const currentStatus = (offer as any).status as string;
+      if (currentStatus === 'draft' || currentStatus === 'rejected') {
+        const collabs = await this.collabRepo.find({ where: { offer_id: offerId } });
+        const activeCollabs = collabs.filter((c) => (c as any).status !== 'declined');
+        const hasPending = activeCollabs.some(
+          (c) => (c as any).status === 'pending' || (c as any).status === 'accepted',
+        );
+        (offer as any).status = hasPending ? 'draft' : 'attente_publication';
+      }
+    }
 
     const saved = await this.repo.save(offer);
 
@@ -231,26 +261,31 @@ export class OfferService {
           }));
         }
 
-        if (conflictInfo) {
-          await this.notifService.replaceForOffer(collabUserId, 'offer_schedule_conflict', offerId, {
-            offer_id: offerId,
-            offer_title: newTitle,
-            section: (c as any).section,
-            conflicting_slot: conflictInfo.label,
-            conflict_days: conflictInfo.days,
-            message: `Les horaires de l'offre « ${newTitle} » ont changé et créent un conflit avec votre agenda (${conflictInfo.label}). Réglez votre agenda pour maintenir votre collaboration.`,
-          });
-          await this.notifService.deleteForOffer(collabUserId, 'offer_schedule_changed', offerId).catch(() => {});
+        // Ne notifier le conflit que pour les collabs ayant déjà accepté (hasSlot)
+        // Les pending n'ont pas de créneau agenda et peuvent juste refuser l'invitation
+        if (hasSlot) {
+          if (conflictInfo) {
+            await this.notifService.replaceForOffer(collabUserId, 'offer_schedule_conflict', offerId, {
+              offer_id: offerId,
+              offer_title: newTitle,
+              section: (c as any).section,
+              conflicting_slot: conflictInfo.label,
+              conflict_days: conflictInfo.days,
+              message: `Les horaires de l'offre « ${newTitle} » ont changé et créent un conflit avec votre agenda (${conflictInfo.label}). Réglez votre agenda pour maintenir votre collaboration.`,
+            });
+            await this.notifService.deleteForOffer(collabUserId, 'offer_schedule_changed', offerId).catch(() => {});
+          } else {
+            await this.notifService.deleteForOffer(collabUserId, 'offer_schedule_conflict', offerId).catch(() => {});
+            await this.notifService.create(collabUserId, 'offer_schedule_changed', {
+              offer_id: offerId,
+              offer_title: newTitle,
+              section: (c as any).section,
+              message: `Les horaires de l'offre « ${newTitle} » ont été mis à jour. Votre agenda a été synchronisé automatiquement.`,
+            });
+          }
         } else {
+          // Collab pending : nettoyer les éventuelles vieilles notifs de conflit
           await this.notifService.deleteForOffer(collabUserId, 'offer_schedule_conflict', offerId).catch(() => {});
-          await this.notifService.create(collabUserId, 'offer_schedule_changed', {
-            offer_id: offerId,
-            offer_title: newTitle,
-            section: (c as any).section,
-            message: hasSlot
-              ? `Les horaires de l'offre « ${newTitle} » ont été mis à jour. Votre agenda a été synchronisé automatiquement.`
-              : `Les horaires de l'offre « ${newTitle} » à laquelle vous êtes invité ont été mis à jour.`,
-          });
         }
       } else if (titleChanged && hasSlot && oldTitle !== newTitle) {
         // Only title changed — rename the existing slot label
@@ -273,6 +308,43 @@ export class OfferService {
     }
   }
 
+  async checkCollabConflicts(
+    ownerId: string,
+    offerId: string,
+    disponibilite: SlotLike,
+  ): Promise<{ userId: string; userName: string; section: string; conflictSlot: string; conflictDays: string[]; conflictTimeSlots: any }[]> {
+    const offer = await this.findOrFail(offerId);
+    if (offer.author_id !== ownerId) throw new ForbiddenException('Accès refusé.');
+
+    const collabs = await this.collabRepo.find({ where: { offer_id: offerId } });
+    const activeCollabs = collabs.filter((c) => (c as any).status !== 'declined');
+    const result: { userId: string; userName: string; section: string; conflictSlot: string; conflictDays: string[]; conflictTimeSlots: any }[] = [];
+
+    for (const c of activeCollabs) {
+      const collabUserId = (c as any).invited_user_id as string;
+      const collabLabel = `[Collab] ${(offer as any).title} — ${(c as any).section}`;
+      const allSlots = await this.availRepo.find({ where: { guide_id: collabUserId } });
+      const otherSlots = allSlots.filter((s) => (s as any).label !== collabLabel);
+
+      for (const slot of otherSlots) {
+        const days = overlappingDays(disponibilite, slot as SlotLike);
+        if (days.length > 0) {
+          result.push({
+            userId: collabUserId,
+            userName: (c as any).invited_user_name ?? collabUserId,
+            section: (c as any).section,
+            conflictSlot: (slot as any).label ?? slot.type,
+            conflictDays: days,
+            conflictTimeSlots: (slot as any).time_slots ?? null,
+          });
+          break;
+        }
+      }
+    }
+
+    return result;
+  }
+
   async updateOfferSustainability(authorId: string, offerId: string, dto: OfferSustainabilityDto): Promise<Offer> {
     const offer = await this.findOrFail(offerId);
     if (offer.author_id !== authorId) throw new ForbiddenException('Accès refusé.');
@@ -285,28 +357,65 @@ export class OfferService {
     if (offer.author_id !== authorId) throw new ForbiddenException('Accès refusé.');
 
     const offerTitle = offer.title ?? 'une offre';
+    const offerDescription = (offer as any).description ?? null;
+    const offerImages: string[] = (offer as any).images ?? [];
+    const offerCover: string | null = Array.isArray(offerImages) && offerImages.length > 0 ? offerImages[0] : null;
 
-    // Notify collaborators, remove their agenda slots, then delete collab records
+    // Notifier les collaborateurs et marquer les collabs comme supprimés (sans suppression physique)
+    // pour que les collaborateurs puissent encore les voir avec le statut "offre supprimée"
     const collabs = await this.collabRepo.find({ where: { offer_id: offerId } });
-    await Promise.all(
-      collabs.map((c) =>
-        this.notifService.create((c as any).invited_user_id, 'offer_deleted', {
-          offer_id: offerId,
-          offer_title: offerTitle,
-          section: (c as any).section,
-          message: `L'offre « ${offerTitle} » à laquelle vous collaboriez a été supprimée par son propriétaire.`,
-        }),
-      ),
-    );
     for (const c of collabs) {
+      await this.notifService.create((c as any).invited_user_id, 'offer_deleted', {
+        offer_id: offerId,
+        collab_id: (c as any).id,
+        offer_title: offerTitle,
+        section: (c as any).section,
+        message: `L'offre « ${offerTitle} » à laquelle vous collaboriez a été supprimée par son propriétaire.`,
+      });
+      // Supprimer le créneau agenda du collaborateur
       const collabLabel = `[Collab] ${offerTitle} — ${(c as any).section}`;
       const slots = await this.availRepo.find({ where: { guide_id: (c as any).invited_user_id, label: collabLabel } });
       if (slots.length) await this.availRepo.remove(slots);
+      // Nettoyer les notifications de conflit et de changement d'horaire liées à cette offre
+      await this.notifService.deleteForOffer((c as any).invited_user_id, 'offer_schedule_conflict', offerId).catch(() => {});
+      await this.notifService.deleteForOffer((c as any).invited_user_id, 'offer_schedule_changed', offerId).catch(() => {});
+      // Marquer le collab declined + offer_deleted pour conserver un historique visible
+      const existingData = (c as any).contribution_data ?? {};
+      await this.collabRepo.update(
+        { id: (c as any).id },
+        {
+          status: 'declined',
+          contribution_data: {
+            ...existingData,
+            offer_deleted: true,
+            offer_title: offerTitle,
+            offer_description: offerDescription,
+            offer_cover: offerCover,
+          },
+        } as any,
+      );
     }
-    if (collabs.length) await this.collabRepo.remove(collabs);
 
     await this.repo.remove(offer);
     return { message: 'Offre supprimée.' };
+  }
+
+  async publishOffer(authorId: string, offerId: string): Promise<void> {
+    const offer = await this.findOrFail(offerId);
+    if (offer.author_id !== authorId) throw new ForbiddenException('Accès refusé.');
+    if ((offer as any).status !== 'attente_publication') {
+      throw new BadRequestException('L\'offre n\'est pas en attente de publication.');
+    }
+    const allCollabs = await this.collabRepo.find({ where: { offer_id: offerId } });
+    const collabs = allCollabs.filter((c) => !((c as any).status === 'declined' && (c as any).contribution_data?.kicked === true));
+    const collaborators = collabs.map((c) => ({
+      id: (c as any).invited_user_id,
+      name: (c as any).invited_user_name ?? (c as any).invited_user_id,
+      section: (c as any).section,
+    }));
+    const details: Record<string, any> = { ...((offer as any).details ?? {}) };
+    details.collaborators = collaborators;
+    await this.repo.update({ id: offerId }, { status: 'approved', details } as any);
   }
 
   // ─── Sessions ────────────────────────────────────────────────────────────────

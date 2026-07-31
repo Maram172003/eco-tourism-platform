@@ -87,6 +87,11 @@ export class GuideController {
     return this.service.updateOffer(req.user.sub, id, dto);
   }
 
+  @Patch('offers/:id/availability')
+  updateOfferAvailability(@Req() req: any, @Param('id') id: string, @Body('disponibilite') disponibilite: any) {
+    return this.service.updateOfferAvailability(req.user.sub, id, disponibilite);
+  }
+
   @Delete('offers/:id')
   deleteOffer(@Req() req: any, @Param('id') id: string) {
     return this.service.deleteOffer(req.user.sub, id);
@@ -171,6 +176,12 @@ export class GuideController {
   @Delete('collaborations/:collabId')
   dismissCollaboration(@Req() req: any, @Param('collabId') collabId: string) {
     return this.service.dismissCollaboration(req.user.sub, collabId);
+  }
+
+  @Roles(Role.GUIDE, Role.PROVIDER)
+  @Patch('collaborations/:collabId/kick')
+  kickCollaborator(@Req() req: any, @Param('collabId') collabId: string) {
+    return this.service.kickCollaborator(req.user.sub, collabId);
   }
 
   @Post('offers/:offerId/publish')

@@ -426,6 +426,7 @@ type MyCollab = {
   status: "pending" | "accepted" | "completed" | "declined";
   message: string | null;
   created_at: string;
+  contribution_data?: Record<string, any> | null;
 };
 
 // ─── Botanical SVG Cover ──────────────────────────────────────────────────────
@@ -489,6 +490,8 @@ export default function GuideProfilePage() {
   const [highlightOfferId, setHighlightOfferId] = useState<string | null>(null);
   const [collabResponding, setCollabResponding] = useState(false);
   const [collabConflict, setCollabConflict] = useState<{ label: string; days: string[] } | null>(null);
+  const [agendaConflictHighlight, setAgendaConflictHighlight] = useState<{ offer: string; section: string; conflictSlotLabel: string; days: string[] } | null>(null);
+  const [agendaInitialDate, setAgendaInitialDate] = useState<Date | undefined>(undefined);
   const [showCollabForm, setShowCollabForm] = useState(false);
   const [detailOffer, setDetailOffer] = useState<OfferFull | null>(null);
   const [detailOfferLoading, setDetailOfferLoading] = useState(false);
@@ -572,12 +575,19 @@ export default function GuideProfilePage() {
     if (activeTab !== "collaborations" || !token) return;
     setCollabLoading(true);
     const autoOpenId = searchParams.get("openCollab");
+    const autoOpenByOffer = searchParams.get("openCollabByOffer");
     apiFetch<MyCollab[]>("/guide/collaborations/mine", { headers: { Authorization: `Bearer ${token}` } })
       .then((list) => {
         setCollaborations(list);
         if (autoOpenId) {
           setHighlightCollabId(autoOpenId);
           scrollToElement(`collab-${autoOpenId}`, () => setHighlightCollabId(null));
+        } else if (autoOpenByOffer) {
+          const target = list.find((x) => x.offer_id === autoOpenByOffer);
+          if (target) {
+            setHighlightCollabId(target.id);
+            scrollToElement(`collab-${target.id}`, () => setHighlightCollabId(null));
+          }
         }
       })
       .catch(() => setCollaborations([]))
@@ -736,13 +746,12 @@ export default function GuideProfilePage() {
     setEditMapLat(offer.meeting_lat ?? null);
     setEditMapLng(offer.meeting_lng ?? null);
     setEditModalOpen(true);
-    // Fetcher les détails enrichis (collaborateurs) en arrière-plan
+    // Fetcher les détails complets en arrière-plan (collab data, transport_eco_sous_type, etc.)
     apiFetch<OfferFull>(`/guide/offers/${offer.id}/detail`, { headers: { Authorization: `Bearer ${token}` } })
       .then((detail) => {
-        const collabs = (detail.details as any)?.collaborators;
-        if (Array.isArray(collabs) && collabs.length > 0) {
-          setViewOffer((prev) => prev ? { ...prev, details: { ...(prev.details ?? {}), collaborators: collabs } } : prev);
-        }
+        setViewOffer((prev) => prev ? { ...prev, details: detail.details ?? prev.details } : prev);
+        // Mettre à jour la liste pour que les réouvertures suivantes aient des données fraîches
+        setOffers((prev) => prev.map((o) => o.id === offer.id ? { ...o, details: detail.details ?? o.details } : o));
       })
       .catch(() => {});
   }
@@ -1656,7 +1665,7 @@ export default function GuideProfilePage() {
         const safeIdx = Math.min(sliderIdx, Math.max(sliderImgs.length - 1, 0));
         return (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-            <div className="bg-white rounded-3xl w-full max-w-2xl shadow-2xl relative overflow-hidden flex flex-col max-h-[92vh]">
+            <div className="bg-white rounded-3xl w-full max-w-3xl shadow-2xl relative overflow-hidden flex flex-col h-[90vh]">
               <button onClick={closeEditModal}
                 className="absolute top-4 right-4 z-20 w-8 h-8 rounded-full bg-black/30 hover:bg-black/50 text-white flex items-center justify-center transition-colors">
                 <X size={16} />
@@ -1664,757 +1673,38 @@ export default function GuideProfilePage() {
 
               {!editMode ? (
                 <>
-                  {/* ── HERO: cover image + gradient overlay + titre ── */}
-                  <div className="relative shrink-0 select-none"
-                    onTouchStart={(e) => setTouchStartX(e.touches[0].clientX)}
-                    onTouchEnd={(e) => {
-                      if (touchStartX === null || sliderImgs.length <= 1) return;
-                      const diff = touchStartX - e.changedTouches[0].clientX;
-                      if (Math.abs(diff) > 40) setSliderIdx((i) => diff > 0 ? Math.min(i + 1, sliderImgs.length - 1) : Math.max(i - 1, 0));
-                      setTouchStartX(null);
-                    }}>
-                    <div className="h-56 overflow-hidden">
-                      {sliderImgs.length > 0 ? (
-                        <div className="flex h-full transition-transform duration-300 ease-out"
-                          style={{ transform: `translateX(-${(safeIdx / sliderImgs.length) * 100}%)`, width: `${sliderImgs.length * 100}%` }}>
-                          {sliderImgs.map((src, i) => (
-                            <div key={i} className="h-full" style={{ width: `${100 / sliderImgs.length}%` }}>
-                              <img src={src} alt="" className="w-full h-full object-cover" />
-                            </div>
-                          ))}
-                        </div>
-                      ) : (
-                        <div className={`w-full h-full bg-gradient-to-br ${td.gradient} flex items-center justify-center`}>
-                          <span className="material-symbols-outlined text-white/25" style={{ fontSize: 110 }}>{td.icon}</span>
-                        </div>
-                      )}
-                    </div>
-                    {/* Gradient overlay */}
-                    <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/20 to-transparent pointer-events-none" />
-                    {/* Titre + meta en bas de l'image */}
-                    {(() => {
-                      const dv = (viewOffer.details ?? {}) as Record<string, any>;
-                      const lv: string[] = Array.isArray(dv.langue_guidage) ? dv.langue_guidage : [];
-                      const PREST: Record<string, string> = { visite_guidee: "Visite guidée", randonnee: "Randonnée", excursion: "Excursion", atelier: "Atelier", transfert: "Transfert", sur_mesure: "Sur mesure" };
-                      const DIFF: Record<string, string> = { facile: "Facile ✦", moderee: "Modérée ✦✦", difficile: "Difficile ✦✦✦", tres_difficile: "Très difficile ✦✦✦✦" };
-                      return (
-                        <div className="absolute bottom-0 left-0 right-0 px-6 pb-4">
-                          <div className="flex flex-wrap gap-1.5 mb-2">
-                            {dv.type_prestation && <span className="text-[10px] font-black uppercase tracking-widest bg-primary text-slate-900 px-2 py-0.5 rounded-lg">{PREST[dv.type_prestation] ?? dv.type_prestation}</span>}
-                            {lv.map(l => <span key={l} className="text-[10px] font-bold bg-white/20 text-white px-2 py-0.5 rounded-lg backdrop-blur-sm">{l}</span>)}
-                          </div>
-                          <h2 className="text-xl font-extrabold text-white leading-tight drop-shadow">{viewOffer.title}</h2>
-                          <div className="flex items-center gap-3 mt-1.5 flex-wrap">
-                            {viewOffer.price !== null && <span className="text-sm font-black text-primary drop-shadow">{viewOffer.price} DT</span>}
-                            {viewOffer.region && <span className="flex items-center gap-1 text-[11px] font-bold text-white/90"><span className="material-symbols-outlined text-sm">location_on</span>{viewOffer.region}</span>}
-                            {dv.difficulte_physique && <span className="text-[11px] font-bold text-white/90">{DIFF[dv.difficulte_physique] ?? dv.difficulte_physique}</span>}
-                          </div>
-                        </div>
-                      );
-                    })()}
-                    {/* Navigation arrows */}
-                    {sliderImgs.length > 1 && (
+                  {/* Bannière statut */}
+                  {(() => {
+                    const sl = viewOffer.status === "approved" ? "Active" : viewOffer.status === "pending" ? "En attente" : viewOffer.status === "draft" ? "Brouillon" : viewOffer.status === "attente_publication" ? "Prêt à publier" : "Refusée";
+                    const sc = viewOffer.status === "approved" ? "bg-primary/10 text-primary" : viewOffer.status === "pending" ? "bg-amber-100 text-amber-700" : viewOffer.status === "draft" ? "bg-slate-100 text-slate-600" : viewOffer.status === "attente_publication" ? "bg-teal-100 text-teal-700" : "bg-red-100 text-red-600";
+                    return (
+                      <div className="px-6 py-3 bg-slate-50 border-b border-slate-100 flex items-center gap-3 shrink-0">
+                        <span className="text-[10px] font-black tracking-widest text-slate-400 uppercase">Mon offre</span>
+                        <span className={`text-[10px] font-extrabold px-2.5 py-1 rounded-full ${sc}`}>{sl}</span>
+                      </div>
+                    );
+                  })()}
+                  <div className="flex-1 overflow-y-auto">
+                    <OfferDetailView offer={viewOffer as OfferFull} />
+                  </div>
+                  <div className="px-8 py-5 border-t border-slate-100 bg-slate-50/80 flex items-center justify-between shrink-0">
+                    {viewOffer.status === "approved" ? (
                       <>
-                        <button type="button" onClick={() => setSliderIdx((i) => Math.max(i - 1, 0))} disabled={safeIdx === 0}
-                          className="absolute left-3 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-black/40 hover:bg-black/60 text-white flex items-center justify-center transition-all disabled:opacity-30">
-                          <ChevronLeft size={18} />
+                        <p className="text-xs text-slate-400 font-semibold">Offre publiée — aucune modification possible</p>
+                        <button type="button" onClick={handleDeleteOffer} disabled={offerDeleting}
+                          className="flex items-center gap-1.5 px-4 py-2 border border-red-200 text-red-600 bg-white rounded-2xl text-xs font-bold hover:bg-red-50 transition-colors disabled:opacity-60">
+                          <span className="material-symbols-outlined text-sm">delete</span>
+                          {offerDeleting ? "Suppression…" : "Supprimer"}
                         </button>
-                        <button type="button" onClick={() => setSliderIdx((i) => Math.min(i + 1, sliderImgs.length - 1))} disabled={safeIdx === sliderImgs.length - 1}
-                          className="absolute right-3 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-black/40 hover:bg-black/60 text-white flex items-center justify-center transition-all disabled:opacity-30">
-                          <ChevronRight size={18} />
-                        </button>
-                        <div className="absolute top-3 left-1/2 -translate-x-1/2 flex gap-1.5">
-                          {sliderImgs.map((_, i) => (
-                            <button key={i} type="button" onClick={() => setSliderIdx(i)}
-                              className={`h-1.5 rounded-full transition-all duration-200 ${i === safeIdx ? "w-5 bg-white" : "w-1.5 bg-white/50"}`} />
-                          ))}
-                        </div>
                       </>
+                    ) : (
+                      <div className="ml-auto">
+                        <button type="button" onClick={() => { setEditOfferModal(viewOffer); setEditModalOpen(false); }}
+                          className="flex items-center gap-2 px-6 py-2.5 bg-primary text-slate-900 font-extrabold rounded-2xl text-xs shadow-sm hover:bg-primary/90 transition-all active:scale-95">
+                          <Edit3 size={14} />Gérer
+                        </button>
+                      </div>
                     )}
-                  </div>
-
-                  {/* ── BODY scrollable ── */}
-                  <div className="overflow-y-auto flex-1 p-5 space-y-6">
-                    {(() => {
-                      const d = (viewOffer.details ?? {}) as Record<string, any>;
-                      const GUIDAGE: Record<string,string> = { guidage_seul:"Guidage seul", avec_transport:"+ Transport", transport_repas:"+ Transport & Repas", immersion:"Immersion complète", sur_mesure:"Sur mesure" };
-                      const PREST: Record<string,string> = { visite_guidee:"Visite guidée", randonnee:"Randonnée", excursion:"Excursion", atelier:"Atelier", transfert:"Transfert", sur_mesure:"Sur mesure" };
-                      const CONF: Record<string,string> = { instant:"Instantanée", manual:"Manuelle", conditional:"Sous conditions" };
-                      const ANNUL: Record<string,string> = { flexible:"Flexible", moderate:"Modérée", stricte:"Stricte", non_remboursable:"Non remboursable" };
-                      const PUBLIC_ICONS: Record<string,string> = { familles:"family_restroom", adultes:"person", seniors:"elderly", enfants:"child_care", groupes:"groups", photographes:"photo_camera", tous_publics:"diversity_3" };
-                      const PUBLIC_LABELS_V: Record<string,string> = { familles:"Familles", adultes:"Adultes", seniors:"Seniors", enfants:"Enfants", groupes:"Groupes", photographes:"Photographes", tous_publics:"Tous publics" };
-                      const langs: string[] = Array.isArray(d.langue_guidage) ? d.langue_guidage : [];
-                      const inclus: string[] = Array.isArray(d.inclus_resume) ? d.inclus_resume : (viewOffer.inclusions ? viewOffer.inclusions.split("||") : []);
-                      const pointsForts: string[] = Array.isArray(d.points_forts) ? d.points_forts : [];
-                      const lieux: string[] = Array.isArray(d.lieux_visites) ? d.lieux_visites : [];
-                      const expertises: string[] = Array.isArray(d.expertises_offre) ? d.expertises_offre : [];
-                      const publicRec: string[] = Array.isArray(d.public_recommande) ? d.public_recommande : [];
-                      const allImages = viewOffer.images?.filter((s) => s?.startsWith("http") || s?.startsWith("data:")) ?? [];
-                      const domDetails = d.domaine_details as Record<string,any> | null | undefined;
-
-                      const SH = ({ icon, title: t }: { icon: string; title: string }) => (
-                        <div className="flex items-center gap-2.5 mb-4">
-                          <div className="w-7 h-7 rounded-xl bg-primary/10 flex items-center justify-center shrink-0">
-                            <span className="material-symbols-outlined text-primary text-[18px]">{icon}</span>
-                          </div>
-                          <h3 className="text-sm font-extrabold text-slate-700 tracking-wide">{t}</h3>
-                          <div className="flex-1 h-px bg-slate-100"/>
-                        </div>
-                      );
-
-                      return (
-                        <>
-                          {/* Photo strip */}
-                          {allImages.length > 1 && (
-                            <div className="flex gap-2 overflow-x-auto pb-0.5">
-                              {allImages.map((src, i) => (
-                                <button key={i} type="button" onClick={() => setSliderIdx(i)} className={`shrink-0 w-14 h-14 rounded-xl overflow-hidden border-2 transition-all ${i === safeIdx ? "border-primary" : "border-transparent opacity-60"}`}>
-                                  <img src={src} alt="" className="w-full h-full object-cover"/>
-                                </button>
-                              ))}
-                            </div>
-                          )}
-
-                          {/* Présentation */}
-                          <section>
-                            <SH icon="description" title="Présentation de l'offre"/>
-                            <div className="flex flex-wrap gap-2 mb-4">
-                              {d.type_guidage_offre && (
-                                <div className="flex items-center gap-2 bg-primary/5 border border-primary/20 rounded-2xl px-4 py-2.5">
-                                  <span className="material-symbols-outlined text-primary text-lg">hiking</span>
-                                  <div>
-                                    <p className="text-[8px] font-black tracking-widest text-primary/60 uppercase">Type de guidage</p>
-                                    <p className="text-xs font-extrabold text-primary leading-tight">{GUIDAGE[d.type_guidage_offre]??d.type_guidage_offre}</p>
-                                  </div>
-                                </div>
-                              )}
-                              {d.type_prestation && (
-                                <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-2xl px-4 py-2.5">
-                                  <span className="material-symbols-outlined text-slate-500 text-lg">category</span>
-                                  <div>
-                                    <p className="text-[8px] font-black tracking-widest text-slate-400 uppercase">Type de prestation</p>
-                                    <p className="text-xs font-extrabold text-slate-700 leading-tight">{PREST[d.type_prestation]??d.type_prestation}</p>
-                                  </div>
-                                </div>
-                              )}
-                            </div>
-                            {viewOffer.description && <p className="text-sm text-slate-600 leading-relaxed mb-2">{viewOffer.description}</p>}
-                            {d.description_longue && <p className="text-sm text-slate-500 leading-relaxed whitespace-pre-line mb-4">{String(d.description_longue)}</p>}
-                            {d.difficulte_physique && (
-                              <div className="flex items-center gap-2 mb-4 bg-slate-50 border border-slate-100 rounded-xl px-3 py-2 w-fit">
-                                <span className="material-symbols-outlined text-primary text-sm">fitness_center</span>
-                                <span className="text-xs font-bold text-slate-600">Niveau d'expérience : <span className="text-slate-800">{d.difficulte_physique}</span></span>
-                              </div>
-                            )}
-                            {pointsForts.length>0 && (
-                              <div className="mb-4">
-                                <p className="text-[9px] font-black tracking-widest text-slate-400 uppercase mb-2 flex items-center gap-1.5">
-                                  <span className="material-symbols-outlined text-amber-400 text-sm">star</span>Points forts
-                                </p>
-                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                                  {pointsForts.map((pf,i)=>(
-                                    <div key={i} className="flex items-center gap-2.5 bg-amber-50 border border-amber-100 rounded-2xl p-3">
-                                      <div className="w-6 h-6 rounded-full bg-amber-200/60 flex items-center justify-center shrink-0">
-                                        <span className="material-symbols-outlined text-amber-500 text-sm">star</span>
-                                      </div>
-                                      <span className="text-xs font-bold text-amber-800 leading-tight">{pf}</span>
-                                    </div>
-                                  ))}
-                                </div>
-                              </div>
-                            )}
-                            {publicRec.length>0 && (
-                              <div>
-                                <p className="text-[9px] font-black tracking-widest text-slate-400 uppercase mb-2 flex items-center gap-1.5">
-                                  <span className="material-symbols-outlined text-secondary/60 text-sm">groups</span>Public recommandé
-                                </p>
-                                <div className="flex flex-wrap gap-2">
-                                  {publicRec.map(p=>(
-                                    <div key={p} className="flex items-center gap-1.5 bg-secondary/10 border border-secondary/20 rounded-2xl px-3 py-2">
-                                      <span className="material-symbols-outlined text-secondary text-base">{PUBLIC_ICONS[p]??'person'}</span>
-                                      <span className="text-xs font-bold text-secondary">{PUBLIC_LABELS_V[p]??p}</span>
-                                    </div>
-                                  ))}
-                                </div>
-                              </div>
-                            )}
-                          </section>
-
-                          {/* Expertises & cascade */}
-                          {(expertises.length>0||domDetails) && (() => {
-                            const domaineKey = (d.domaine_offre as string|undefined) ?? profile.domaines?.[0] ?? undefined;
-                            const cascadeCfg = domaineKey ? (DOMAIN_CASCADE_CONFIG[domaineKey] ?? null) : null;
-                            const cascade = d.domaine_details as { types_visite?: string[]; experiences?: string[]; mediation?: string[] } | null | undefined;
-                            const selTypes: string[] = cascade?.types_visite ?? [];
-                            const selExp: string[] = cascade?.experiences ?? [];
-                            const selMed: string[] = cascade?.mediation ?? [];
-                            const hasAnyCascade = selTypes.length>0||selExp.length>0||selMed.length>0;
-                            if (!expertises.length && !hasAnyCascade && !domDetails) return null;
-                            const CL_STYLES = {
-                              expertises:  { border:"border-secondary/70", text:"text-secondary",    icon:"eco"       },
-                              types:       { border:"border-secondary/70", text:"text-secondary",    icon:"landscape" },
-                              experiences: { border:"border-secondary/70", text:"text-secondary",    icon:"explore"   },
-                              supports:    { border:"border-secondary/70", text:"text-secondary",    icon:"backpack"  },
-                            } as const;
-                            const CL = ({ label, tone }: { label: string; tone: keyof typeof CL_STYLES }) => {
-                              const s = CL_STYLES[tone];
-                              return (
-                                <div className={`flex items-center gap-2 border-l-[3px] ${s.border} pl-3 py-1 mb-3`}>
-                                  <span className={`material-symbols-outlined text-[17px] ${s.text}`}>{s.icon}</span>
-                                  <span className={`text-[11px] font-extrabold tracking-wide ${s.text}`}>{label}</span>
-                                </div>
-                              );
-                            };
-                            return (
-                              <section>
-                                <SH icon="psychology" title="Expertises & Détails"/>
-
-                                {/* Niveau 1 — Expertises */}
-                                {expertises.length>0 && (
-                                  <div className="mb-4">
-                                    <CL label="Expertises" tone="expertises"/>
-                                    <div className="flex flex-wrap gap-2">
-                                      {expertises.map((e,i)=>(
-                                        <span key={i} className="flex items-center gap-1.5 bg-secondary/10 border border-secondary/20 text-secondary text-xs font-bold px-3 py-2 rounded-2xl">
-                                          <span className="material-symbols-outlined text-sm">psychology</span>{e}
-                                        </span>
-                                      ))}
-                                    </div>
-                                  </div>
-                                )}
-
-                                {/* Niveau 2 — Types (groupés par expertise si plusieurs) */}
-                                {selTypes.length>0 && (
-                                  <div className="mb-4">
-                                    <CL label={cascadeCfg?.labelType ?? "Types sélectionnés"} tone="types"/>
-                                    {cascadeCfg && expertises.length>0 ? (
-                                      <div className="space-y-2">
-                                        {expertises.map(exp=>{
-                                          const expTypes = (cascadeCfg.typesByExpertise[exp] ?? cascadeCfg.typesByExpertise["_default"] ?? []).filter(t=>selTypes.includes(t));
-                                          if (!expTypes.length) return null;
-                                          return (
-                                            <div key={exp}>
-                                              {expertises.length>1 && <p className="text-[10px] font-bold text-slate-400 mb-1 pl-0.5">{exp}</p>}
-                                              <div className="flex flex-wrap gap-1.5">
-                                                {expTypes.map(t=><span key={t} className="bg-secondary/10 text-secondary text-xs font-bold px-3 py-1.5 rounded-xl">{t}</span>)}
-                                              </div>
-                                            </div>
-                                          );
-                                        })}
-                                      </div>
-                                    ) : (
-                                      <div className="flex flex-wrap gap-1.5">
-                                        {selTypes.map(t=><span key={t} className="bg-secondary/10 text-secondary text-xs font-bold px-3 py-1.5 rounded-xl">{t}</span>)}
-                                      </div>
-                                    )}
-                                  </div>
-                                )}
-
-                                {/* Niveau 3 — Expériences incluses (groupées par type si plusieurs) */}
-                                {selExp.length>0 && (
-                                  <div className="mb-4">
-                                    <CL label={cascadeCfg?.labelExperiences ?? "Activités & expériences incluses"} tone="experiences"/>
-                                    {cascadeCfg && selTypes.length>0 ? (
-                                      <div className="space-y-3">
-                                        {selTypes.map(t=>{
-                                          const tExps = (cascadeCfg.experiencesByType[t] ?? cascadeCfg.experiencesByType["_default"] ?? []).filter(e=>selExp.includes(e));
-                                          if (!tExps.length) return null;
-                                          return (
-                                            <div key={t}>
-                                              {selTypes.length>1 && <p className="text-[10px] font-bold text-secondary/60 mb-1.5 pl-0.5">{t}</p>}
-                                              <div className="flex flex-wrap gap-1.5">
-                                                {tExps.map(e=>(
-                                                  <span key={e} className="bg-secondary/10 border border-secondary/20 text-secondary text-[11px] font-bold px-2.5 py-1.5 rounded-xl">{e}</span>
-                                                ))}
-                                              </div>
-                                            </div>
-                                          );
-                                        })}
-                                      </div>
-                                    ) : (
-                                      <div className="flex flex-wrap gap-1.5">
-                                        {selExp.map(e=>(
-                                          <span key={e} className="bg-secondary/10 border border-secondary/20 text-secondary text-[11px] font-bold px-2.5 py-1.5 rounded-xl">{e}</span>
-                                        ))}
-                                      </div>
-                                    )}
-                                  </div>
-                                )}
-
-                                {/* Niveau 4 — Matériel & Supports (groupés par type si plusieurs) */}
-                                {selMed.length>0 && (
-                                  <div>
-                                    <CL label={cascadeCfg?.labelMediation ?? "Matériel & supports fournis"} tone="supports"/>
-                                    {cascadeCfg && selTypes.length>0 ? (
-                                      <div className="space-y-3">
-                                        {selTypes.map(t=>{
-                                          const tMed = (cascadeCfg.mediationByType[t] ?? cascadeCfg.mediationByType["_default"] ?? []).filter(m=>selMed.includes(m));
-                                          if (!tMed.length) return null;
-                                          return (
-                                            <div key={t}>
-                                              {selTypes.length>1 && <p className="text-[10px] font-bold text-slate-400 mb-1.5 pl-0.5">{t}</p>}
-                                              <div className="flex flex-wrap gap-1.5">
-                                                {tMed.map(m=><span key={m} className="bg-secondary/10 border border-secondary/20 text-secondary text-[11px] font-bold px-2.5 py-1.5 rounded-xl">{m}</span>)}
-                                              </div>
-                                            </div>
-                                          );
-                                        })}
-                                      </div>
-                                    ) : (
-                                      <div className="flex flex-wrap gap-1.5">
-                                        {selMed.map(m=><span key={m} className="bg-secondary/10 border border-secondary/20 text-secondary text-[11px] font-bold px-2.5 py-1.5 rounded-xl">{m}</span>)}
-                                      </div>
-                                    )}
-                                  </div>
-                                )}
-
-                                {/* Champs domaine non-cascade */}
-                                {!cascadeCfg && domDetails && (
-                                  <div className="grid grid-cols-2 gap-x-4 gap-y-2 bg-slate-50 border border-slate-100 rounded-2xl p-4 mt-3">
-                                    {Object.entries(domDetails).filter(([,v])=>v!=null&&v!==''&&!(Array.isArray(v)&&!v.length)).map(([k,v])=>(
-                                      <div key={k}>
-                                        <p className="text-[8px] font-black tracking-widest text-slate-400 uppercase">{k.replace(/_/g,' ')}</p>
-                                        <p className="text-[11px] font-bold text-slate-700">{Array.isArray(v)?(v as string[]).join(', '):String(v)}</p>
-                                      </div>
-                                    ))}
-                                  </div>
-                                )}
-                              </section>
-                            );
-                          })()}
-
-                          {/* Localisation */}
-                          <section>
-                            <SH icon="map" title="Localisation"/>
-                            {viewOffer.meeting_point && (
-                              <>
-                                  <div className="flex items-start gap-3 mb-3">
-                                  <div className="w-8 h-8 rounded-xl bg-emerald-50 border border-emerald-100 flex items-center justify-center shrink-0">
-                                    <span className="material-symbols-outlined text-emerald-600 text-sm">location_on</span>
-                                  </div>
-                                  <div>
-                                    <p className="text-[9px] font-black tracking-widest text-slate-400 uppercase mb-0.5">Point de départ / Point de rendez-vous</p>
-                                    <p className="text-sm font-bold text-slate-800 leading-tight">{viewOffer.meeting_point}</p>
-                                    {d.lieu_precis && d.lieu_precis!==viewOffer.meeting_point && <p className="text-xs text-slate-500 mt-1">{d.lieu_precis}</p>}
-                                  </div>
-                                </div>
-                              <div className="rounded-2xl overflow-hidden border border-slate-200 shadow-sm mb-3">
-                                  <MeetingMap lat={viewOffer.meeting_lat} lng={viewOffer.meeting_lng} fallbackLat={d.lieu_lat as number|null} fallbackLng={d.lieu_lng as number|null} address={viewOffer.meeting_point ?? ""}/>
-                                </div>
-                              </>
-                            )}
-                            <div className="flex flex-wrap gap-2 mb-3">
-                              {d.heure_depart && d.heure_depart!=="00:00" && (
-                                <div className="flex items-center gap-2 bg-slate-50 border border-slate-100 rounded-xl px-3 py-2">
-                                  <span className="material-symbols-outlined text-primary text-sm">alarm</span>
-                                  <div><p className="text-[8px] font-black tracking-widest text-slate-400 uppercase">Heure de départ</p><p className="text-xs font-bold text-slate-700">{d.heure_depart}</p></div>
-                                </div>
-                              )}
-                            </div>
-                            {lieux.length>0 && (
-                              <div>
-                                <p className="text-[9px] font-black tracking-widest text-slate-400 uppercase mb-3 flex items-center gap-1.5">
-                                  <span className="material-symbols-outlined text-primary text-sm">route</span>Sites / Lieux visités
-                                </p>
-                                <div className="rounded-2xl overflow-hidden border border-slate-200 shadow-sm mb-3">
-                                  <LieuxMap lieux={lieux}/>
-                                </div>
-                                <div className="space-y-1.5">
-                                  {lieux.map((l,i)=>(
-                                    <div key={i} className="flex items-center gap-3 bg-slate-50 border border-slate-100 rounded-xl px-3 py-2.5">
-                                      <div className="w-5 h-5 rounded-full bg-primary text-slate-900 flex items-center justify-center text-[10px] font-black shrink-0">{i+1}</div>
-                                      <span className="text-sm font-semibold text-slate-700">{l}</span>
-                                    </div>
-                                  ))}
-                                </div>
-                              </div>
-                            )}
-                          </section>
-
-                          {/* Groupe & Conditions */}
-                          <section>
-                            <SH icon="groups" title="Groupe & Conditions"/>
-                            <div className="grid grid-cols-2 gap-2.5 mb-4">
-                              {([
-                                { icon:"person", label:"Nb min. participants", val: d.nb_participants_min!=null ? String(d.nb_participants_min) : null },
-                                { icon:"groups", label:"Nb max. participants", val: (d.nb_participants_max!=null||viewOffer.max_group_size) ? String(d.nb_participants_max??viewOffer.max_group_size) : null },
-                                { icon:"child_care", label:"Âge minimum", val: (d.age_minimum!=null||viewOffer.min_age) ? `${d.age_minimum??viewOffer.min_age} ans` : null },
-                                { icon:"elderly", label:"Âge maximum", val: d.age_maximum!=null ? `${d.age_maximum} ans` : null },
-                              ] as {icon:string;label:string;val:string|null}[]).filter(it=>it.val!=null).map(({icon,label,val})=>(
-                                <div key={label} className="bg-slate-50 border border-slate-100 rounded-2xl p-3.5 flex items-center gap-3">
-                                  <div className="w-9 h-9 rounded-xl bg-primary/10 flex items-center justify-center shrink-0">
-                                    <span className="material-symbols-outlined text-primary text-xl">{icon}</span>
-                                  </div>
-                                  <div>
-                                    <p className="text-[8px] font-black tracking-widest text-slate-400 uppercase leading-tight mb-0.5">{label}</p>
-                                    <p className="text-xl font-extrabold text-slate-800 leading-none">{val}</p>
-                                  </div>
-                                </div>
-                              ))}
-                            </div>
-                            {langs.length>0 && (
-                              <div className="mb-3">
-                                <p className="text-[9px] font-black tracking-widest text-slate-400 uppercase mb-2 flex items-center gap-1.5">
-                                  <span className="material-symbols-outlined text-primary text-sm">translate</span>Langue(s) de guidage
-                                </p>
-                                <div className="flex flex-wrap gap-2">
-                                  {langs.map(l=><span key={l} className="flex items-center gap-1.5 bg-primary/5 border border-primary/20 text-primary text-xs font-bold px-3 py-1.5 rounded-xl"><Globe size={12}/>{LANG_LABELS[l] ?? l}</span>)}
-                                </div>
-                              </div>
-                            )}
-                            {d.restrictions_medicales && (
-                              <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 mb-2">
-                                <div className="flex items-center gap-2 mb-1.5">
-                                  <span className="material-symbols-outlined text-amber-500 text-base">warning</span>
-                                  <p className="text-xs font-extrabold text-amber-700">Restrictions médicales / contre-indications</p>
-                                </div>
-                                <p className="text-sm text-slate-700 leading-relaxed">{d.restrictions_medicales}</p>
-                              </div>
-                            )}
-                            {d.conditions_particulieres && (
-                              <div className="bg-secondary/5 border border-secondary/20 rounded-2xl p-4">
-                                <div className="flex items-center gap-2 mb-1.5">
-                                  <span className="material-symbols-outlined text-secondary text-base">info</span>
-                                  <p className="text-xs font-extrabold text-secondary">Conditions particulières</p>
-                                </div>
-                                <p className="text-sm text-slate-600 leading-relaxed">{d.conditions_particulieres}</p>
-                              </div>
-                            )}
-                          </section>
-
-                          {/* Disponibilités */}
-                          {d.disponibilite?.type && (() => {
-                            const DISPO_LABELS: Record<string,{label:string;icon:string}> = {
-                              specific:  { label:"Date unique / Dates spécifiques", icon:"calendar_today" },
-                              range:     { label:"Période continue",                icon:"date_range" },
-                              recurring: { label:"Récurrent",                      icon:"event_repeat" },
-                              season:    { label:"Saison",                         icon:"wb_sunny" },
-                            };
-                            const dispType = d.disponibilite.type as string;
-                            const dispMeta = DISPO_LABELS[dispType] ?? { label: dispType, icon: "event" };
-                            const rawTs = d.disponibilite.time_slots as Record<string,Array<{start:string;end:string}>> | null | undefined;
-                            const timeWindows: Array<{start:string;end:string}> = rawTs && typeof rawTs === "object" && !Array.isArray(rawTs)
-                              ? Array.from(new Map(Object.values(rawTs).flat().map(w=>[`${w.start}-${w.end}`,w])).values())
-                              : [];
-                            const FR_DAYS_DISPLAY = ["Lundi","Mardi","Mercredi","Jeudi","Vendredi","Samedi","Dimanche"];
-                            const days_of_week: string[] = Array.isArray(d.disponibilite.days_of_week) ? d.disponibilite.days_of_week as string[] : [];
-                            return (
-                              <section>
-                                <SH icon="calendar_month" title="Disponibilités"/>
-                                <div className="bg-slate-50 rounded-2xl border border-slate-100 overflow-hidden">
-                                  <div className="bg-primary/5 border-b border-primary/10 px-4 py-3 flex items-center gap-2">
-                                    <span className="material-symbols-outlined text-primary text-base">{dispMeta.icon}</span>
-                                    <span className="text-sm font-extrabold text-slate-700">{dispMeta.label}</span>
-                                  </div>
-                                  <div className="p-4 space-y-4">
-                                    {d.disponibilite.start_date && (
-                                      <div className="flex items-center gap-3 bg-white rounded-xl border border-slate-100 px-4 py-3">
-                                        <span className="material-symbols-outlined text-primary text-lg">date_range</span>
-                                        <div>
-                                          <p className="text-[9px] font-black tracking-widest text-slate-400 uppercase mb-0.5">Période</p>
-                                          <p className="text-sm font-bold text-slate-700">
-                                            {new Date(d.disponibilite.start_date).toLocaleDateString("fr-FR",{day:"numeric",month:"long",year:"numeric"})}
-                                            {d.disponibilite.end_date && <> → {new Date(d.disponibilite.end_date).toLocaleDateString("fr-FR",{day:"numeric",month:"long",year:"numeric"})}</>}
-                                          </p>
-                                        </div>
-                                      </div>
-                                    )}
-                                    {days_of_week.length>0 && (
-                                      <div>
-                                        <p className="text-[9px] font-black tracking-widest text-slate-400 uppercase mb-2 flex items-center gap-1.5">
-                                          <span className="material-symbols-outlined text-primary text-sm">view_week</span>Jours disponibles
-                                        </p>
-                                        <div className="flex flex-wrap gap-1.5">
-                                          {days_of_week.map(dw=>{
-                                            const label = FR_DAYS_DISPLAY[parseInt(dw)] ?? dw;
-                                            return <span key={dw} className="bg-primary/10 text-primary text-xs font-black px-3 py-1.5 rounded-xl">{label}</span>;
-                                          })}
-                                        </div>
-                                      </div>
-                                    )}
-                                    {Array.isArray(d.disponibilite.dates)&&d.disponibilite.dates.length>0 && (
-                                      <div>
-                                        <p className="text-[9px] font-black tracking-widest text-slate-400 uppercase mb-2 flex items-center gap-1.5">
-                                          <span className="material-symbols-outlined text-primary text-sm">calendar_today</span>
-                                          {d.disponibilite.dates.length===1 ? "Date unique" : `${d.disponibilite.dates.length} dates`}
-                                        </p>
-                                        <div className="flex flex-wrap gap-1.5 max-h-32 overflow-y-auto pr-1">
-                                          {(d.disponibilite.dates as string[]).map(dt=>(
-                                            <span key={dt} className="bg-white border border-primary/20 text-primary text-[11px] font-bold px-3 py-1.5 rounded-xl">
-                                              {new Date(dt).toLocaleDateString("fr-FR",{weekday:"short",day:"numeric",month:"short"})}
-                                            </span>
-                                          ))}
-                                        </div>
-                                      </div>
-                                    )}
-                                    {timeWindows.length>0 && (
-                                      <div>
-                                        <p className="text-[9px] font-black tracking-widest text-slate-400 uppercase mb-2 flex items-center gap-1.5">
-                                          <span className="material-symbols-outlined text-primary text-sm">schedule</span>Horaires
-                                        </p>
-                                        <div className="flex flex-wrap gap-2">
-                                          {timeWindows.map((tw,i)=>(
-                                            <div key={i} className="flex items-center gap-2 bg-white border border-slate-200 rounded-xl px-3 py-2">
-                                              <span className="material-symbols-outlined text-primary text-sm">schedule</span>
-                                              <span className="text-sm font-extrabold text-slate-700">{tw.start}</span>
-                                              <span className="text-slate-400 text-sm">→</span>
-                                              <span className="text-sm font-extrabold text-slate-700">{tw.end}</span>
-                                            </div>
-                                          ))}
-                                        </div>
-                                      </div>
-                                    )}
-                                  </div>
-                                </div>
-                              </section>
-                            );
-                          })()}
-
-                          {/* Ce que vous fournissez */}
-                          <section>
-                            <SH icon="room_service" title="Ce que vous fournissez"/>
-                            {(() => {
-                              const collabs = Array.isArray(d.collaborators) ? (d.collaborators as Array<{id:string;name:string;section:string;status?:string}>) : [];
-                              const collabFor = (section: string) => collabs.find(c => c.section === section && c.status !== "declined");
-                              const CollabBadge = ({ section }: { section: string }) => {
-                                const c = collabFor(section);
-                                if (!c) return null;
-                                const st = c.status ?? "pending";
-                                const cls = st === "declined" ? "bg-red-50 border-red-200 text-red-600" : st === "pending" ? "bg-amber-50 border-amber-200 text-amber-600" : "bg-teal-50 border-teal-200 text-teal-700";
-                                const icon = st === "declined" ? "cancel" : st === "pending" ? "schedule" : "check_circle";
-                                return (
-                                  <span className={`ml-auto flex items-center gap-1 text-[10px] font-bold px-2.5 py-1 rounded-full border ${cls}`}>
-                                    <span className="material-symbols-outlined text-[11px]">{icon}</span>
-                                    {st === "declined" || st === "pending" ? `${c.name} · ${st === "declined" ? "Refusé" : "En attente"}` : c.name}
-                                  </span>
-                                );
-                              };
-                              return (
-                            <div className="space-y-3">
-                              {d.transport_inclus===true && (
-                                <div className="border border-secondary/20 rounded-2xl overflow-hidden">
-                                  <div className="flex items-center gap-2 px-4 py-3 bg-secondary/5 border-b border-secondary/20">
-                                    <span className="material-symbols-outlined text-secondary text-lg">directions_bus</span>
-                                    <p className="text-xs font-extrabold text-secondary">Transport</p>
-                                    <CollabBadge section="transport" />
-                                  </div>
-                                  <div className="px-4 py-3 space-y-2">
-                                    {Array.isArray(d.transport_types)&&d.transport_types.length>0 && (
-                                      <div className="flex flex-wrap gap-1.5">{(d.transport_types as string[]).map(t=><span key={t} className="bg-secondary/10 text-secondary text-[11px] font-bold px-2.5 py-1 rounded-lg">{t}</span>)}</div>
-                                    )}
-                                    {d.transport_svcs && Object.entries(d.transport_svcs as Record<string,any>).map(([type,svc])=>(
-                                      <div key={type}>
-                                        <p className="text-[10px] font-black text-slate-500 uppercase mb-1">{type}</p>
-                                        <div className="flex flex-wrap gap-x-4 gap-y-0.5">
-                                          {Object.entries(svc as Record<string,any>).filter(([,v])=>v!=null&&v!==''&&v!==false&&!(Array.isArray(v)&&!v.length)).map(([k,v])=>(
-                                            <p key={k} className="text-[11px] text-slate-500">{k} : <span className="font-bold text-slate-700">{Array.isArray(v)?(v as string[]).join(', '):String(v)}</span></p>
-                                          ))}
-                                        </div>
-                                      </div>
-                                    ))}
-                                  </div>
-                                </div>
-                              )}
-                              {d.repas_flag===true && (
-                                <div className="border border-emerald-100 rounded-2xl overflow-hidden">
-                                  <div className="flex items-center gap-2 px-4 py-3 bg-emerald-50 border-b border-emerald-100">
-                                    <span className="material-symbols-outlined text-emerald-600 text-lg">restaurant</span>
-                                    <p className="text-xs font-extrabold text-emerald-700">Restauration</p>
-                                    <CollabBadge section="restauration" />
-                                  </div>
-                                  <div className="px-4 py-3 space-y-2">
-                                    {Array.isArray(d.restauration_types)&&d.restauration_types.length>0 && (
-                                      <div className="flex flex-wrap gap-1.5">{(d.restauration_types as string[]).map(t=><span key={t} className="bg-emerald-50 text-emerald-700 text-[11px] font-bold px-2.5 py-1 rounded-lg">{t}</span>)}</div>
-                                    )}
-                                    {d.restauration_svcs && Object.entries(d.restauration_svcs as Record<string,any>).map(([type,svc])=>{
-                                      const flds: Record<string,any> = (svc as any)?.fields ?? {};
-                                      const photos: string[] = (svc as any)?.photos ?? [];
-                                      const fieldDefs = OFFER_DETAIL_FIELDS[type]?.sections?.flatMap((s: any) => s.fields) ?? [];
-                                      return svc && (
-                                        <div key={type} className="space-y-2">
-                                          <span className="inline-flex items-center bg-emerald-50 text-emerald-700 text-[11px] font-bold px-2.5 py-1 rounded-lg">{type.replace(/_/g," ")}</span>
-                                          {photos.length>0 && (
-                                            <div className="flex gap-2 overflow-x-auto pb-1">
-                                              {photos.slice(0,4).map((p,i)=><img key={i} src={p} alt="" className="h-20 w-28 object-cover rounded-lg shrink-0 border border-emerald-100"/>)}
-                                            </div>
-                                          )}
-                                          <div className="space-y-1.5">
-                                            {fieldDefs.filter((f: any)=>{const v=flds[f.key];if(v===null||v===undefined||v===''||v===false)return false;if(Array.isArray(v)&&!v.length)return false;if(f.conditionalOn&&flds[f.conditionalOn.field]!==f.conditionalOn.value)return false;return true;}).map((f: any)=>{const v=flds[f.key];return(
-                                              <div key={f.key} className="flex flex-col gap-0.5">
-                                                <p className="text-[9px] font-black tracking-widest text-emerald-600 uppercase">{f.label}</p>
-                                                {Array.isArray(v)?<div className="flex flex-wrap gap-1.5">{v.map((it: string)=><span key={it} className="text-[11px] bg-emerald-50 text-emerald-700 border border-emerald-100 px-2 py-0.5 rounded-lg font-bold">{it}</span>)}</div>:v===true?<span className="text-xs text-slate-700 font-semibold">Oui</span>:<p className="text-sm text-slate-700 leading-relaxed">{String(v)}</p>}
-                                              </div>
-                                            );})}
-                                          </div>
-                                        </div>
-                                      );
-                                    })}
-                                  </div>
-                                </div>
-                              )}
-                              {d.hebergement_inclus===true && (
-                                <div className="border border-teal-100 rounded-2xl overflow-hidden">
-                                  <div className="flex items-center gap-2 px-4 py-3 bg-teal-50 border-b border-teal-100">
-                                    <span className="material-symbols-outlined text-teal-600 text-lg">hotel</span>
-                                    <p className="text-xs font-extrabold text-teal-700">Hébergement</p>
-                                    <CollabBadge section="hebergement" />
-                                  </div>
-                                  <div className="px-4 py-3 space-y-2">
-                                    {Array.isArray(d.hebergement_types)&&d.hebergement_types.length>0 && (
-                                      <div className="flex flex-wrap gap-1.5">{(d.hebergement_types as string[]).map(t=><span key={t} className="bg-teal-50 text-teal-700 text-[11px] font-bold px-2.5 py-1 rounded-lg">{t}</span>)}</div>
-                                    )}
-                                    {d.hebergement_svcs && Object.entries(d.hebergement_svcs as Record<string,any>).map(([type,svc])=>{
-                                      const fieldDefs = OFFER_DETAIL_FIELDS[type]?.sections?.flatMap((s: any) => s.fields) ?? [];
-                                      // HebergData: { units: [...] } — valeurs directement dans chaque unit
-                                      // SimpleServiceData: { fields: {...}, photos: [...] }
-                                      const isHeberg = (svc as any)?.units && Array.isArray((svc as any).units);
-                                      const unitsToRender: Array<{flds: Record<string,any>; photos: string[]}> = isHeberg
-                                        ? ((svc as any).units as Array<Record<string,any>>).map((u: Record<string,any>)=>({flds: u, photos: (u.photos as string[]) ?? []}))
-                                        : [{flds: (svc as any)?.fields ?? {}, photos: (svc as any)?.photos ?? []}];
-                                      return svc && (
-                                        <div key={type} className="space-y-2">
-                                          <span className="inline-flex items-center bg-teal-50 text-teal-700 text-[11px] font-bold px-2.5 py-1 rounded-lg">{type.replace(/_/g," ")}</span>
-                                          {unitsToRender.map(({flds, photos}, ui)=>(
-                                            <div key={ui} className="space-y-2">
-                                              {unitsToRender.length>1 && <p className="text-[9px] font-black tracking-widest text-teal-600 uppercase">Unité {ui+1}</p>}
-                                              {photos.length>0 && (
-                                                <div className="flex gap-2 overflow-x-auto pb-1">
-                                                  {photos.slice(0,4).map((p,i)=><img key={i} src={p} alt="" className="h-20 w-28 object-cover rounded-lg shrink-0 border border-teal-100"/>)}
-                                                </div>
-                                              )}
-                                              <div className="space-y-1.5">
-                                                {fieldDefs.filter((f: any)=>{const v=flds[f.key];if(v===null||v===undefined||v===''||v===false)return false;if(Array.isArray(v)&&!v.length)return false;if(f.conditionalOn&&flds[f.conditionalOn.field]!==f.conditionalOn.value)return false;return true;}).map((f: any)=>{const v=flds[f.key];return(
-                                                  <div key={f.key} className="flex flex-col gap-0.5">
-                                                    <p className="text-[9px] font-black tracking-widest text-teal-700 uppercase">{f.label}</p>
-                                                    {Array.isArray(v)?<div className="flex flex-wrap gap-1.5">{v.map((it: string)=><span key={it} className="text-[11px] bg-teal-50 text-teal-700 border border-teal-100 px-2 py-0.5 rounded-lg font-bold">{it}</span>)}</div>:v===true?<span className="text-xs text-slate-700 font-semibold">Oui</span>:<p className="text-sm text-slate-700 leading-relaxed">{String(v)}</p>}
-                                                  </div>
-                                                );})}
-                                              </div>
-                                            </div>
-                                          ))}
-                                        </div>
-                                      );
-                                    })}
-                                  </div>
-                                </div>
-                              )}
-                              {inclus.length>0 && (
-                                <div className="bg-emerald-50 border border-emerald-100 rounded-2xl p-4">
-                                  <p className="text-[9px] font-black tracking-widest text-emerald-700 uppercase mb-2.5 flex items-center gap-1.5">
-                                    <span className="material-symbols-outlined text-sm">check_circle</span>Services inclus
-                                  </p>
-                                  <ul className="space-y-1.5">
-                                    {inclus.map((item,i)=><li key={i} className="flex items-start gap-2 text-sm text-slate-700"><span className="material-symbols-outlined text-emerald-500 text-base shrink-0 mt-0.5">done</span>{item}</li>)}
-                                  </ul>
-                                </div>
-                              )}
-                              {d.equipement_a_apporter && (
-                                <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4">
-                                  <p className="text-[9px] font-black tracking-widest text-slate-500 uppercase mb-2 flex items-center gap-1.5">
-                                    <span className="material-symbols-outlined text-slate-400 text-sm">backpack</span>À apporter par le participant
-                                  </p>
-                                  <p className="text-sm text-slate-600 leading-relaxed whitespace-pre-line">{d.equipement_a_apporter}</p>
-                                </div>
-                              )}
-                              {d.non_inclus && (
-                                <div className="bg-red-50 border border-red-100 rounded-2xl p-4">
-                                  <p className="text-[9px] font-black tracking-widest text-red-500 uppercase mb-2 flex items-center gap-1.5">
-                                    <span className="material-symbols-outlined text-red-400 text-sm">cancel</span>Non inclus (à prévoir par le participant)
-                                  </p>
-                                  <p className="text-sm text-slate-600 leading-relaxed whitespace-pre-line">{d.non_inclus}</p>
-                                </div>
-                              )}
-                            </div>
-                              );
-                            })()}
-                          </section>
-
-                          {/* Tarification */}
-                          {d.tarification && (
-                            <section>
-                              <SH icon="payments" title="Tarification"/>
-                              <div className="bg-gradient-to-br from-emerald-50 to-teal-50 border border-emerald-100 rounded-3xl overflow-hidden">
-                                <div className="flex flex-wrap divide-x divide-emerald-100">
-                                  {(d.tarification.prix_par_personne??d.tarification.price_per_person)!=null && (
-                                    <div className="flex-1 p-5 text-center min-w-[120px]">
-                                      <p className="text-[9px] font-black tracking-widest text-slate-400 uppercase mb-1">Par personne</p>
-                                      <p className="text-2xl font-extrabold text-primary leading-none">{d.tarification.prix_par_personne??d.tarification.price_per_person}</p>
-                                      <p className="text-xs font-bold text-slate-400 mt-0.5">DT</p>
-                                    </div>
-                                  )}
-                                  {(d.tarification.prix_groupe??d.tarification.price_per_group)!=null && (
-                                    <div className="flex-1 p-5 text-center min-w-[120px]">
-                                      <p className="text-[9px] font-black tracking-widest text-slate-400 uppercase mb-1">Par groupe</p>
-                                      <p className="text-2xl font-extrabold text-primary leading-none">{d.tarification.prix_groupe??d.tarification.price_per_group}</p>
-                                      <p className="text-xs font-bold text-slate-400 mt-0.5">DT</p>
-                                    </div>
-                                  )}
-                                  {d.tarification.base_price!=null && (
-                                    <div className="flex-1 p-5 text-center min-w-[120px]">
-                                      <p className="text-[9px] font-black tracking-widest text-slate-400 uppercase mb-1">Prix de base</p>
-                                      <p className="text-2xl font-extrabold text-primary leading-none">{d.tarification.base_price}</p>
-                                      <p className="text-xs font-bold text-slate-400 mt-0.5">DT</p>
-                                    </div>
-                                  )}
-                                  {d.tarification.deposit_percent!=null && (
-                                    <div className="flex-1 p-5 text-center min-w-[100px] bg-white/50">
-                                      <p className="text-[9px] font-black tracking-widest text-slate-400 uppercase mb-1">Acompte</p>
-                                      <p className="text-2xl font-extrabold text-slate-700 leading-none">{d.tarification.deposit_percent}<span className="text-lg">%</span></p>
-                                      <p className="text-[10px] text-slate-400 font-semibold mt-0.5">du total</p>
-                                    </div>
-                                  )}
-                                </div>
-                              </div>
-                            </section>
-                          )}
-
-                          {/* Confirmation & Annulation */}
-                          <section>
-                            <SH icon="policy" title="Confirmation & Annulation"/>
-                            <div className="space-y-3">
-                              {d.type_confirmation && (
-                                <div className="flex items-center gap-3 bg-slate-50 border border-slate-100 rounded-2xl p-4">
-                                  <div className="w-10 h-10 rounded-2xl bg-emerald-50 border border-emerald-100 flex items-center justify-center shrink-0">
-                                    <span className="material-symbols-outlined text-emerald-600 text-xl">verified</span>
-                                  </div>
-                                  <div>
-                                    <p className="text-[9px] font-black tracking-widest text-slate-400 uppercase mb-0.5">Type de confirmation</p>
-                                    <p className="text-sm font-bold text-slate-700">{CONF[d.type_confirmation]??d.type_confirmation}</p>
-                                  </div>
-                                </div>
-                              )}
-                              {(viewOffer.cancellation_policy||d.politique_annulation) && (
-                                <div className="bg-slate-50 border border-slate-100 rounded-2xl p-4">
-                                  <p className="text-[9px] font-black tracking-widest text-slate-400 uppercase mb-2 flex items-center gap-1.5">
-                                    <span className="material-symbols-outlined text-slate-400 text-sm">policy</span>Politique d'annulation
-                                  </p>
-                                  <p className="text-sm font-bold text-slate-700 mb-1">{ANNUL[viewOffer.cancellation_policy??d.politique_annulation??'']??(viewOffer.cancellation_policy??d.politique_annulation)}</p>
-                                  {d.description_politique && <p className="text-xs text-slate-500 leading-relaxed">{d.description_politique}</p>}
-                                </div>
-                              )}
-                              {d.annulation_meteo!=null && (
-                                <div className={`flex items-center gap-3 rounded-2xl px-4 py-3 border ${d.annulation_meteo?"bg-secondary/5 border-secondary/20":"bg-slate-50 border-slate-100"}`}>
-                                  <span className={`material-symbols-outlined text-lg ${d.annulation_meteo?"text-secondary":"text-slate-400"}`}>{d.annulation_meteo?"thunderstorm":"wb_sunny"}</span>
-                                  <div>
-                                    <p className="text-[9px] font-black tracking-widest text-slate-400 uppercase mb-0.5">Météo</p>
-                                    <p className={`text-sm font-bold ${d.annulation_meteo?"text-secondary":"text-slate-500"}`}>
-                                      {d.annulation_meteo?"Remboursement si météo dangereuse":"Pas de remboursement en cas de météo"}
-                                    </p>
-                                  </div>
-                                </div>
-                              )}
-                            </div>
-                          </section>
-                        </>
-                      );
-                    })()}
-                  </div>
-
-                  <div className="px-8 py-5 border-t border-slate-100 bg-slate-50/80 flex items-center justify-end shrink-0">
-                    <button type="button" onClick={() => { setEditOfferModal(viewOffer); setEditModalOpen(false); }}
-                      className="flex items-center gap-2 px-6 py-2.5 bg-primary text-slate-900 font-extrabold rounded-2xl text-xs shadow-sm hover:bg-primary/90 transition-all active:scale-95">
-                      <Edit3 size={14} />Gérer
-                    </button>
                   </div>
                 </>
               ) : (
@@ -3264,7 +2554,13 @@ export default function GuideProfilePage() {
 
             {/* TAB: AGENDA */}
             {activeTab === "agenda" && token && (
-              <AvailabilityCalendar token={token} />
+              <AvailabilityCalendar
+                token={token}
+                offers={offers.map((o) => ({ id: o.id, title: o.title }))}
+                onOfferDeleted={(id) => setOffers((prev) => prev.filter((o) => o.id !== id))}
+                pendingConflict={agendaConflictHighlight}
+                initialDate={agendaInitialDate}
+              />
             )}
 
             {/* ── Onglet Collaborations ── */}
@@ -3277,10 +2573,12 @@ export default function GuideProfilePage() {
                 autre:        { label: "Autre",       icon: "category",       grad: "from-slate-500 to-slate-600" },
               };
               const STATUS_META: Record<string, { label: string; cls: string; icon: string }> = {
-                pending:   { label: "En attente", cls: "bg-slate-100 text-slate-600 border-slate-200",     icon: "schedule" },
-                accepted:  { label: "Acceptée",   cls: "bg-teal-100 text-teal-700 border-teal-200",       icon: "check_circle" },
-                completed: { label: "Complétée",  cls: "bg-emerald-100 text-emerald-700 border-emerald-200", icon: "task_alt" },
-                declined:  { label: "Refusée",    cls: "bg-red-100 text-red-700 border-red-200",          icon: "cancel" },
+                pending:       { label: "En attente",      cls: "bg-slate-100 text-slate-600 border-slate-200",     icon: "schedule" },
+                accepted:      { label: "Acceptée",        cls: "bg-teal-100 text-teal-700 border-teal-200",       icon: "check_circle" },
+                completed:     { label: "Complétée",       cls: "bg-emerald-100 text-emerald-700 border-emerald-200", icon: "task_alt" },
+                declined:      { label: "Refusée",         cls: "bg-red-100 text-red-700 border-red-200",          icon: "cancel" },
+                offer_deleted: { label: "Offre supprimée", cls: "bg-orange-100 text-orange-700 border-orange-200", icon: "delete_forever" },
+                collab_kicked: { label: "Retiré par le propriétaire", cls: "bg-red-100 text-red-700 border-red-200", icon: "person_remove" },
               };
               return (
                 <div className="space-y-4">
@@ -3298,7 +2596,10 @@ export default function GuideProfilePage() {
                   ) : (
                     collaborations.map((c) => {
                       const sm = SECTION_META[c.section] ?? SECTION_META.autre;
-                      const st = STATUS_META[c.status] ?? STATUS_META.pending;
+                      const isOfferDeleted = c.offer_status === "offer_deleted";
+                      const isKicked = c.offer_status === "collab_kicked";
+                      const isInactive = isOfferDeleted || isKicked;
+                      const st = isOfferDeleted ? STATUS_META.offer_deleted : isKicked ? STATUS_META.collab_kicked : (STATUS_META[c.status] ?? STATUS_META.pending);
                       return (
                         <div key={c.id} id={`collab-${c.id}`} className={`relative group bg-white rounded-3xl border shadow-sm overflow-hidden hover:shadow-md transition-all duration-300 ${highlightCollabId === c.id ? "border-primary ring-2 ring-primary/30 shadow-primary/20" : "border-slate-100/90"}`}>
                           <button
@@ -3351,16 +2652,23 @@ export default function GuideProfilePage() {
                                 <p className="text-[11px] font-bold text-slate-400">
                                   {new Date(c.created_at).toLocaleDateString("fr-FR", { day: "numeric", month: "long", year: "numeric" })}
                                 </p>
-                                <button onClick={() => {
-                                  setOpenCollab(c);
-                                  setDetailOffer(null);
-                                  setDetailOfferLoading(true);
-                                  apiFetch<OfferFull>(`/guide/offers/${c.offer_id}/detail`, { headers: { Authorization: `Bearer ${token}` } })
-                                    .then(setDetailOffer).catch(() => setDetailOffer(null)).finally(() => setDetailOfferLoading(false));
-                                }}
-                                  className="text-primary hover:text-primary/80 font-extrabold text-xs inline-flex items-center gap-1 hover:translate-x-1 transition-transform duration-200">
-                                  <span>Voir les détails</span><ArrowRight size={14} strokeWidth={2.5} />
-                                </button>
+                                {isInactive ? (
+                                  <span className={`font-extrabold text-xs inline-flex items-center gap-1 ${isKicked ? "text-red-400" : "text-orange-400"}`}>
+                                    <span className="material-symbols-outlined text-sm">{isKicked ? "person_remove" : "info"}</span>
+                                    {isKicked ? "Retiré par le propriétaire" : "Supprimée par le propriétaire"}
+                                  </span>
+                                ) : (
+                                  <button onClick={() => {
+                                    setOpenCollab(c);
+                                    setDetailOffer(null);
+                                    setDetailOfferLoading(true);
+                                    apiFetch<OfferFull>(`/guide/offers/${c.offer_id}/detail`, { headers: { Authorization: `Bearer ${token}` } })
+                                      .then(setDetailOffer).catch(() => setDetailOffer(null)).finally(() => setDetailOfferLoading(false));
+                                  }}
+                                    className="text-primary hover:text-primary/80 font-extrabold text-xs inline-flex items-center gap-1 hover:translate-x-1 transition-transform duration-200">
+                                    <span>Voir les détails</span><ArrowRight size={14} strokeWidth={2.5} />
+                                  </button>
+                                )}
                               </div>
                             </div>
                           </div>
@@ -3381,6 +2689,7 @@ export default function GuideProfilePage() {
                     offerId={openCollab.offer_id}
                     section={openCollab.section}
                     token={token}
+                    offerApproved={openCollab.offer_status === "approved"}
                     onClose={() => { setShowCollabForm(false); setOpenCollab(null); }}
                     onContributed={() => {
                       setCollaborations((prev) => prev.map((x) => x.id === openCollab!.id ? { ...x, status: "completed" as const } : x));
@@ -3442,7 +2751,13 @@ export default function GuideProfilePage() {
                     ) : detailOffer ? (
                       <OfferDetailView offer={detailOffer} />
                     ) : (
-                      <div className="flex items-center justify-center h-full text-slate-400 text-sm">Impossible de charger l&apos;offre.</div>
+                      <div className="flex flex-col items-center justify-center h-full gap-4 text-slate-400">
+                        <span className="material-symbols-outlined text-5xl text-orange-300">delete_forever</span>
+                        <div className="text-center">
+                          <p className="font-extrabold text-slate-600 text-base mb-1">Offre supprimée</p>
+                          <p className="text-sm text-slate-400">Cette offre a été supprimée par son propriétaire.</p>
+                        </div>
+                      </div>
                     )}
                   </div>
                   {/* Bandeau conflit d'agenda */}
@@ -3457,7 +2772,22 @@ export default function GuideProfilePage() {
                             <> aux dates : {collabConflict.days.map(d => new Date(d + "T12:00:00").toLocaleDateString("fr-FR", { day: "numeric", month: "short" })).join(", ")}</>
                           )}.
                         </p>
-                        <button onClick={() => { setOpenCollab(null); setCollabConflict(null); setActiveTab("agenda" as any); }}
+                        <button onClick={() => {
+                          if (collabConflict && openCollab) {
+                            setAgendaConflictHighlight({
+                              offer: openCollab.offer_title,
+                              section: openCollab.section,
+                              conflictSlotLabel: collabConflict.label,
+                              days: collabConflict.days,
+                            });
+                            if (collabConflict.days.length > 0) {
+                              setAgendaInitialDate(new Date(collabConflict.days[0] + "T12:00:00"));
+                            }
+                          }
+                          setOpenCollab(null);
+                          setCollabConflict(null);
+                          setActiveTab("agenda" as any);
+                        }}
                           className="mt-2 text-xs font-extrabold text-amber-700 underline underline-offset-2 hover:text-amber-900">
                           Régler mon agenda →
                         </button>

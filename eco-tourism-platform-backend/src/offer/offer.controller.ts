@@ -87,6 +87,20 @@ export class OfferController {
     return this.service.remove(req.user.sub, id);
   }
 
+  @ApiBearerAuth('bearer')
+  @Roles(Role.PROVIDER)
+  @Post(':id/publish')
+  publishOffer(@Req() req: any, @Param('id') id: string) {
+    return this.service.publishOffer(req.user.sub, id);
+  }
+
+  @ApiBearerAuth('bearer')
+  @Roles(Role.PROVIDER)
+  @Post(':offerId/collab-conflicts')
+  checkCollabConflicts(@Req() req: any, @Param('offerId') offerId: string, @Body('disponibilite') disponibilite: any) {
+    return this.service.checkCollabConflicts(req.user.sub, offerId, disponibilite);
+  }
+
   // ─── Sessions ─────────────────────────────────────────────────────────────
 
   @Public()

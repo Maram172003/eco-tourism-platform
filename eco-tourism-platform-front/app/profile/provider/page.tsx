@@ -387,9 +387,11 @@ type MyCollab = {
   message: string | null;
   created_at: string;
   invited_user_name: string;
+  contribution_data?: Record<string, any> | null;
 };
 
 type ProviderCollab = {
+  id?: string;
   userId: string;
   userName: string;
   userType: string;
@@ -502,10 +504,17 @@ export default function ProviderProfilePage() {
   const [collaborations, setCollaborations] = useState<MyCollab[]>([]);
   const [collabLoading, setCollabLoading] = useState(false);
   const [openCollab, setOpenCollab] = useState<MyCollab | null>(null);
+  const [highlightCollabId, setHighlightCollabId] = useState<string | null>(null);
+  const [highlightOfferId,  setHighlightOfferId]  = useState<string | null>(null);
   const [collabResponding, setCollabResponding] = useState(false);
   const [showCollabForm, setShowCollabForm] = useState(false);
   const [detailOffer, setDetailOffer] = useState<OfferFull | null>(null);
   const [detailOfferLoading, setDetailOfferLoading] = useState(false);
+
+  // ── Publication offre (attente_publication) ───────────────────────────────
+  const [publishOfferModal,   setPublishOfferModal]   = useState<{ offer: Offer; detail: OfferFull | null } | null>(null);
+  const [publishOfferLoading, setPublishOfferLoading] = useState(false);
+  const [publishOfferSaving,  setPublishOfferSaving]  = useState(false);
 
   // ── OrgActivity detail modal ──────────────────────────────────────────────
   const [viewOrgActivity, setViewOrgActivity] = useState<OrgActivity | null>(null);
@@ -711,6 +720,9 @@ export default function ProviderProfilePage() {
   const [providerAutreServiceDet,    setProviderAutreServiceDet]    = useState<Record<string, any>>({});
   const [offerAvail,             setOfferAvail]             = useState<OfferAvailSlot>(EMPTY_OFFER_AVAIL);
   const [offerConfirmation,      setOfferConfirmation]      = useState<ConfirmationData>(EMPTY_CONFIRMATION);
+  type ProviderCollabConflict = { userName: string; section: string; conflictSlot: string; conflictDays: string[]; conflictTimeSlots?: Record<string, { start: string; end: string }[]> | null };
+  const [providerCollabConflicts,     setProviderCollabConflicts]     = useState<ProviderCollabConflict[]>([]);
+  const [checkingProviderCollabConfs, setCheckingProviderCollabConfs] = useState(false);
   // ── Config par sous-type (disponibilité + tarification — hébergement) ────
   const [subtypeFormConfig,  setSubtypeFormConfig]  = useState<Record<string, Record<string, any>>>({});
   // ── Photos par entité (sous-type ou unité) ───────────────────────────────
@@ -813,17 +825,39 @@ export default function ProviderProfilePage() {
     if (activeTab !== "collaborations" || !token) return;
     setCollabLoading(true);
     const autoOpenId = searchParams.get("openCollab");
+    const autoOpenByOffer = searchParams.get("openCollabByOffer");
     apiFetch<MyCollab[]>("/guide/collaborations/mine", { headers: { Authorization: `Bearer ${token}` } })
       .then((list) => {
         setCollaborations(list);
+        const resolveTarget = (t: typeof list[0] | undefined) => {
+          if (!t) return;
+          setHighlightCollabId(t.id);
+          setTimeout(() => {
+            document.getElementById(`collab-${t.id}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
+            setTimeout(() => setHighlightCollabId(null), 3000);
+          }, 300);
+        };
         if (autoOpenId) {
-          const target = list.find((x) => x.id === autoOpenId);
-          if (target) setOpenCollab(target);
+          resolveTarget(list.find((x) => x.id === autoOpenId));
+        } else if (autoOpenByOffer) {
+          resolveTarget(list.find((x) => x.offer_id === autoOpenByOffer));
         }
       })
       .catch(() => setCollaborations([]))
       .finally(() => setCollabLoading(false));
-  }, [activeTab, token]);
+  }, [activeTab, token, searchParams]);
+
+  // Highlight une offre depuis URL (?tab=offres&openOffer=...)
+  useEffect(() => {
+    if (activeTab !== "offres") return;
+    const openOfferId = searchParams.get("openOffer");
+    if (!openOfferId || !offers.length) return;
+    setHighlightOfferId(openOfferId);
+    setTimeout(() => {
+      document.getElementById(`offer-${openOfferId}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
+      setTimeout(() => setHighlightOfferId(null), 3000);
+    }, 300);
+  }, [activeTab, searchParams, offers]);
 
   // Network search
   useEffect(() => {
@@ -850,6 +884,32 @@ export default function ProviderProfilePage() {
       .then((data) => setCircuits(data.map((c) => ({ ...c, created_at: typeof c.created_at === 'string' ? c.created_at : new Date(c.created_at).toISOString() }))))
       .catch(() => {});
   }, [token]);
+
+  // Vérification des conflits agenda collaborateurs (étape 4 wizard offre prestataire)
+  const providerAvailKey = JSON.stringify(offerAvail);
+  useEffect(() => {
+    if (!offerEditId || !offerAvail.type || !token) {
+      setProviderCollabConflicts([]);
+      return;
+    }
+    setCheckingProviderCollabConfs(true);
+    const timer = setTimeout(async () => {
+      try {
+        const result = await apiFetch<ProviderCollabConflict[]>(`/offers/${offerEditId}/collab-conflicts`, {
+          method: "POST",
+          headers: { Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ disponibilite: offerAvail }),
+        });
+        setProviderCollabConflicts(Array.isArray(result) ? result : []);
+      } catch {
+        setProviderCollabConflicts([]);
+      } finally {
+        setCheckingProviderCollabConfs(false);
+      }
+    }, 700);
+    return () => clearTimeout(timer);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [providerAvailKey, offerEditId, token]);
 
   function openCircuitModal(circuit?: Circuit) {
     if (circuit) {
@@ -1151,6 +1211,7 @@ export default function ProviderProfilePage() {
     setProviderAutreServiceInclus(null);
     setProviderAutreServiceCat(""); setProviderAutreServiceST(""); setProviderAutreServiceDet({});
     setOfferAvail(EMPTY_OFFER_AVAIL); setOfferConfirmation(EMPTY_CONFIRMATION);
+    setProviderCollabConflicts([]); setCheckingProviderCollabConfs(false);
     setOfferStep(1);
   }
 
@@ -1220,6 +1281,7 @@ export default function ProviderProfilePage() {
         : (polAnn || undefined);
 
       const payload = {
+        _finalize:                   true,
         activity_id:                 offerActivity?.id                         || undefined,
         offer_subtypes:              offerSubtypes.length > 0 ? offerSubtypes  : undefined,
         offer_subtype:               offerSubtypes[0]                          || undefined,
@@ -1365,6 +1427,16 @@ export default function ProviderProfilePage() {
     setProviderInviteSection(section);
   }
 
+  async function kickProviderCollab(collabId: string) {
+    try {
+      await apiFetch(`/guide/collaborations/${collabId}/kick`, {
+        method: "PATCH",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      setProviderOfferCollabs((prev) => prev.filter((c) => c.id !== collabId));
+    } catch { /* silent */ }
+  }
+
   // ── Offer detail / edit modal ──────────────────────────────────────────────
 
   function openEditModal(offer: Offer) {
@@ -1389,6 +1461,15 @@ export default function ProviderProfilePage() {
     setEditMode(false);
     setSliderIdx(0);
     setEditModalOpen(true);
+    // Fetcher les détails complets en arrière-plan (collaborateurs, données de prestation, etc.)
+    if (token) {
+      apiFetch<any>(`/guide/offers/${offer.id}/detail`, {
+        headers: { Authorization: `Bearer ${token}` },
+      }).then((detail) => {
+        setViewOffer((prev) => prev ? { ...prev, details: detail.details ?? (prev as any).details } : prev);
+        setOffers((prev) => prev.map((o) => o.id === offer.id ? { ...o, details: detail.details ?? (o as any).details } : o));
+      }).catch(() => {});
+    }
   }
 
   function closeEditModal() {
@@ -1584,11 +1665,12 @@ export default function ProviderProfilePage() {
     const am2 = offer.availability_mode ?? "always";
     const reconAvail: OfferAvailSlot = {
       type: am2 === "specific" ? "specific" : am2 === "period" ? "range" : am2 === "weekly" ? "recurring" : am2 === "season" ? "season" : null,
-      dates:       (details.specific_dates as string[]) ?? null,
+      dates:       (details.specific_dates as string[]) ?? (details.disponibilite as any)?.dates ?? null,
       start_date:  offer.availability_start ?? null,
       end_date:    offer.availability_end ?? null,
       days_of_week:(details.available_weekdays as string[]) ?? null,
-      label: null, time_slots: null,
+      label: null,
+      time_slots:  (details.disponibilite as any)?.time_slots ?? null,
     };
     setOfferAvail(reconAvail.type ? reconAvail : { ...EMPTY_OFFER_AVAIL });
 
@@ -1613,6 +1695,7 @@ export default function ProviderProfilePage() {
     }).then((list) => {
       setProviderOfferCollabs(
         (list ?? []).filter((c: any) => c.status !== "declined").map((c: any) => ({
+          id: c.id,
           userId: c.invited_user_id,
           userName: c.invited_user_name ?? c.invited_user_id,
           userType: c.invited_user_type ?? "provider",
@@ -2129,7 +2212,7 @@ export default function ProviderProfilePage() {
     const statusClass = offer.status === "approved" ? "bg-primary text-white border-white/20" : offer.status === "pending" ? "bg-amber-500 text-white border-white/20" : offer.status === "draft" ? "bg-slate-400 text-white border-white/20" : offer.status === "attente_publication" ? "bg-teal-600 text-white border-white/20" : "bg-red-500 text-white border-white/20";
 
     return (
-      <div className="bg-white rounded-3xl border border-slate-100/90 shadow-sm overflow-hidden hover:shadow-md transition-shadow duration-300">
+      <div id={`offer-${offer.id}`} className={`bg-white rounded-3xl border shadow-sm overflow-hidden hover:shadow-md transition-shadow duration-300 ${highlightOfferId === offer.id ? "border-primary ring-2 ring-primary/30 shadow-primary/20" : "border-slate-100/90"}`}>
         <div className="flex flex-col lg:flex-row">
           <div className="lg:w-2/5 relative min-h-[200px] bg-slate-50 flex items-center justify-center overflow-hidden border-b lg:border-b-0 lg:border-r border-slate-100">
             {offer.cover_image ? (
@@ -2223,11 +2306,22 @@ export default function ProviderProfilePage() {
             <span className="material-symbols-outlined text-emerald-600 text-[18px]">pending_actions</span>
             <p className="text-emerald-700 text-xs font-bold flex-1">Tous les collaborateurs ont complété leur partie. Vérifiez l&apos;offre et confirmez la publication.</p>
             <button
-              onClick={() => openEditModal(offer)}
+              onClick={async () => {
+                setPublishOfferLoading(true);
+                setPublishOfferModal({ offer, detail: null });
+                try {
+                  const detail = await apiFetch<OfferFull>(`/offers/${offer.id}`, { headers: { Authorization: `Bearer ${token}` } });
+                  setPublishOfferModal({ offer, detail });
+                } catch {
+                  setPublishOfferModal({ offer, detail: null });
+                } finally {
+                  setPublishOfferLoading(false);
+                }
+              }}
               className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-primary text-slate-900 text-xs font-extrabold hover:bg-primary/90 transition-colors shrink-0"
             >
               <span className="material-symbols-outlined text-sm">check_circle</span>
-              Voir et gérer
+              Voir et confirmer
             </button>
           </div>
         )}
@@ -2238,6 +2332,64 @@ export default function ProviderProfilePage() {
   // ─── Render ────────────────────────────────────────────────────────────────
   return (
     <>
+    {/* ══ MODAL CONFIRMATION PUBLICATION OFFRE ═════════════════════════════ */}
+    {publishOfferModal && (
+      <div className="fixed inset-0 z-[70] bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
+        <div className="w-full max-w-3xl h-[90vh] bg-white rounded-3xl shadow-2xl overflow-hidden flex flex-col relative">
+          <button onClick={() => setPublishOfferModal(null)}
+            className="absolute top-3 right-3 z-10 w-8 h-8 rounded-full bg-black/40 hover:bg-black/60 flex items-center justify-center transition-colors">
+            <X size={16} className="text-white" />
+          </button>
+          <div className="flex-1 overflow-y-auto">
+            {publishOfferLoading || !publishOfferModal.detail ? (
+              <div className="flex flex-col items-center justify-center h-full gap-3">
+                {publishOfferLoading ? (
+                  <>
+                    <div className="w-8 h-8 border-4 border-emerald-200 border-t-emerald-600 rounded-full animate-spin" />
+                    <p className="text-slate-400 text-sm">Chargement de l&apos;offre complète…</p>
+                  </>
+                ) : (
+                  <p className="text-slate-400 text-sm">Impossible de charger les détails de l&apos;offre.</p>
+                )}
+              </div>
+            ) : (
+              <OfferDetailView offer={publishOfferModal.detail} />
+            )}
+          </div>
+          <div className="shrink-0 border-t border-slate-100 bg-white px-6 py-4 flex items-center gap-3">
+            <button onClick={() => setPublishOfferModal(null)}
+              className="flex items-center justify-center gap-2 px-5 py-3 rounded-2xl border-2 border-slate-200 text-slate-500 font-bold text-sm hover:border-slate-300 transition-all">
+              Annuler
+            </button>
+            <button
+              disabled={publishOfferSaving || !publishOfferModal.detail}
+              onClick={async () => {
+                setPublishOfferSaving(true);
+                try {
+                  await apiFetch(`/offers/${publishOfferModal.offer.id}/publish`, {
+                    method: "POST", headers: { Authorization: `Bearer ${token}` },
+                  });
+                  setOffers((prev) => prev.map((o) => o.id === publishOfferModal!.offer.id ? { ...o, status: "approved" } : o));
+                  setPublishOfferModal(null);
+                } catch {
+                  alert("Erreur lors de la publication. Veuillez réessayer.");
+                } finally {
+                  setPublishOfferSaving(false);
+                }
+              }}
+              className="flex-1 flex items-center justify-center gap-2 py-3 rounded-2xl bg-primary text-slate-900 font-extrabold text-sm hover:bg-primary/90 transition-all disabled:opacity-60"
+            >
+              {publishOfferSaving ? (
+                <><div className="w-4 h-4 border-2 border-slate-900/30 border-t-slate-900 rounded-full animate-spin" />Publication en cours…</>
+              ) : (
+                <><span className="material-symbols-outlined text-base">rocket_launch</span>Confirmer la publication</>
+              )}
+            </button>
+          </div>
+        </div>
+      </div>
+    )}
+
     {/* ══ ACTIVITY CREATE MODAL ════════════════════════════════════════════ */}
     {actModalOpen && (
       <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
@@ -5027,7 +5179,7 @@ export default function ProviderProfilePage() {
                           {(!isSurMesure || providerTransportInclus === true) && (
                             transportCollab ? (
                               <div className="space-y-2">
-                                <SectionLockedBanner collab={transportCollab} />
+                                <SectionLockedBanner collab={transportCollab} onKick={transportCollab.id ? () => kickProviderCollab(transportCollab.id!) : undefined} />
                                 <div className="pointer-events-none select-none opacity-70 space-y-3">
                                   <PrestSubBlock title="Transport Éco" icon="electric_bike" subtypes={TRANSPORT_ECO_SUBTYPES}
                                     sousType={providerTransportEcoST} details={providerTransportEcoDet}
@@ -5092,7 +5244,7 @@ export default function ProviderProfilePage() {
                             );
                             return restaurationCollab ? (
                               <div className="space-y-2">
-                                <SectionLockedBanner collab={restaurationCollab} />
+                                <SectionLockedBanner collab={restaurationCollab} onKick={restaurationCollab.id ? () => kickProviderCollab(restaurationCollab.id!) : undefined} />
                                 <div className="pointer-events-none select-none opacity-70">
                                   <RepasBlock data={repasData} onUpdate={() => {}} />
                                 </div>
@@ -5120,7 +5272,7 @@ export default function ProviderProfilePage() {
                             {(!isSurMesure || providerHebergementInclus === true) && (
                               hebergementCollab ? (
                                 <div className="space-y-2">
-                                  <SectionLockedBanner collab={hebergementCollab} />
+                                  <SectionLockedBanner collab={hebergementCollab} onKick={hebergementCollab.id ? () => kickProviderCollab(hebergementCollab.id!) : undefined} />
                                   <div className="pointer-events-none select-none opacity-70">
                                     <PrestSubBlock title="Hébergement" icon="hotel" subtypes={HEBERGEMENT_PREST_SUBTYPES}
                                       sousType={providerHebergementST} details={providerHebergementDet}
@@ -5161,7 +5313,7 @@ export default function ProviderProfilePage() {
                             {providerAutreServiceInclus === true && (
                               autreServiceCollab ? (
                                 <div className="space-y-2">
-                                  <SectionLockedBanner collab={autreServiceCollab} />
+                                  <SectionLockedBanner collab={autreServiceCollab} onKick={autreServiceCollab.id ? () => kickProviderCollab(autreServiceCollab.id!) : undefined} />
                                   <div className="pointer-events-none select-none opacity-70">
                                     <AutreServiceBlock data={autreData} onUpdate={() => {}} />
                                   </div>
@@ -5929,9 +6081,52 @@ export default function ProviderProfilePage() {
 
                 {/* ── ÉTAPE 4 : DISPONIBILITÉS ─────────────────────────── */}
                 {offerStep === 4 && offerActivity?.category !== 'hebergement' && (
-                  <div>
+                  <div className="space-y-3">
                     <label className="text-[10px] font-black tracking-widest text-slate-400 uppercase mb-2 block">Quand êtes-vous disponible ?</label>
                     <OfferAvailPicker value={offerAvail} onChange={setOfferAvail} />
+                    {offerEditId && offerAvail.type && (
+                      checkingProviderCollabConfs ? (
+                        <div className="bg-slate-50 rounded-2xl p-4 flex items-center gap-3">
+                          <div className="w-4 h-4 border-2 border-primary border-t-transparent rounded-full animate-spin shrink-0" />
+                          <p className="text-xs text-slate-500 font-medium">Vérification de l&apos;agenda des collaborateurs…</p>
+                        </div>
+                      ) : providerCollabConflicts.length > 0 ? (
+                        <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 space-y-2">
+                          <div className="flex items-center gap-2 mb-1">
+                            <span className="material-symbols-outlined text-amber-500 text-base shrink-0">event_busy</span>
+                            <p className="text-xs font-extrabold text-amber-800">
+                              {providerCollabConflicts.length} collaborateur{providerCollabConflicts.length > 1 ? "s ont" : " a"} un conflit avec ces nouvelles dates
+                            </p>
+                          </div>
+                          {providerCollabConflicts.map((c, i) => (
+                            <div key={i} className="pl-6 space-y-1">
+                              <p className="text-xs text-amber-700 font-semibold">
+                                {c.userName} <span className="font-normal text-amber-600">({({ hebergement: "Hébergement", restauration: "Restauration", transport: "Transport", guide: "Guidage", autre: "Autre" } as Record<string,string>)[c.section] ?? c.section})</span>
+                                {" — "}<span className="italic">&ldquo;{c.conflictSlot}&rdquo;</span>
+                              </p>
+                              <div className="flex flex-wrap gap-1">
+                                {c.conflictDays.map((day) => (
+                                  <span key={day} className="text-[10px] bg-amber-100 text-amber-700 rounded-full px-2 py-0.5 font-bold">
+                                    {new Date(day + "T12:00:00").toLocaleDateString("fr-FR", { day: "numeric", month: "short" })}
+                                  </span>
+                                ))}
+                                {c.conflictTimeSlots && [...new Map(
+                                  Object.values(c.conflictTimeSlots).flat()
+                                    .map((ts) => [`${ts.start}-${ts.end}`, ts])
+                                ).values()].map((ts, ti) => (
+                                  <span key={`cts-${ti}`} className="text-[10px] bg-orange-100 text-orange-700 rounded-full px-2 py-0.5 font-bold">
+                                    {ts.start}–{ts.end}
+                                  </span>
+                                ))}
+                              </div>
+                            </div>
+                          ))}
+                          <p className="pl-6 text-[10px] text-amber-500 pt-1.5 border-t border-amber-200">
+                            Vous pouvez continuer — le(s) collaborateur(s) seront notifiés du conflit lors de l&apos;enregistrement.
+                          </p>
+                        </div>
+                      ) : null
+                    )}
                   </div>
                 )}
                 {offerStep === 4 && offerActivity?.category === 'hebergement' && (
@@ -6159,12 +6354,23 @@ export default function ProviderProfilePage() {
                   <div className="flex-1 overflow-y-auto">
                     <OfferDetailView offer={viewOffer as OfferFull} />
                   </div>
-                  <div className="px-8 py-5 border-t border-slate-100 bg-slate-50/80 flex items-center justify-end shrink-0">
-                    <button type="button"
-                      onClick={() => { if (viewOffer) openPublishModalForEdit(viewOffer); }}
-                      className="flex items-center gap-2 px-6 py-2.5 bg-primary text-slate-900 font-extrabold rounded-2xl text-xs shadow-sm hover:bg-primary/90 transition-all active:scale-95">
-                      <Edit3 size={14} />Gérer
-                    </button>
+                  <div className="px-8 py-5 border-t border-slate-100 bg-slate-50/80 flex items-center justify-end gap-3 shrink-0">
+                    {viewOffer.status === "approved" ? (
+                      <>
+                        <p className="text-xs text-slate-400 font-semibold">Offre publiée — aucune modification possible</p>
+                        <button type="button" onClick={handleDeleteOffer} disabled={offerDeleting}
+                          className="flex items-center gap-1.5 px-4 py-2 border border-red-200 text-red-600 bg-white rounded-2xl text-xs font-bold hover:bg-red-50 transition-colors disabled:opacity-60">
+                          <span className="material-symbols-outlined text-sm">delete</span>
+                          {offerDeleting ? "Suppression…" : "Supprimer"}
+                        </button>
+                      </>
+                    ) : (
+                      <button type="button"
+                        onClick={() => { if (viewOffer) openPublishModalForEdit(viewOffer); }}
+                        className="flex items-center gap-2 px-6 py-2.5 bg-primary text-slate-900 font-extrabold rounded-2xl text-xs shadow-sm hover:bg-primary/90 transition-all active:scale-95">
+                        <Edit3 size={14} />Gérer
+                      </button>
+                    )}
                   </div>
                 </>
               ) : (
@@ -7654,10 +7860,12 @@ export default function ProviderProfilePage() {
                 autre:        { label: "Autre",       icon: "category",       grad: "from-slate-500 to-slate-600" },
               };
               const STATUS_META: Record<string, { label: string; cls: string; icon: string }> = {
-                pending:   { label: "En attente", cls: "bg-slate-100 text-slate-600 border-slate-200",     icon: "schedule" },
-                accepted:  { label: "Acceptée",   cls: "bg-teal-100 text-teal-700 border-teal-200",       icon: "check_circle" },
-                completed: { label: "Complétée",  cls: "bg-emerald-100 text-emerald-700 border-emerald-200", icon: "task_alt" },
-                declined:  { label: "Refusée",    cls: "bg-red-100 text-red-700 border-red-200",          icon: "cancel" },
+                pending:       { label: "En attente",      cls: "bg-slate-100 text-slate-600 border-slate-200",     icon: "schedule" },
+                accepted:      { label: "Acceptée",        cls: "bg-teal-100 text-teal-700 border-teal-200",       icon: "check_circle" },
+                completed:     { label: "Complétée",       cls: "bg-emerald-100 text-emerald-700 border-emerald-200", icon: "task_alt" },
+                declined:      { label: "Refusée",         cls: "bg-red-100 text-red-700 border-red-200",          icon: "cancel" },
+                offer_deleted: { label: "Offre supprimée", cls: "bg-orange-100 text-orange-700 border-orange-200", icon: "delete_forever" },
+                collab_kicked: { label: "Retiré par le propriétaire", cls: "bg-red-100 text-red-700 border-red-200", icon: "person_remove" },
               };
               return (
                 <div className="space-y-4">
@@ -7675,9 +7883,12 @@ export default function ProviderProfilePage() {
                   ) : (
                     collaborations.map((c) => {
                       const sm = SECTION_META[c.section] ?? SECTION_META.autre;
-                      const st = STATUS_META[c.status] ?? STATUS_META.pending;
+                      const isOfferDeleted = c.offer_status === "offer_deleted";
+                      const isKicked = c.offer_status === "collab_kicked";
+                      const isInactive = isOfferDeleted || isKicked;
+                      const st = isOfferDeleted ? STATUS_META.offer_deleted : isKicked ? STATUS_META.collab_kicked : (STATUS_META[c.status] ?? STATUS_META.pending);
                       return (
-                        <div key={c.id} className="relative group bg-white rounded-3xl border border-slate-100/90 shadow-sm overflow-hidden hover:shadow-md transition-shadow duration-300">
+                        <div key={c.id} id={`collab-${c.id}`} className={`relative group bg-white rounded-3xl border shadow-sm overflow-hidden hover:shadow-md transition-all duration-300 ${highlightCollabId === c.id ? "border-primary ring-2 ring-primary/30 shadow-primary/20" : "border-slate-100/90"}`}>
                           <button
                             onClick={async () => {
                               try {
@@ -7730,16 +7941,23 @@ export default function ProviderProfilePage() {
                                 <p className="text-[11px] font-bold text-slate-400">
                                   {new Date(c.created_at).toLocaleDateString("fr-FR", { day: "numeric", month: "long", year: "numeric" })}
                                 </p>
-                                <button onClick={() => {
-                                  setOpenCollab(c);
-                                  setDetailOffer(null);
-                                  setDetailOfferLoading(true);
-                                  apiFetch<OfferFull>(`/guide/offers/${c.offer_id}/detail`, { headers: { Authorization: `Bearer ${token}` } })
-                                    .then(setDetailOffer).catch(() => setDetailOffer(null)).finally(() => setDetailOfferLoading(false));
-                                }}
-                                  className="text-primary hover:text-primary/80 font-extrabold text-xs inline-flex items-center gap-1 hover:translate-x-1 transition-transform duration-200">
-                                  <span>Voir les détails</span><ArrowRight size={14} strokeWidth={2.5} />
-                                </button>
+                                {isInactive ? (
+                                  <span className={`font-extrabold text-xs inline-flex items-center gap-1 ${isKicked ? "text-red-400" : "text-orange-400"}`}>
+                                    <span className="material-symbols-outlined text-sm">{isKicked ? "person_remove" : "info"}</span>
+                                    {isKicked ? "Retiré par le propriétaire" : "Supprimée par le propriétaire"}
+                                  </span>
+                                ) : (
+                                  <button onClick={() => {
+                                    setOpenCollab(c);
+                                    setDetailOffer(null);
+                                    setDetailOfferLoading(true);
+                                    apiFetch<OfferFull>(`/guide/offers/${c.offer_id}/detail`, { headers: { Authorization: `Bearer ${token}` } })
+                                      .then(setDetailOffer).catch(() => setDetailOffer(null)).finally(() => setDetailOfferLoading(false));
+                                  }}
+                                    className="text-primary hover:text-primary/80 font-extrabold text-xs inline-flex items-center gap-1 hover:translate-x-1 transition-transform duration-200">
+                                    <span>Voir les détails</span><ArrowRight size={14} strokeWidth={2.5} />
+                                  </button>
+                                )}
                               </div>
                             </div>
                           </div>
@@ -7760,6 +7978,7 @@ export default function ProviderProfilePage() {
                     offerId={openCollab.offer_id}
                     section={openCollab.section}
                     token={token}
+                    offerApproved={openCollab.offer_status === "approved"}
                     onClose={() => { setShowCollabForm(false); setOpenCollab(null); }}
                     onContributed={() => {
                       setCollaborations((prev) => prev.map((x) => x.id === openCollab!.id ? { ...x, status: "completed" as const } : x));
@@ -7793,12 +8012,15 @@ export default function ProviderProfilePage() {
                   {(() => {
                     const sectionLabels: Record<string, string> = { restauration: "Restauration", transport: "Transport", hebergement: "Hébergement", guide: "Guidage", autre_service: "Autre service", autre: "Autre" };
                     const statusInfo: Record<string, { label: string; cls: string }> = {
-                      pending:   { label: "En attente", cls: "bg-slate-100 text-slate-600 border-slate-200" },
-                      accepted:  { label: "Acceptée",   cls: "bg-teal-50 text-teal-700 border-teal-200" },
-                      completed: { label: "Complétée",  cls: "bg-emerald-50 text-emerald-700 border-emerald-200" },
-                      declined:  { label: "Refusée",    cls: "bg-red-50 text-red-600 border-red-200" },
+                      pending:       { label: "En attente",      cls: "bg-slate-100 text-slate-600 border-slate-200" },
+                      accepted:      { label: "Acceptée",        cls: "bg-teal-50 text-teal-700 border-teal-200" },
+                      completed:     { label: "Complétée",       cls: "bg-emerald-50 text-emerald-700 border-emerald-200" },
+                      declined:      { label: "Refusée",         cls: "bg-red-50 text-red-600 border-red-200" },
+                      offer_deleted: { label: "Offre supprimée", cls: "bg-orange-50 text-orange-700 border-orange-200" },
                     };
-                    const si = statusInfo[openCollab.status] ?? { label: openCollab.status, cls: "bg-slate-100 text-slate-600 border-slate-200" };
+                    const si = openCollab.offer_status === "offer_deleted"
+                      ? statusInfo.offer_deleted
+                      : (statusInfo[openCollab.status] ?? { label: openCollab.status, cls: "bg-slate-100 text-slate-600 border-slate-200" });
                     return (
                       <div className="shrink-0 px-5 py-2.5 flex items-center gap-2.5 bg-amber-50/80 border-b border-amber-100">
                         <div className="w-6 h-6 rounded-lg bg-amber-100 flex items-center justify-center shrink-0">
@@ -7811,7 +8033,7 @@ export default function ProviderProfilePage() {
                       </div>
                     );
                   })()}
-                  {/* Corps scrollable : OfferDetailView */}
+                  {/* Corps scrollable */}
                   <div className="flex-1 overflow-y-auto">
                     {detailOfferLoading ? (
                       <div className="flex items-center justify-center h-full gap-3 text-slate-400">
@@ -7821,7 +8043,13 @@ export default function ProviderProfilePage() {
                     ) : detailOffer ? (
                       <OfferDetailView offer={detailOffer} />
                     ) : (
-                      <div className="flex items-center justify-center h-full text-slate-400 text-sm">Impossible de charger l&apos;offre.</div>
+                      <div className="flex flex-col items-center justify-center h-full gap-4 text-slate-400">
+                        <span className="material-symbols-outlined text-5xl text-orange-300">delete_forever</span>
+                        <div className="text-center">
+                          <p className="font-extrabold text-slate-600 text-base mb-1">Offre supprimée</p>
+                          <p className="text-sm text-slate-400">Cette offre a été supprimée par son propriétaire.</p>
+                        </div>
+                      </div>
                     )}
                   </div>
                   {/* Pied : boutons action */}
@@ -8266,11 +8494,29 @@ export default function ProviderProfilePage() {
           onClose={() => setProviderInviteSection(null)}
           onInvited={(collaborator) => {
             const sec = providerInviteSection;
+            const eid = offerEditId;
             setProviderOfferCollabs((prev) => [
               ...prev.filter((c) => !(c.section === sec && c.userId === collaborator.user_id)),
               { userId: collaborator.user_id, userName: collaborator.name, userType: collaborator.type, section: sec, status: "pending" },
             ]);
             setProviderInviteSection(null);
+            // Re-fetch pour obtenir l'id du collab (nécessaire pour kick)
+            if (eid && token) {
+              apiFetch<any[]>(`/guide/offers/${eid}/collaborations`, {
+                headers: { Authorization: `Bearer ${token}` },
+              }).then((list) => {
+                setProviderOfferCollabs(
+                  (list ?? []).filter((c: any) => c.status !== "declined").map((c: any) => ({
+                    id: c.id,
+                    userId: c.invited_user_id,
+                    userName: c.invited_user_name ?? c.invited_user_id,
+                    userType: c.invited_user_type ?? "provider",
+                    section: c.section as CollabSection,
+                    status: c.status,
+                  }))
+                );
+              }).catch(() => {});
+            }
           }}
         />
       )}

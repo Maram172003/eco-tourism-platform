@@ -1,6 +1,6 @@
 "use client";
 
-import { X, Plus } from "lucide-react";
+import { X, Plus, Pencil } from "lucide-react";
 import { format } from "date-fns";
 import { fr } from "date-fns/locale";
 import {
@@ -23,13 +23,16 @@ interface Props {
   onAddSlot: (ds: string) => void;
   onDelete?: (id: string) => void;
   onCollabLeave?: (slotLabel: string) => void;
+  onEdit?: (slot: AvailabilitySlot) => void;
+  onEditOfferSlot?: (slot: AvailabilitySlot) => void;
+  onDeleteOfferSlot?: (slot: AvailabilitySlot) => void;
 }
 
 const ICONS: Record<string, string> = {
   specific: "event", range: "date_range", recurring: "autorenew", season: "sunny",
 };
 
-export default function DayDetailPanel({ day, slots, conflictNotifs = [], onClose, onAddSlot, onDelete, onCollabLeave }: Props) {
+export default function DayDetailPanel({ day, slots, conflictNotifs = [], onClose, onAddSlot, onDelete, onCollabLeave, onEdit, onEditOfferSlot, onDeleteOfferSlot }: Props) {
   const ds   = dateStr(day);
   const wday = String((day.getDay() + 6) % 7);
 
@@ -124,14 +127,36 @@ export default function DayDetailPanel({ day, slots, conflictNotifs = [], onClos
                         {slotConflict ? "Mon créneau personnel" : SLOT_TYPE_LABELS[dt]}
                       </span>
                     )}
-                    {(onDelete || (isCollabSlot && onCollabLeave)) && (
-                      <button type="button"
-                        onClick={() => isCollabSlot ? onCollabLeave?.(slot.label!) : onDelete?.(slot.id)}
-                        title={isCollabSlot ? "Quitter la collaboration" : "Supprimer ce créneau"}
-                        className="ml-auto w-6 h-6 flex items-center justify-center rounded-full bg-white/60 hover:bg-red-50 hover:text-red-500 text-slate-400 transition-colors">
-                        <X size={12} />
-                      </button>
-                    )}
+                    <div className="ml-auto flex items-center gap-1">
+                      {!isCollabSlot && !isOfferSlot && onEdit && (
+                        <button type="button"
+                          onClick={() => onEdit(slot)}
+                          title="Modifier ce créneau"
+                          className="w-6 h-6 flex items-center justify-center rounded-full bg-white/60 hover:bg-slate-100 text-slate-400 hover:text-slate-700 transition-colors">
+                          <Pencil size={11} />
+                        </button>
+                      )}
+                      {isOfferSlot && onEditOfferSlot && (
+                        <button type="button"
+                          onClick={() => onEditOfferSlot(slot)}
+                          title="Modifier le créneau de l'offre"
+                          className="w-6 h-6 flex items-center justify-center rounded-full bg-white/60 hover:bg-violet-100 text-slate-400 hover:text-violet-600 transition-colors">
+                          <Pencil size={11} />
+                        </button>
+                      )}
+                      {(onDelete || (isCollabSlot && onCollabLeave) || (isOfferSlot && onDeleteOfferSlot)) && (
+                        <button type="button"
+                          onClick={() =>
+                            isCollabSlot ? onCollabLeave?.(slot.label!)
+                            : isOfferSlot ? onDeleteOfferSlot?.(slot)
+                            : onDelete?.(slot.id)
+                          }
+                          title={isCollabSlot ? "Quitter la collaboration" : isOfferSlot ? "Supprimer l'offre" : "Supprimer ce créneau"}
+                          className="w-6 h-6 flex items-center justify-center rounded-full bg-white/60 hover:bg-red-50 hover:text-red-500 text-slate-400 transition-colors">
+                          <X size={12} />
+                        </button>
+                      )}
+                    </div>
                   </div>
 
                   {/* Nom */}

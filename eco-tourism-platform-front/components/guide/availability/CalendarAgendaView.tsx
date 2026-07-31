@@ -24,6 +24,8 @@ interface Props {
   onCollabLeave?: (slotLabel: string) => void;
   onEdit: (slot: AvailabilitySlot) => void;
   onEditDay: (slot: AvailabilitySlot, day: Date) => void;
+  onEditOfferSlot?: (slot: AvailabilitySlot) => void;
+  onDeleteOfferSlot?: (slot: AvailabilitySlot) => void;
 }
 
 type FilterType  = "all" | "specific" | "range" | "recurring";
@@ -42,7 +44,7 @@ const LEFT_COLORS: Record<string, string> = {
   recurring: "border-l-amber-400",  season:   "border-l-orange-400",
 };
 
-export default function CalendarAgendaView({ slots, conflictNotifs = [], onDelete, onCollabLeave, onEdit, onEditDay }: Props) {
+export default function CalendarAgendaView({ slots, conflictNotifs = [], onDelete, onCollabLeave, onEdit, onEditDay, onEditOfferSlot, onDeleteOfferSlot }: Props) {
   const [deleting,     setDeleting]     = useState<string | null>(null);
   const [filter,       setFilter]       = useState<FilterType>("all");
   const [agendaStyle,  setAgendaStyle]  = useState<AgendaStyle>("days");
@@ -62,10 +64,10 @@ export default function CalendarAgendaView({ slots, conflictNotifs = [], onDelet
     ? slots
     : slots.filter((s) => displayType(s) === filter);
 
-  // ── Days view: all days in next 90 days with at least one slot ──────────────
+  // ── Days view: all days in next 365 days with at least one slot ─────────────
   const upcomingDays = useMemo(() => {
     const todayStart = startOfDay(new Date());
-    const end = addDays(todayStart, 90);
+    const end = addDays(todayStart, 365);
     return eachDayOfInterval({ start: todayStart, end })
       .filter((day) => filteredSlots.some((s) => slotCoversDay(s, day)));
   }, [filteredSlots]);
@@ -270,12 +272,24 @@ export default function CalendarAgendaView({ slots, conflictNotifs = [], onDelet
                       <Pencil size={13} />
                     </button>
                   )}
+                  {isOfferSlot && onEditOfferSlot && (
+                    <button type="button" onClick={() => onEditOfferSlot(slot)}
+                      title="Modifier le créneau de l'offre"
+                      className="w-8 h-8 rounded-xl border border-violet-200 flex items-center justify-center text-violet-400 hover:text-violet-700 hover:border-violet-300 hover:bg-violet-50 transition-all">
+                      <Pencil size={13} />
+                    </button>
+                  )}
                   <button type="button"
-                    onClick={() => isCollabSlot ? onCollabLeave?.(slot.label!) : remove(slot.id)}
+                    onClick={() =>
+                      isCollabSlot ? onCollabLeave?.(slot.label!)
+                      : isOfferSlot ? onDeleteOfferSlot?.(slot)
+                      : remove(slot.id)
+                    }
                     disabled={deleting === slot.id}
                     className={`w-8 h-8 rounded-xl border flex items-center justify-center transition-all disabled:opacity-50 ${
-                      slotConflict ? "border-red-200 text-red-400 hover:text-red-600 hover:bg-red-100"
+                      slotConflict   ? "border-red-200 text-red-400 hover:text-red-600 hover:bg-red-100"
                       : isCollabSlot ? "border-emerald-200 text-emerald-400 hover:text-red-500 hover:border-red-200 hover:bg-red-50"
+                      : isOfferSlot  ? "border-violet-200 text-violet-400 hover:text-red-500 hover:border-red-200 hover:bg-red-50"
                       : "border-slate-200 text-slate-400 hover:text-red-500 hover:border-red-200 hover:bg-red-50"
                     }`}>
                     {deleting === slot.id
@@ -498,11 +512,23 @@ export default function CalendarAgendaView({ slots, conflictNotifs = [], onDelet
                             <Pencil size={11} />
                           </button>
                         )}
+                        {isOfferSlot && onEditOfferSlot && (
+                          <button type="button" onClick={() => onEditOfferSlot(slot)}
+                            title="Modifier le créneau de l'offre"
+                            className="w-7 h-7 rounded-lg border border-violet-200 flex items-center justify-center text-violet-300 hover:text-violet-600 hover:border-violet-300 hover:bg-violet-50 transition-all">
+                            <Pencil size={11} />
+                          </button>
+                        )}
                         <button type="button"
-                          onClick={() => isCollabSlot ? onCollabLeave?.(slot.label!) : remove(slot.id)}
+                          onClick={() =>
+                            isCollabSlot ? onCollabLeave?.(slot.label!)
+                            : isOfferSlot ? onDeleteOfferSlot?.(slot)
+                            : remove(slot.id)
+                          }
                           disabled={deleting === slot.id}
                           className={`w-7 h-7 rounded-lg border flex items-center justify-center transition-all disabled:opacity-50 ${
-                            slotConflict ? "border-red-200 text-red-300 hover:text-red-600 hover:bg-red-50"
+                            slotConflict   ? "border-red-200 text-red-300 hover:text-red-600 hover:bg-red-50"
+                            : isOfferSlot  ? "border-violet-200 text-violet-300 hover:text-red-500 hover:border-red-200 hover:bg-red-50"
                             : "border-slate-200 text-slate-300 hover:text-red-500 hover:border-red-200 hover:bg-red-50"
                           }`}>
                           {deleting === slot.id
