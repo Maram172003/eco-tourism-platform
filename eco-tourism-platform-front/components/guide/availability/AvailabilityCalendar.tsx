@@ -151,26 +151,28 @@ export default function AvailabilityCalendar({ token, readOnly = false, offers =
   }, [editingOfferSlot, findOfferForSlot, token, refetch]);
 
   // ── Conflits d'agenda issus des notifications ─────────────────────────────────
-  type ConflictInfo = { offer: string; section: string; conflictSlotLabel: string; days: string[] };
+  type ConflictInfo = { id?: string; offer: string; section: string; conflictSlotLabel: string; days: string[] };
   const [conflictNotifs, setConflictNotifs] = useState<ConflictInfo[]>([]);
 
   const fetchConflicts = useCallback(() => {
     if (!token) return;
-    apiFetch<Array<{ type: string; data: any }>>("/notifications", {
+    apiFetch<Array<{ id: string; type: string; data: any }>>("/notifications", {
       headers: { Authorization: `Bearer ${token}` },
     }).then((notifs) => {
       setConflictNotifs(
         notifs
-          .filter((n) => n.type === "offer_schedule_conflict")
+          .filter((n) => n.type === "offer_schedule_conflict" || n.type === "circuit_schedule_conflict")
           .map((n) => ({
-            offer: n.data?.offer_title ?? "",
+            id: n.id,
+            offer: n.data?.offer_title ?? n.data?.circuit_title ?? "",
             section: n.data?.section ?? "",
-            conflictSlotLabel: n.data?.conflicting_slot ?? "",
+            conflictSlotLabel: n.data?.conflicting_slot ?? n.data?.conflict_slot ?? "",
             days: Array.isArray(n.data?.conflict_days) ? n.data.conflict_days : [],
           }))
       );
     }).catch(() => {});
   }, [token]);
+
 
   useEffect(() => { fetchConflicts(); }, [fetchConflicts]);
 

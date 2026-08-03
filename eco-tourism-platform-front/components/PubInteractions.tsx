@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import {
   Heart, MessageCircle, Share2, Send, Trash2, Check, X,
   UserCircle2, Copy, Link2, Search, Leaf,
@@ -34,7 +35,7 @@ type Props = {
 };
 
 const ROLE_LABEL: Record<string, string> = {
-  eco_traveler: "Éco-Voyageur", guide: "Guide", project_owner: "Propriétaire", admin: "Admin",
+  eco_traveler: "Éco-Voyageur", guide: "Guide", provider: "Prestataire", project_owner: "Prestataire", admin: "Admin",
 };
 const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001/api";
 
@@ -79,9 +80,16 @@ function CommentLikeBtn({ commentId, initialLikes, initialLiked, token, cmtBase 
   );
 }
 
+function profilePath(role: string, userId: string): string {
+  if (role === "guide") return `/profile/guide/${userId}`;
+  if (role === "eco_traveler") return `/profile/eco-traveler/${userId}`;
+  return `/profile/provider/${userId}`;
+}
+
 // ─── Main ─────────────────────────────────────────────────────────────────────
 export default function PubInteractions({ pubId, token, viewerId, shareUrl, pubTitle, itemApiBase = "/publications", commentApiBase, extraContent, contributionsContent, contributionsCount }: Props) {
   const cmtBase = commentApiBase ?? itemApiBase;
+  const router = useRouter();
   const [likes,           setLikes]           = useState(0);
   const [liked,           setLiked]           = useState(false);
   const [commentsCount,   setCommentsCount]   = useState(0);
@@ -121,11 +129,14 @@ export default function PubInteractions({ pubId, token, viewerId, shareUrl, pubT
   const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
+    if (!pubId) return;
+    const ac = new AbortController();
     const vp = viewerId ? `?viewer=${viewerId}` : "";
-    fetch(`${API}${itemApiBase}/${pubId}/interactions${vp}`)
+    fetch(`${API}${itemApiBase}/${pubId}/interactions${vp}`, { signal: ac.signal })
       .then((r) => r.json())
       .then((d) => { setLikes(d.likes ?? 0); setLiked(d.liked ?? false); setCommentsCount(d.commentsCount ?? 0); })
       .catch(() => {});
+    return () => ac.abort();
   }, [pubId, viewerId]); // itemApiBase est stable (prop constante)
 
   // Close share dropdown on outside click
@@ -278,7 +289,7 @@ export default function PubInteractions({ pubId, token, viewerId, shareUrl, pubT
       for (const f of followings) {
         if (seen.has(f.user_id)) continue;
         seen.add(f.user_id);
-        list.push({ user_id: f.user_id, full_name: f.full_name, photo: f.photo, role: f._type === "project" ? "project_owner" : f._type });
+        list.push({ user_id: f.user_id, full_name: f.full_name, photo: f.photo, role: f._type === "project" ? "provider" : f._type });
       }
 
       setContacts(list);
@@ -300,17 +311,15 @@ export default function PubInteractions({ pubId, token, viewerId, shareUrl, pubT
       const role = decodeRole(token);
       const q = encodeURIComponent(contactSearch.trim());
       try {
-        const [travelers, guides, owners] = await Promise.all([
-          role === "eco_traveler"
-            ? apiFetch<any[]>(`/eco-traveler/search?q=${q}`, { headers }).catch(() => [])
-            : Promise.resolve([]),
+        const [travelers, guides, providers] = await Promise.all([
+          apiFetch<any[]>(`/eco-traveler/search?q=${q}`, { headers }).catch(() => []),
           apiFetch<any[]>(`/guide/public/search?q=${q}`, { headers }).catch(() => []),
-          apiFetch<any[]>(`/project-owner/public/search?q=${q}`, { headers }).catch(() => []),
+          apiFetch<any[]>(`/providers/search?q=${q}`, { headers }).catch(() => []),
         ]);
         const raw: Contact[] = [
           ...travelers.map((u: any) => ({ user_id: u.user_id, full_name: u.full_name, photo: u.photo, role: "eco_traveler" })),
           ...guides.map((u: any) => ({ user_id: u.user_id, full_name: u.full_name, photo: u.photo, role: "guide" })),
-          ...owners.map((u: any) => ({ user_id: u.user_id, full_name: u.full_name, photo: u.photo, role: "project_owner" })),
+          ...providers.map((u: any) => ({ user_id: u.user_id, full_name: u.full_name, photo: u.photo, role: "provider" })),
         ].filter((u) => u.user_id !== viewerId);
         const seen = new Set<string>();
         setSearchResults(raw.filter((u) => { if (seen.has(u.user_id)) return false; seen.add(u.user_id); return true; }));
@@ -452,11 +461,13 @@ export default function PubInteractions({ pubId, token, viewerId, shareUrl, pubT
             {comments.map((c) => (
               <div key={c.id}>
                 <div className="flex gap-2.5 group">
-                  <img src={avatar(c.author.photo, c.author.full_name)} alt={c.author.full_name} className="w-8 h-8 rounded-full object-cover shrink-0 mt-0.5" />
+                  <button onClick={() => router.push(profilePath(c.author.role, c.author.user_id))} className="w-8 h-8 shrink-0 mt-0.5 p-0 leading-none">
+                    <img src={avatar(c.author.photo, c.author.full_name)} alt={c.author.full_name} className="w-8 h-8 rounded-full object-cover hover:opacity-80 transition-opacity" />
+                  </button>
                   <div className="flex-1 min-w-0">
                     <div className="bg-white rounded-2xl rounded-tl-none px-3 py-2 shadow-sm border border-slate-100/80 inline-block max-w-full">
                       <div className="flex items-baseline gap-2 flex-wrap">
-                        <span className="text-[12px] font-extrabold text-slate-800">{c.author.full_name}</span>
+                        <button onClick={() => router.push(profilePath(c.author.role, c.author.user_id))} className="text-[12px] font-extrabold text-slate-800 hover:underline">{c.author.full_name}</button>
                         <span className="text-[10px] text-slate-400 font-medium">{ROLE_LABEL[c.author.role] ?? c.author.role}</span>
                       </div>
                       <p className="text-[13px] text-slate-700 leading-relaxed mt-0.5">{c.content}</p>
@@ -495,11 +506,13 @@ export default function PubInteractions({ pubId, token, viewerId, shareUrl, pubT
                       <div className="mt-3 ml-2 space-y-3 border-l-2 border-slate-100 pl-3">
                         {c.replies.map((r) => (
                           <div key={r.id} className="flex gap-2">
-                            <img src={avatar(r.author.photo, r.author.full_name)} alt={r.author.full_name} className="w-6 h-6 rounded-full object-cover shrink-0 mt-0.5" />
+                            <button onClick={() => router.push(profilePath(r.author.role, r.author.user_id))} className="w-6 h-6 shrink-0 mt-0.5 p-0 leading-none">
+                              <img src={avatar(r.author.photo, r.author.full_name)} alt={r.author.full_name} className="w-6 h-6 rounded-full object-cover hover:opacity-80 transition-opacity" />
+                            </button>
                             <div className="flex-1 min-w-0">
                               <div className="bg-white rounded-2xl rounded-tl-none px-3 py-1.5 shadow-sm border border-slate-100/80 inline-block max-w-full">
                                 <div className="flex items-baseline gap-2 flex-wrap">
-                                  <span className="text-[11px] font-extrabold text-slate-800">{r.author.full_name}</span>
+                                  <button onClick={() => router.push(profilePath(r.author.role, r.author.user_id))} className="text-[11px] font-extrabold text-slate-800 hover:underline">{r.author.full_name}</button>
                                   <span className="text-[10px] text-slate-400 font-medium">{ROLE_LABEL[r.author.role] ?? r.author.role}</span>
                                 </div>
                                 <p className="text-[12px] text-slate-700 leading-relaxed mt-0.5">{r.content}</p>
@@ -585,13 +598,14 @@ export default function PubInteractions({ pubId, token, viewerId, shareUrl, pubT
                 </div>
               )}
               {!likersLoading && likers.map((l) => (
-                <div key={l.user_id} className="flex items-center gap-3 px-6 py-3 hover:bg-slate-50 transition-colors">
+                <button key={l.user_id} onClick={() => { setLikersOpen(false); router.push(profilePath(l.role, l.user_id)); }}
+                  className="w-full flex items-center gap-3 px-6 py-3 hover:bg-slate-50 transition-colors text-left">
                   <img src={avatar(l.photo, l.full_name)} alt={l.full_name} className="w-10 h-10 rounded-full object-cover shrink-0" />
                   <div className="flex-1 min-w-0">
-                    <p className="font-extrabold text-slate-800 text-sm truncate">{l.full_name}</p>
+                    <p className="font-extrabold text-slate-800 text-sm truncate hover:underline">{l.full_name}</p>
                     <p className="text-[11px] text-slate-400 font-medium">{ROLE_LABEL[l.role] ?? l.role}</p>
                   </div>
-                </div>
+                </button>
               ))}
             </div>
           </div>

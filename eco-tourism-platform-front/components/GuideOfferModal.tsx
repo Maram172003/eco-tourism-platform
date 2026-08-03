@@ -965,11 +965,12 @@ function PillToggle({ label, active, onClick }: { label: string; active: boolean
 
 type AutreMode = "guide" | "prestataire";
 
-function AutreServiceFields({ d, u, lockMeta, lockMode, prestataireSlot, prestataireSousTypeSlot, guidageSlot, guidageSousTypeSlot, guidageInviteSlot }: {
+function AutreServiceFields({ d, u, lockMeta, lockMode, hideMode, prestataireSlot, prestataireSousTypeSlot, guidageSlot, guidageSousTypeSlot, guidageInviteSlot }: {
   d: FormData;
   u: (x: Partial<FormData>) => void;
   lockMeta?: boolean;
   lockMode?: boolean;
+  hideMode?: boolean;
   prestataireSlot?: React.ReactNode;
   prestataireSousTypeSlot?: (cat: string) => React.ReactNode | null | undefined;
   guidageSlot?: React.ReactNode;
@@ -1029,19 +1030,21 @@ function AutreServiceFields({ d, u, lockMeta, lockMode, prestataireSlot, prestat
     <div className="space-y-5 p-4 bg-slate-50 border border-slate-200 rounded-2xl">
 
       {/* ── Sélecteur de mode ──────────────────────────────────────────────────── */}
-      <div className={`flex gap-2${(lockMeta || lockMode) ? " pointer-events-none select-none opacity-70" : ""}`}>
-        {(["guide", "prestataire"] as const).map((m) => (
-          <button key={m} type="button" onClick={() => setMode(m)}
-            className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl border-2 text-xs font-black transition-all ${
-              mode === m
-                ? "border-primary bg-primary/5 text-primary"
-                : "border-slate-200 bg-white text-slate-500 hover:border-primary/20 hover:bg-primary/5"
-            }`}>
-            <span className="material-symbols-outlined text-base">{m === "guide" ? "hiking" : "store"}</span>
-            {m === "guide" ? "Guidage" : "Service prestataire"}
-          </button>
-        ))}
-      </div>
+      {!hideMode && (
+        <div className={`flex gap-2${(lockMeta || lockMode) ? " pointer-events-none select-none opacity-70" : ""}`}>
+          {(["guide", "prestataire"] as const).map((m) => (
+            <button key={m} type="button" onClick={() => setMode(m)}
+              className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl border-2 text-xs font-black transition-all ${
+                mode === m
+                  ? "border-primary bg-primary/5 text-primary"
+                  : "border-slate-200 bg-white text-slate-500 hover:border-primary/20 hover:bg-primary/5"
+              }`}>
+              <span className="material-symbols-outlined text-base">{m === "guide" ? "hiking" : "store"}</span>
+              {m === "guide" ? "Guidage" : "Service prestataire"}
+            </button>
+          ))}
+        </div>
+      )}
 
       {/* ════════════════════════════════════════════════════════════════════════
           MODE GUIDE : Domaine → Expertise → Type → Expériences → Matériel
@@ -1488,7 +1491,7 @@ export interface AutreServiceBlockData {
   details: Record<string, any>;
 }
 
-export function AutreServiceBlock({ data, onUpdate, prestataireSlot, prestataireSousTypeSlot, guidageSlot, guidageSousTypeSlot, guidageInviteSlot }: {
+export function AutreServiceBlock({ data, onUpdate, prestataireSlot, prestataireSousTypeSlot, guidageSlot, guidageSousTypeSlot, guidageInviteSlot, lockMode, hideMode }: {
   data: AutreServiceBlockData;
   onUpdate: (patch: Partial<AutreServiceBlockData>) => void;
   prestataireSlot?: React.ReactNode;
@@ -1496,6 +1499,8 @@ export function AutreServiceBlock({ data, onUpdate, prestataireSlot, prestataire
   guidageSlot?: React.ReactNode;
   guidageSousTypeSlot?: (domaine: string) => React.ReactNode | null | undefined;
   guidageInviteSlot?: React.ReactNode;
+  lockMode?: boolean;
+  hideMode?: boolean;
 }) {
   const shimD = {
     autre_service_categorie: data.categorie,
@@ -1517,6 +1522,8 @@ export function AutreServiceBlock({ data, onUpdate, prestataireSlot, prestataire
     guidageSlot={guidageSlot}
     guidageSousTypeSlot={guidageSousTypeSlot}
     guidageInviteSlot={guidageInviteSlot}
+    lockMode={lockMode}
+    hideMode={hideMode}
   />;
 }
 

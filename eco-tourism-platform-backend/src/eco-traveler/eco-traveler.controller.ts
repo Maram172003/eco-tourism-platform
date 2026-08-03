@@ -48,7 +48,7 @@ export class EcoTravelerController {
   }
 
   // ── Search ───────────────────────────────────────────────────────────────────
-  @Roles(Role.ECO_TRAVELER, Role.GUIDE, Role.PROJECT, Role.ADMIN)
+  @Roles(Role.ECO_TRAVELER, Role.GUIDE, Role.PROVIDER, Role.PROJECT, Role.ADMIN)
   @Get('search')
   searchTravelers(@Req() req: any, @Query('q') q: string) {
     return this.service.searchTravelers(q ?? '', req.user.sub);

@@ -232,34 +232,43 @@ export default function ProviderDashboardPage() {
   }, []);
 
   function notifLabel(n: DashNotif): { title: string; body: string; icon: string } {
-    const section = n.data?.section ?? "";
-    const offer   = n.data?.offer_title ?? "une offre";
-    const who     = n.data?.inviter_name ?? n.data?.invited_user_name ?? "Quelqu'un";
+    const section    = n.data?.section ?? "";
+    const isCircuit  = !!n.data?.circuit_id;
+    const resource   = isCircuit
+      ? (n.data?.circuit_title ?? "un circuit")
+      : (n.data?.offer_title   ?? "une offre");
+    const who        = n.data?.inviter_name ?? n.data?.invited_user_name ?? "Quelqu'un";
+    const sourceOf   = isCircuit ? "du circuit" : "de l'offre";
     switch (n.type) {
       case "collaboration_invite":
         return { title: "Invitation à collaborer", icon: "handshake",
-          body: `${who} vous invite à compléter la section « ${section} » de l'offre « ${offer} »` };
+          body: `${who} vous invite à compléter la section « ${section} » ${sourceOf} « ${resource} »` };
       case "collab_accepted":
         return { title: "Collaboration acceptée", icon: "check_circle",
-          body: `${who} a accepté votre invitation pour la section « ${section} » de « ${offer} »` };
+          body: `${who} a accepté votre invitation pour la section « ${section} » ${sourceOf} « ${resource} »` };
       case "collab_declined":
         return { title: "Invitation refusée", icon: "cancel",
-          body: `${who} a refusé votre invitation pour la section « ${section} » de « ${offer} »` };
+          body: `${who} a refusé votre invitation pour la section « ${section} » ${sourceOf} « ${resource} »` };
       case "collab_quit":
         return { title: "Collaborateur retiré", icon: "person_remove",
-          body: `${who} a quitté la section « ${section} » de « ${offer} »` };
+          body: `${who} a quitté la section « ${section} » ${sourceOf} « ${resource} »` };
       case "collab_kicked":
         return { title: "Retiré de la collaboration", icon: "person_remove",
-          body: `Vous avez été retiré de la section « ${section} » de l'offre « ${offer} »` };
+          body: `Vous avez été retiré de la section « ${section} » ${sourceOf} « ${resource} »` };
       case "offer_deleted":
         return { title: "Offre supprimée", icon: "delete_forever",
-          body: `L'offre « ${offer} » à laquelle vous collaboriez a été supprimée` };
+          body: `L'offre « ${resource} » à laquelle vous collaboriez a été supprimée` };
+      case "circuit_deleted":
+        return { title: "Circuit supprimé", icon: "delete_forever",
+          body: `Le circuit « ${resource} » auquel vous collaboriez a été supprimé` };
       case "offer_schedule_changed":
+      case "circuit_schedule_changed":
         return { title: "Horaires mis à jour", icon: "event_available",
-          body: `Les horaires de « ${offer} » (${section}) ont changé. Votre agenda a été synchronisé automatiquement.` };
+          body: `Les horaires de « ${resource} » (${section}) ont changé. Votre agenda a été synchronisé automatiquement.` };
       case "offer_schedule_conflict":
+      case "circuit_schedule_conflict":
         return { title: "Conflit d'agenda", icon: "event_busy",
-          body: `Les horaires de « ${offer} » (${section}) créent un conflit avec votre agenda. Réglez votre agenda.` };
+          body: `Les horaires de « ${resource} » (${section}) créent un conflit avec votre agenda. Réglez votre agenda.` };
       default:
         return { title: "Notification", icon: "notifications", body: n.data?.message ?? "" };
     }
@@ -431,23 +440,31 @@ export default function ProviderDashboardPage() {
                                 if (!n.is_read) markNotifRead(n.id);
                                 setNotifOpen(false);
                                 if (n.type === "collaboration_invite" || n.type === "collab_kicked") {
-                                  const collabId = n.data?.collab_id as string | undefined;
-                                  router.push(collabId ? `/profile/provider?tab=collaborations&openCollab=${collabId}` : "/profile/provider?tab=collaborations");
+                                  const collabId  = n.data?.collab_id  as string | undefined;
+                                  const circuitId = n.data?.circuit_id as string | undefined;
+                                  if (circuitId) router.push(`/profile/provider?tab=circuits&openCircuit=${circuitId}`);
+                                  else router.push(collabId ? `/profile/provider?tab=collaborations&openCollab=${collabId}` : "/profile/provider?tab=collaborations");
                                 } else if (n.type === "collab_accepted" || n.type === "collab_declined" || n.type === "collab_quit") {
-                                  // Provider est propriétaire → naviguer vers l'offre
-                                  const offerId = n.data?.offer_id as string | undefined;
-                                  router.push(offerId ? `/profile/provider?tab=offres&openOffer=${offerId}` : "/profile/provider?tab=offres");
+                                  const circuitId = n.data?.circuit_id as string | undefined;
+                                  const offerId   = n.data?.offer_id   as string | undefined;
+                                  if (circuitId) router.push(`/profile/provider?tab=circuits&openCircuit=${circuitId}`);
+                                  else router.push(offerId ? `/profile/provider?tab=offres&openOffer=${offerId}` : "/profile/provider?tab=offres");
                                 } else if (n.type === "offer_deleted") {
                                   const collabId = n.data?.collab_id as string | undefined;
-                                  const offerId = n.data?.offer_id as string | undefined;
+                                  const offerId  = n.data?.offer_id  as string | undefined;
                                   if (collabId) router.push(`/profile/provider?tab=collaborations&openCollab=${collabId}`);
                                   else if (offerId) router.push(`/profile/provider?tab=collaborations&openCollabByOffer=${offerId}`);
                                   else router.push("/profile/provider?tab=collaborations");
-                                } else if (n.type === "offer_schedule_conflict") {
+                                } else if (n.type === "circuit_deleted") {
+                                  router.push("/profile/provider?tab=circuits");
+                                } else if (n.type === "offer_schedule_conflict" || n.type === "circuit_schedule_conflict") {
                                   router.push("/profile/provider?tab=agenda");
                                 } else if (n.type === "offer_schedule_changed") {
                                   const offerId = n.data?.offer_id as string | undefined;
                                   router.push(offerId ? `/profile/provider?tab=collaborations&openCollabByOffer=${offerId}` : "/profile/provider?tab=collaborations");
+                                } else if (n.type === "circuit_schedule_changed") {
+                                  const circuitId = n.data?.circuit_id as string | undefined;
+                                  router.push(circuitId ? `/profile/provider?tab=circuits&openCircuit=${circuitId}` : "/profile/provider?tab=circuits");
                                 }
                               }}>
                                 <span className={`mt-0.5 material-symbols-outlined text-lg shrink-0 ${isUnread ? "text-primary" : "text-slate-400"}`}>
@@ -481,9 +498,6 @@ export default function ProviderDashboardPage() {
                                         <span className="material-symbols-outlined text-base text-slate-400">mark_email_read</span>Marquer comme lu
                                       </button>
                                     )}
-                                    <button onClick={(e) => { e.stopPropagation(); reportNotif(n.id); }} className="w-full text-left px-4 py-2.5 text-xs text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 flex items-center gap-2">
-                                      <span className="material-symbols-outlined text-base text-amber-400">flag</span>Signaler
-                                    </button>
                                     <button onClick={(e) => { e.stopPropagation(); deleteNotif(n.id); }} className="w-full text-left px-4 py-2.5 text-xs text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 flex items-center gap-2">
                                       <span className="material-symbols-outlined text-base">delete</span>Supprimer
                                     </button>
@@ -497,7 +511,7 @@ export default function ProviderDashboardPage() {
                       )}
                     </div>
                     {notifVisible < notifications.length && (
-                      <div className="border-t border-slate-100 dark:border-slate-800 rounded-b-2xl overflow-hidden">
+                      <div className="border-t border-slate-100 dark:border-slate-800 overflow-hidden">
                         <button
                           onClick={() => setNotifVisible((v) => v + 5)}
                           className="w-full py-3 text-xs text-primary font-semibold hover:bg-primary/5 transition-colors"
@@ -506,6 +520,15 @@ export default function ProviderDashboardPage() {
                         </button>
                       </div>
                     )}
+                    <div className="border-t border-slate-100 dark:border-slate-800 rounded-b-2xl overflow-hidden">
+                      <button
+                        onClick={() => { setNotifOpen(false); router.push("/notifications"); }}
+                        className="w-full py-3 text-xs text-slate-500 font-semibold hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors flex items-center justify-center gap-1.5"
+                      >
+                        <span className="material-symbols-outlined text-sm">open_in_new</span>
+                        Voir toutes les notifications
+                      </button>
+                    </div>
                   </div>
                 )}
               </div>

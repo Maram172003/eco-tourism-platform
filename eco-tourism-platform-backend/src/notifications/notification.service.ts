@@ -21,6 +21,17 @@ export class NotificationService {
     if (toDelete.length) await this.repo.remove(toDelete);
   }
 
+  async deleteForCircuit(userId: string, type: string, circuitId: string): Promise<void> {
+    const existing = await this.repo.find({ where: { user_id: userId, type } });
+    const toDelete = existing.filter((n) => n.data?.circuit_id === circuitId);
+    if (toDelete.length) await this.repo.remove(toDelete);
+  }
+
+  async replaceForCircuit(userId: string, type: string, circuitId: string, data: Record<string, any>): Promise<Notification> {
+    await this.deleteForCircuit(userId, type, circuitId);
+    return this.repo.save(this.repo.create({ user_id: userId, type, data }));
+  }
+
   // Supprime les anciennes notifications du même type/offre pour un utilisateur, puis crée la nouvelle
   async replaceForOffer(userId: string, type: string, offerId: string, data: Record<string, any>): Promise<Notification> {
     await this.deleteForOffer(userId, type, offerId);
@@ -53,6 +64,17 @@ export class NotificationService {
 
   async deleteNotification(userId: string, id: string): Promise<void> {
     await this.repo.delete({ id, user_id: userId });
+  }
+
+  async deleteAll(userId: string): Promise<void> {
+    await this.repo.delete({ user_id: userId });
+  }
+
+  async deleteBulk(userId: string, ids: string[]): Promise<void> {
+    if (!ids.length) return;
+    const existing = await this.repo.find({ where: { user_id: userId } });
+    const toDelete = existing.filter((n) => ids.includes(n.id));
+    if (toDelete.length) await this.repo.remove(toDelete);
   }
 
   async reportNotification(userId: string, id: string): Promise<void> {

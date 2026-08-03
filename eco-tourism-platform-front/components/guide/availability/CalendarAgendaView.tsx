@@ -10,7 +10,7 @@ import {
   type AvailabilitySlot, type TimeWindow,
 } from "@/lib/availabilityConflicts";
 
-type ConflictInfo = { offer: string; section: string; conflictSlotLabel: string; days: string[] };
+type ConflictInfo = { id?: string; offer: string; section: string; conflictSlotLabel: string; days: string[] };
 
 const SECTION_LABEL: Record<string, string> = {
   hebergement: "Hébergement", restauration: "Restauration",

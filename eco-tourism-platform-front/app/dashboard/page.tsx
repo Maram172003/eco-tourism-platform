@@ -1032,11 +1032,6 @@ export default function DashboardPage() {
             const myOffers = await apiFetch<Offer[]>("/guide/offers", { headers: { Authorization: `Bearer ${tkn}` } });
             setOffers(myOffers);
           } catch {}
-        } else if (userRole === "provider") {
-          try {
-            const myOffers = await apiFetch<Offer[]>("/offers/mine", { headers: { Authorization: `Bearer ${tkn}` } });
-            setOffers(myOffers);
-          } catch {}
         }
       } catch {
         router.push("/auth/login");
@@ -1288,21 +1283,30 @@ export default function DashboardPage() {
         body: `L'offre « ${offerTitle} » à laquelle vous collaboriez a été supprimée.`,
       };
     }
-    if (n.type === "offer_schedule_changed") {
+    if (n.type === "offer_schedule_changed" || n.type === "circuit_schedule_changed") {
       const section = sectionLabel[n.data?.section ?? ""] ?? (n.data?.section ?? "");
-      const offerTitle = n.data?.offer_title ?? "une offre";
+      const resource = n.data?.offer_title ?? n.data?.circuit_title ?? "une offre";
       return {
         title: "Horaires mis à jour",
-        body: `Les horaires de « ${offerTitle} » (${section}) ont changé. Votre agenda a été synchronisé automatiquement.`,
+        body: `Les horaires de « ${resource} » (${section}) ont changé. Votre agenda a été synchronisé automatiquement.`,
       };
     }
-    if (n.type === "offer_schedule_conflict") {
+    if (n.type === "offer_schedule_conflict" || n.type === "circuit_schedule_conflict") {
       const section = sectionLabel[n.data?.section ?? ""] ?? (n.data?.section ?? "");
-      const offerTitle = n.data?.offer_title ?? "une offre";
+      const resource = n.data?.offer_title ?? n.data?.circuit_title ?? "une offre";
       return {
         title: "Conflit d'agenda",
-        body: `Les horaires de « ${offerTitle} » (${section}) créent un conflit avec votre agenda. Réglez votre agenda.`,
+        body: `Les horaires de « ${resource} » (${section}) créent un conflit avec votre agenda. Réglez votre agenda.`,
       };
+    }
+    if (n.type === "circuit_deleted") {
+      const circuitTitle = n.data?.circuit_title ?? "un circuit";
+      return { title: "Circuit supprimé", body: `Le circuit « ${circuitTitle} » auquel vous collaboriez a été supprimé.` };
+    }
+    if (n.type === "collab_kicked") {
+      const section = sectionLabel[n.data?.section ?? ""] ?? (n.data?.section ?? "");
+      const resource = n.data?.offer_title ?? n.data?.circuit_title ?? "une offre";
+      return { title: "Retiré de la collaboration", body: `Vous avez été retiré de la section « ${section} » de « ${resource} ».` };
     }
     return { title: "Notification", body: n.data?.message ?? "" };
   }
@@ -1514,15 +1518,20 @@ export default function DashboardPage() {
                                   if (collabId) router.push(`${base}?tab=collaborations&openCollab=${collabId}`);
                                   else if (offerId) router.push(`${base}?tab=collaborations&openCollabByOffer=${offerId}`);
                                   else router.push(`${base}?tab=collaborations`);
-                                } else if (n.type === "offer_schedule_conflict") {
+                                } else if (n.type === "offer_schedule_conflict" || n.type === "circuit_schedule_conflict") {
                                   router.push(`${base}?tab=agenda`);
                                 } else if (n.type === "offer_schedule_changed") {
                                   const offerId = n.data?.offer_id as string | undefined;
                                   router.push(offerId ? `${base}?tab=collaborations&openCollabByOffer=${offerId}` : `${base}?tab=collaborations`);
+                                } else if (n.type === "circuit_schedule_changed") {
+                                  const circuitId = n.data?.circuit_id as string | undefined;
+                                  router.push(circuitId ? `${base}?tab=collaborations&openCollabByCircuit=${circuitId}` : `${base}?tab=collaborations`);
+                                } else if (n.type === "circuit_deleted") {
+                                  router.push(`${base}?tab=collaborations`);
                                 }
                               }}>
                                 <span className={`mt-0.5 material-symbols-outlined text-lg shrink-0 ${isUnread ? "text-primary" : "text-slate-400"}`}>
-                                  {n.type === "collaboration_invite" ? "handshake" : n.type === "collab_accepted" ? "check_circle" : n.type === "collab_declined" ? "cancel" : n.type === "collab_quit" ? "person_remove" : n.type === "offer_deleted" ? "delete_forever" : n.type === "offer_schedule_conflict" ? "event_busy" : n.type === "offer_schedule_changed" ? "event_available" : "notifications"}
+                                  {n.type === "collaboration_invite" ? "handshake" : n.type === "collab_accepted" ? "check_circle" : n.type === "collab_declined" ? "cancel" : n.type === "collab_quit" ? "person_remove" : (n.type === "offer_deleted" || n.type === "circuit_deleted") ? "delete_forever" : (n.type === "offer_schedule_conflict" || n.type === "circuit_schedule_conflict") ? "event_busy" : (n.type === "offer_schedule_changed" || n.type === "circuit_schedule_changed") ? "event_available" : n.type === "collab_kicked" ? "person_remove" : "notifications"}
                                 </span>
                                 <div className="flex-1 min-w-0">
                                   <p className={`text-xs font-semibold truncate ${isUnread ? "text-slate-900 dark:text-white" : "text-slate-500 dark:text-slate-400"}`}>
@@ -2247,17 +2256,22 @@ export default function DashboardPage() {
                                 if (collabId) router.push(`${base}?tab=collaborations&openCollab=${collabId}`);
                                 else if (offerId) router.push(`${base}?tab=collaborations&openCollabByOffer=${offerId}`);
                                 else router.push(`${base}?tab=collaborations`);
-                              } else if (n.type === "offer_schedule_conflict") {
+                              } else if (n.type === "offer_schedule_conflict" || n.type === "circuit_schedule_conflict") {
                                 router.push(`${base}?tab=agenda`);
                               } else if (n.type === "offer_schedule_changed") {
                                 const offerId = n.data?.offer_id as string | undefined;
                                 router.push(offerId ? `${base}?tab=collaborations&openCollabByOffer=${offerId}` : `${base}?tab=collaborations`);
+                              } else if (n.type === "circuit_schedule_changed") {
+                                const circuitId = n.data?.circuit_id as string | undefined;
+                                router.push(circuitId ? `${base}?tab=collaborations&openCollabByCircuit=${circuitId}` : `${base}?tab=collaborations`);
+                              } else if (n.type === "circuit_deleted") {
+                                router.push(`${base}?tab=collaborations`);
                               } else {
                                 setExpandedNotif(n.id);
                               }
                             }}>
                               <span className={`mt-0.5 material-symbols-outlined text-xl shrink-0 ${isUnread ? "text-primary" : "text-slate-400"}`}>
-                                {n.type === "collaboration_invite" ? "handshake" : n.type === "collab_accepted" ? "check_circle" : n.type === "collab_declined" ? "cancel" : n.type === "collab_quit" ? "person_remove" : n.type === "offer_deleted" ? "delete_forever" : n.type === "offer_schedule_conflict" ? "event_busy" : n.type === "offer_schedule_changed" ? "event_available" : "notifications"}
+                                {n.type === "collaboration_invite" ? "handshake" : n.type === "collab_accepted" ? "check_circle" : n.type === "collab_declined" ? "cancel" : n.type === "collab_quit" ? "person_remove" : (n.type === "offer_deleted" || n.type === "circuit_deleted") ? "delete_forever" : (n.type === "offer_schedule_conflict" || n.type === "circuit_schedule_conflict") ? "event_busy" : (n.type === "offer_schedule_changed" || n.type === "circuit_schedule_changed") ? "event_available" : n.type === "collab_kicked" ? "person_remove" : "notifications"}
                               </span>
                               <div className="flex-1 min-w-0">
                                 <p className={`text-xs font-semibold leading-tight ${isUnread ? "text-slate-900 dark:text-white" : "text-slate-500 dark:text-slate-400"}`}>
@@ -2308,15 +2322,15 @@ export default function DashboardPage() {
                 <div className="flex-1 bg-white dark:bg-slate-900 rounded-2xl border border-slate-100 dark:border-slate-800 overflow-hidden flex flex-col">
                   {collabModal ? (
                     <CollaborationModal
-                      collabId={collabModal.collabId}
-                      offerId={collabModal.offerId}
-                      section={collabModal.section}
-                      inviterName={collabModal.inviterName}
+                      collabId={collabModal!.collabId}
+                      offerId={collabModal!.offerId}
+                      section={collabModal!.section}
+                      inviterName={collabModal!.inviterName}
                       token={token}
                       onClose={() => setCollabModal(null)}
                       onContributed={() => {
                         const n = notifications.find(
-                          (x) => x.data?.collab_id === collabModal.collabId
+                          (x) => x.data?.collab_id === collabModal!.collabId
                         );
                         if (n && !n.is_read) markNotifRead(n.id);
                       }}

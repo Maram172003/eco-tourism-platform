@@ -5,6 +5,7 @@ import { Conversation } from './entities/conversation.entity';
 import { Message } from './entities/message.entity';
 import { EcoTraveler } from '../eco-traveler/entities/eco-traveler.entity';
 import { Provider } from '../provider/entities/provider.entity';
+import { Guide } from '../guide/entities/guide.entity';
 import { User } from '../users/entities/user.entity';
 
 @Injectable()
@@ -18,6 +19,8 @@ export class MessagesService {
     private readonly ecoRepo: Repository<EcoTraveler>,
     @InjectRepository(Provider)
     private readonly providerRepo: Repository<Provider>,
+    @InjectRepository(Guide)
+    private readonly guideRepo: Repository<Guide>,
     @InjectRepository(User)
     private readonly userRepo: Repository<User>,
   ) {}
@@ -26,6 +29,8 @@ export class MessagesService {
     let entity: any = null;
     if (role === 'eco_traveler') {
       entity = await this.ecoRepo.findOne({ where: { user_id: userId } });
+    } else if (role === 'guide') {
+      entity = await this.guideRepo.findOne({ where: { user_id: userId } });
     } else {
       entity = await this.providerRepo.findOne({ where: { user_id: userId } });
     }

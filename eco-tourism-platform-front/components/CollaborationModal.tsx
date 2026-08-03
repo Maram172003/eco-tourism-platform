@@ -9,6 +9,8 @@ import {
   OFFER_STEPS,
   type GuideOfferFormData,
 } from "@/components/GuideOfferModal";
+import CircuitDetailView from "@/components/circuit/CircuitDetailView";
+import { EMPTY_HEBERG } from "@/components/guide/offer/ProviderServiceBlock";
 
 // ── Sections service (étape 6) vs custom (étape 9) ───────────────────────────
 
@@ -30,6 +32,34 @@ const CUSTOM_SECTION_FIELDS: Record<string, { title: string; icon: string; color
       { key: "duree_guidage", label: "Durée du guidage",           type: "text",     placeholder: "Ex : demi-journée" },
       { key: "tarif",         label: "Tarif (TND)",                type: "number",   placeholder: "Ex : 60" },
       { key: "note",          label: "Note complémentaire",        type: "textarea", placeholder: "Certifications, équipement…" },
+    ],
+  },
+  restauration: {
+    title: "Restauration", icon: "restaurant", color: "orange",
+    fields: [
+      { key: "type_cuisine",  label: "Type de cuisine",            type: "text",     placeholder: "Ex : Tunisienne traditionnelle", required: true },
+      { key: "capacite",      label: "Capacité d'accueil (pers.)", type: "number",   placeholder: "Ex : 30" },
+      { key: "formule",       label: "Formule proposée",           type: "text",     placeholder: "Ex : Buffet, à la carte…" },
+      { key: "tarif",         label: "Tarif par personne (TND)",   type: "number",   placeholder: "Ex : 25" },
+      { key: "note",          label: "Note complémentaire",        type: "textarea", placeholder: "Spécialités, restrictions alimentaires…" },
+    ],
+  },
+  transport: {
+    title: "Transport", icon: "directions_bus", color: "violet",
+    fields: [
+      { key: "type_vehicule", label: "Type de véhicule",           type: "text",     placeholder: "Ex : Minibus 9 places, 4x4…", required: true },
+      { key: "capacite",      label: "Capacité (personnes)",       type: "number",   placeholder: "Ex : 8" },
+      { key: "tarif",         label: "Tarif (TND)",                type: "number",   placeholder: "Ex : 150" },
+      { key: "note",          label: "Note complémentaire",        type: "textarea", placeholder: "Équipement, climatisation, options…" },
+    ],
+  },
+  hebergement: {
+    title: "Hébergement", icon: "hotel", color: "blue",
+    fields: [
+      { key: "type_hebergement", label: "Type d'hébergement",     type: "text",     placeholder: "Ex : Hôtel 3*, gîte, tente…", required: true },
+      { key: "capacite",         label: "Capacité (personnes)",   type: "number",   placeholder: "Ex : 10" },
+      { key: "tarif_nuit",       label: "Tarif par nuit (TND)",   type: "number",   placeholder: "Ex : 80" },
+      { key: "note",             label: "Note complémentaire",    type: "textarea", placeholder: "Équipements, petit-déjeuner inclus…" },
     ],
   },
   autre: {
@@ -59,6 +89,75 @@ const SECTION_META: Record<string, { title: string; icon: string; color: string 
   autre_service: { title: "Autre",        icon: "category",       color: "slate"  },
 };
 
+// Mapping catégories circuit (étape.categorie) → section CUSTOM_SECTION_FIELDS
+const CIRCUIT_SECTION_MAP: Record<string, string> = {
+  hebergement:           "hebergement",
+  transport:             "transport",
+  transport_eco:         "transport",
+  restaurant_terroir:    "restauration",
+  gastronomie_locale:    "restauration",
+  eco_tour:              "guide",
+  activite:              "guide",
+  culture_patrimoine:    "guide",
+  bien_etre_spa:         "guide",
+  volontariat_eco:       "guide",
+  nature_ecotourisme:    "guide",
+  historique_archeo:     "guide",
+  aventure_randonnee:    "guide",
+  decouverte_urbaine:    "guide",
+  artisanat:             "autre",
+  artisanat_traditions:  "autre",
+  agriculture_terroir:   "autre",
+  equipement:            "autre",
+  guide:                 "guide",
+  restauration:          "restauration",
+  autre:                 "autre",
+  autre_service:         "autre",
+};
+
+// Labels/icônes propres aux catégories circuit pour l'affichage
+const CIRCUIT_META_OVERRIDE: Record<string, { title: string; icon: string; color: string }> = {
+  transport_eco:        { title: "Transport Éco",          icon: "electric_bike",      color: "violet" },
+  gastronomie_locale:   { title: "Gastronomie locale",     icon: "restaurant",         color: "orange" },
+  restaurant_terroir:   { title: "Restaurant & Terroir",   icon: "restaurant",         color: "orange" },
+  eco_tour:             { title: "Éco-Tour",               icon: "eco",                color: "green"  },
+  activite:             { title: "Activité Outdoor",       icon: "hiking",             color: "green"  },
+  culture_patrimoine:   { title: "Culture & Patrimoine",   icon: "account_balance",    color: "green"  },
+  bien_etre_spa:        { title: "Bien-être & Spa",        icon: "spa",                color: "green"  },
+  volontariat_eco:      { title: "Volontariat",            icon: "volunteer_activism", color: "green"  },
+  nature_ecotourisme:   { title: "Nature & Écotourisme",   icon: "eco",                color: "green"  },
+  historique_archeo:    { title: "Historique & Archéo",    icon: "account_balance",    color: "green"  },
+  aventure_randonnee:   { title: "Aventure & Randonnée",   icon: "terrain",            color: "green"  },
+  decouverte_urbaine:   { title: "Découverte urbaine",     icon: "location_city",      color: "green"  },
+  artisanat:            { title: "Artisanat",              icon: "palette",            color: "slate"  },
+  artisanat_traditions: { title: "Artisanat & Traditions", icon: "palette",            color: "slate"  },
+  agriculture_terroir:  { title: "Agriculture & Terroir",  icon: "agriculture",        color: "slate"  },
+  equipement:           { title: "Location Matériel",      icon: "construction",       color: "slate"  },
+};
+
+// Affichage des catégories d'étape circuit dans le programme
+const CIRCUIT_CAT_DISPLAY: Record<string, { label: string; icon: string }> = {
+  transport_eco:        { label: "Transport Éco",          icon: "electric_bike"      },
+  gastronomie_locale:   { label: "Gastronomie locale",     icon: "restaurant"         },
+  restaurant_terroir:   { label: "Restaurant & Terroir",   icon: "restaurant"         },
+  hebergement:          { label: "Hébergement",            icon: "hotel"              },
+  eco_tour:             { label: "Éco-Tour",               icon: "eco"                },
+  activite:             { label: "Activité Outdoor",       icon: "hiking"             },
+  culture_patrimoine:   { label: "Culture & Patrimoine",   icon: "account_balance"    },
+  bien_etre_spa:        { label: "Bien-être & Spa",        icon: "spa"                },
+  volontariat_eco:      { label: "Volontariat",            icon: "volunteer_activism" },
+  nature_ecotourisme:   { label: "Nature & Écotourisme",   icon: "eco"                },
+  historique_archeo:    { label: "Historique & Archéo",    icon: "account_balance"    },
+  aventure_randonnee:   { label: "Aventure & Randonnée",   icon: "terrain"            },
+  decouverte_urbaine:   { label: "Découverte urbaine",     icon: "location_city"      },
+  artisanat:            { label: "Artisanat",              icon: "palette"            },
+  artisanat_traditions: { label: "Artisanat & Traditions", icon: "palette"            },
+  agriculture_terroir:  { label: "Agriculture & Terroir",  icon: "agriculture"        },
+  equipement:           { label: "Location Matériel",      icon: "construction"       },
+  transport:            { label: "Transport",              icon: "directions_bus"     },
+  autre:                { label: "Autre",                  icon: "category"           },
+};
+
 const SECTION_GRAD: Record<string, string> = {
   orange: "from-orange-500 to-amber-500",
   blue:   "from-blue-500 to-sky-500",
@@ -76,6 +175,8 @@ type Props = {
   inviterName?: string;
   token: string;
   offerApproved?: boolean;
+  circuitId?: string;
+  etapeId?: string;
   onClose: () => void;
   onContributed?: () => void;
   onSaved?: () => void;
@@ -86,13 +187,16 @@ type Props = {
 
 export default function CollaborationModal({
   collabId, offerId, section, inviterName, token, offerApproved = false,
+  circuitId, etapeId,
   onClose, onContributed, onSaved, onDeleted,
 }: Props) {
+  const isCircuitCollab = !offerId;
   const isService = isServiceSection(section);
-  // Service  : 8 étapes (1-5 verrouillées, 6 éditable pour leur section, 7-8 verrouillées)
-  // Custom   : 9 étapes (1-8 verrouillées, 9 = formulaire libre)
-  const TOTAL_STEPS  = isService ? 8 : 9;
-  const TARGET_STEP  = isService ? 6 : 9;
+  // Circuit collab : 1 étape directe (formulaire simple, pas de lecture d'offre)
+  // Service offre  : 8 étapes (1-5 verrouillées, 6 éditable, 7-8 verrouillées)
+  // Custom offre   : 9 étapes (1-8 verrouillées, 9 = formulaire libre)
+  const TOTAL_STEPS  = isCircuitCollab ? 1 : (isService ? 8 : 9);
+  const TARGET_STEP  = isCircuitCollab ? 1 : (isService ? 6 : 9);
 
   const [step, setStep]       = useState(TARGET_STEP);
   const [offerData, setOffer] = useState<GuideOfferFormData | null>(null);
@@ -104,8 +208,10 @@ export default function CollaborationModal({
   const [svcActive, setSvcActive] = useState<string>("");
   const [svcFormData, setSvcFormData] = useState<Record<string, any>>({});
 
-  // Section custom : champs texte libres
-  const [form, setForm] = useState<Record<string, string>>({});
+  // Section custom (offre) ou contribution circuit : clés → valeurs natives
+  const [form, setForm] = useState<Record<string, any>>({});
+
+  const [circuitData, setCircuitData] = useState<any | null>(null);
 
   const [saving,      setSaving]      = useState(false);
   const [saved,       setSaved]       = useState(false);   // true uniquement après un save dans cette session
@@ -115,9 +221,12 @@ export default function CollaborationModal({
 
   const scrollRef = useRef<HTMLDivElement>(null);
 
-  const meta        = SECTION_META[section] ?? SECTION_META.autre;
+  const meta        = isCircuitCollab
+    ? (CIRCUIT_META_OVERRIDE[section] ?? SECTION_META[section] ?? SECTION_META.autre)
+    : (SECTION_META[section] ?? SECTION_META.autre);
   const grad        = SECTION_GRAD[meta.color] ?? SECTION_GRAD.slate;
-  const customCfg   = CUSTOM_SECTION_FIELDS[section];
+  const resolvedSection = isCircuitCollab ? (CIRCUIT_SECTION_MAP[section] ?? "autre") : section;
+  const customCfg   = CUSTOM_SECTION_FIELDS[resolvedSection];
   const isEditStep  = step === TARGET_STEP;
 
   const currentMeta = isEditStep
@@ -130,14 +239,38 @@ export default function CollaborationModal({
     setError("");
     setStep(TARGET_STEP);
 
+    const collabFetch = apiFetch<{ status: string; contribution_data?: Record<string, any> }>(
+      `/guide/collaborations/${collabId}/status`,
+      { headers: { Authorization: `Bearer ${token}` } }
+    ).catch(() => null);
+
+    if (isCircuitCollab) {
+      const circuitFetch = circuitId
+        ? apiFetch<any>(`/circuits/${circuitId}/view`, { headers: { Authorization: `Bearer ${token}` } }).catch(() => null)
+        : Promise.resolve(null);
+      Promise.all([collabFetch, circuitFetch]).then(([collab, circuit]) => {
+        // Préserver les types natifs (tableaux, booléens) — utilisés par DynamicFields / ProviderSchemaForm
+        const initForm: Record<string, any> = collab?.contribution_data ? { ...collab.contribution_data } : {};
+        // Pour hébergement : pré-remplir les clés hb_${sv} manquantes avec EMPTY_HEBERG
+        // Évite que le HebergBlock parte de EMPTY sans enregistrer la valeur dans le form avant "Mettre à jour"
+        if ((collab as any)?.section === 'hebergement') {
+          const subtypes: string[] = circuit?.hebergement?.etape?.subtypes ?? [];
+          subtypes.forEach((sv: string) => {
+            if (!initForm[`hb_${sv}`]) initForm[`hb_${sv}`] = EMPTY_HEBERG;
+          });
+        }
+        if (Object.keys(initForm).length > 0) setForm(initForm);
+        if (collab?.status === "completed") setWasComplete(true);
+        if (circuit) setCircuitData(circuit);
+      }).finally(() => setLoading(false));
+      return;
+    }
+
     Promise.all([
       apiFetch<OfferFull>(`/guide/offers/${offerId}/detail`, {
         headers: { Authorization: `Bearer ${token}` },
       }),
-      apiFetch<{ status: string; contribution_data?: Record<string, any> }>(
-        `/guide/collaborations/${collabId}/status`,
-        { headers: { Authorization: `Bearer ${token}` } }
-      ).catch(() => null),
+      collabFetch,
     ]).then(([offer, collab]) => {
       const parsed = offerToFormData(offer as Record<string, any>, {
         domaines: null, expertises: null,
@@ -146,7 +279,6 @@ export default function CollaborationModal({
       setOffer(parsed);
 
       if (isService) {
-        // Restaurer depuis la sauvegarde précédente
         const savedContrib = collab?.contribution_data as { types?: string[]; svcs?: Record<string, any>; formData?: Record<string, any> } | null ?? null;
         const restoredTypes = savedContrib?.types ?? [];
         const restoredSvcs  = savedContrib?.svcs  ?? {};
@@ -160,7 +292,6 @@ export default function CollaborationModal({
         ));
       }
 
-      // Marquer si une contribution existe déjà (pour l'indicateur UI) sans bloquer l'édition
       if (collab?.status === "completed") setWasComplete(true);
     }).catch(() => setError("Impossible de charger l'offre."))
       .finally(() => setLoading(false));
@@ -201,15 +332,16 @@ export default function CollaborationModal({
   }
 
   function getValidationError(): string | null {
+    // Circuit : validation gérée inline dans CircuitDetailView
+    if (isCircuitCollab) return null;
     if (isService) {
-      // Valide si des types ont été choisis (mode service) OU des champs libres remplis (mode guidage gastro)
       if (svcTypes.length === 0 && Object.keys(svcFormData).length === 0)
         return "Complétez votre section avant d'enregistrer.";
       return null;
     }
     if (customCfg) {
       const missing = customCfg.fields
-        .filter((f) => f.required && !form[f.key]?.trim())
+        .filter((f) => f.required && !String(form[f.key] ?? "").trim())
         .map((f) => f.label);
       if (missing.length > 0)
         return `Champs obligatoires manquants : ${missing.join(", ")}.`;
@@ -222,7 +354,7 @@ export default function CollaborationModal({
     if (validErr) { setError(validErr); return; }
     setSaving(true); setError("");
     try {
-      const payload = isService
+      const payload = (isService && !isCircuitCollab)
         ? { types: svcTypes, svcs: svcData, ...(Object.keys(svcFormData).length > 0 ? { formData: svcFormData } : {}) }
         : form;
       await apiFetch(`/guide/collaborations/${collabId}/contribution`, {
@@ -232,7 +364,12 @@ export default function CollaborationModal({
       });
       setSaved(true);
       onContributed?.();
-      // Rester dans le modal pour permettre la navigation entre étapes
+      // Re-fetch le circuit pour que la localisation contribution apparaisse sur la carte
+      if (isCircuitCollab && circuitId) {
+        apiFetch<any>(`/circuits/${circuitId}/view`, { headers: { Authorization: `Bearer ${token}` } })
+          .then((updated) => { if (updated) setCircuitData(updated); })
+          .catch(() => {});
+      }
     } catch {
       setError("Erreur lors de la sauvegarde. Veuillez réessayer.");
     } finally {
@@ -251,7 +388,7 @@ export default function CollaborationModal({
         </div>
       );
     }
-    if (!offerData) {
+    if (!offerData && !isCircuitCollab) {
       return (
         <div className="text-center py-24 text-slate-400">
           <span className="material-symbols-outlined text-4xl mb-2 block">error_outline</span>
@@ -260,13 +397,13 @@ export default function CollaborationModal({
       );
     }
 
-    // ── Étapes 1-8 : formulaire du guide
+    // ── Étapes 1-8 : formulaire du guide (non disponibles pour les circuits)
     //    Étape 6 + isService : Step5 avec seulement la section du collab déverrouillée
     //    Toutes les autres   : pointer-events-none (verrouillé)
-    if (!isEditStep || (isEditStep && isService)) {
+    if (!isCircuitCollab && (!isEditStep || (isEditStep && isService))) {
       return (
         <GuideOfferReadOnlySteps
-          data={offerData}
+          data={offerData!}
           step={step}
           locked={offerApproved}
           collabSection={isEditStep && isService ? {
@@ -286,7 +423,50 @@ export default function CollaborationModal({
       );
     }
 
-    // ── Étape 9 : formulaire libre (sections custom : guide / autre) ──
+    // ── Circuit : vue complète avec formulaire contribution inline ──
+    if (isCircuitCollab) {
+      if (!circuitData) {
+        return (
+          <div className="flex items-center justify-center py-32 gap-3 text-slate-400">
+            <span className="w-7 h-7 rounded-full border-2 border-primary border-t-transparent animate-spin" />
+            <span className="text-sm">Chargement du circuit…</span>
+          </div>
+        );
+      }
+      const fieldLocked = saved || offerApproved;
+      return (
+        <div className="space-y-4">
+          <CircuitDetailView
+            circuit={circuitData}
+            editEtapeId={etapeId}
+            editCustomCfg={customCfg ?? undefined}
+            editForm={form}
+            editMeta={meta}
+            editGrad={grad}
+            onFormChange={(k, v) => setForm((p) => ({ ...p, [k]: v }))}
+            fieldLocked={fieldLocked}
+            editSaved={saved}
+            token={token}
+          />
+          {saved && (
+            <div className="flex items-center gap-3 rounded-2xl bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800 px-5 py-4">
+              <span className="material-symbols-outlined text-2xl text-emerald-600">check_circle</span>
+              <div>
+                <p className="font-extrabold text-emerald-700 dark:text-emerald-400 text-sm">Contribution enregistrée !</p>
+                <p className="text-xs text-emerald-600/80 dark:text-emerald-400/70 mt-0.5">Merci, votre contribution au circuit a été enregistrée.</p>
+              </div>
+            </div>
+          )}
+          {error && (
+            <p className="text-sm text-red-500 flex items-center gap-1.5">
+              <span className="material-symbols-outlined text-base">error</span>{error}
+            </p>
+          )}
+        </div>
+      );
+    }
+
+    // ── Étape 9 : formulaire libre pour offre (sections custom : guide / autre) ──
     if (!customCfg) return null;
     return (
       <div className="space-y-5">
@@ -367,9 +547,9 @@ export default function CollaborationModal({
           </button>
           <div className="flex-1 min-w-0">
             <h3 className="text-xl font-extrabold text-slate-800 dark:text-white tracking-tight truncate">
-              {offerData?.titre ?? "Offre collaborative"}
+              {offerData?.titre ?? (isCircuitCollab ? "Collaboration circuit" : "Offre collaborative")}
             </h3>
-            <p className="text-slate-400 text-xs mt-0.5">Offre collaborative · {inviterName ?? "Guide"}</p>
+            <p className="text-slate-400 text-xs mt-0.5">{isCircuitCollab ? "Circuit" : "Offre"} collaborative · {inviterName ?? "Guide"}</p>
           </div>
           <span className={`shrink-0 flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-full text-white bg-gradient-to-r ${grad}`}>
             <span className="material-symbols-outlined text-sm">{meta.icon}</span>

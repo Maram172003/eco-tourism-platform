@@ -7,6 +7,8 @@ import { ItemCommentLike } from './entities/item-comment-like.entity';
 import { EcoTraveler } from '../eco-traveler/entities/eco-traveler.entity';
 import { Provider } from '../provider/entities/provider.entity';
 import { Offer } from '../offer/entities/offer.entity';
+import { Circuit } from '../circuit/entities/circuit.entity';
+import { Guide } from '../guide/entities/guide.entity';
 
 @Injectable()
 export class InteractionsService {
@@ -17,6 +19,8 @@ export class InteractionsService {
     @InjectRepository(EcoTraveler)      private readonly ecoRepo: Repository<EcoTraveler>,
     @InjectRepository(Provider)         private readonly providerRepo: Repository<Provider>,
     @InjectRepository(Offer)            private readonly offerRepo: Repository<Offer>,
+    @InjectRepository(Circuit)          private readonly circuitRepo: Repository<Circuit>,
+    @InjectRepository(Guide)            private readonly guideRepo: Repository<Guide>,
   ) {}
 
   async getStats(type: string, targetId: string, viewerId?: string) {
@@ -138,6 +142,9 @@ export class InteractionsService {
     if (type === 'offer') {
       const o = await this.offerRepo.findOne({ where: { id: targetId, status: 'approved' } });
       if (!o) throw new NotFoundException('Offre introuvable.');
+    } else if (type === 'circuit') {
+      const c = await this.circuitRepo.findOne({ where: { id: targetId, status: 'approved' } });
+      if (!c) throw new NotFoundException('Circuit introuvable.');
     } else {
       throw new BadRequestException('Type invalide.');
     }
@@ -147,6 +154,8 @@ export class InteractionsService {
     let entity: any = null;
     if (role === 'eco_traveler') {
       entity = await this.ecoRepo.findOne({ where: { user_id: userId } });
+    } else if (role === 'guide') {
+      entity = await this.guideRepo.findOne({ where: { user_id: userId } });
     } else {
       entity = await this.providerRepo.findOne({ where: { user_id: userId } });
     }

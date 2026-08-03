@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { MongooseModule } from '@nestjs/mongoose';
 
@@ -14,6 +14,7 @@ import { NotificationModule } from '../notifications/notification.module';
 import { GuideMongoService } from './guide-mongo.service';
 import { GuideSkills, GuideSkillsSchema } from './schemas/guide-skills.schema';
 import { GuideEngagement, GuideEngagementSchema } from './schemas/guide-engagement.schema';
+import { CircuitModule } from '../circuit/circuit.module';
 
 @Module({
   imports: [
@@ -23,6 +24,7 @@ import { GuideEngagement, GuideEngagementSchema } from './schemas/guide-engageme
       { name: GuideEngagement.name, schema: GuideEngagementSchema },
     ]),
     NotificationModule,
+    forwardRef(() => CircuitModule),
   ],
   providers: [GuideService, GuideMongoService],
   controllers: [GuideController],

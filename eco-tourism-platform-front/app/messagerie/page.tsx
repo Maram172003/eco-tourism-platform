@@ -444,11 +444,31 @@ export default function MessageriePage() {
                 <button onClick={() => { setSelected(null); setPending(null); }} className="md:hidden w-8 h-8 rounded-xl bg-slate-100 flex items-center justify-center mr-1">
                   <ArrowLeft size={16} className="text-slate-600" />
                 </button>
-                <Avatar photo={selected?.other_user.photo ?? pending?.photo ?? null} name={selected?.other_user.full_name ?? pending?.name ?? null} size={10} />
-                <div>
-                  <p className="font-extrabold text-slate-800 text-sm">{selected?.other_user.full_name ?? pending?.name ?? "—"}</p>
+                <button
+                  onClick={() => {
+                    const role = selected?.other_user.role ?? pending?.role ?? "";
+                    const uid = selected?.other_user.user_id ?? pending?.recipientId ?? "";
+                    if (!uid) return;
+                    const path = role === "guide" ? `/profile/guide/${uid}` : role === "eco_traveler" ? `/profile/eco-traveler/${uid}` : `/profile/provider/${uid}`;
+                    router.push(path);
+                  }}
+                  className="hover:opacity-80 transition-opacity shrink-0"
+                >
+                  <Avatar photo={selected?.other_user.photo ?? pending?.photo ?? null} name={selected?.other_user.full_name ?? pending?.name ?? null} size={10} />
+                </button>
+                <button
+                  onClick={() => {
+                    const role = selected?.other_user.role ?? pending?.role ?? "";
+                    const uid = selected?.other_user.user_id ?? pending?.recipientId ?? "";
+                    if (!uid) return;
+                    const path = role === "guide" ? `/profile/guide/${uid}` : role === "eco_traveler" ? `/profile/eco-traveler/${uid}` : `/profile/provider/${uid}`;
+                    router.push(path);
+                  }}
+                  className="text-left hover:opacity-80 transition-opacity"
+                >
+                  <p className="font-extrabold text-slate-800 text-sm hover:underline">{selected?.other_user.full_name ?? pending?.name ?? "—"}</p>
                   <p className="text-[10px] text-slate-400 font-medium">{roleLabel(selected?.other_user.role ?? pending?.role ?? "")}</p>
-                </div>
+                </button>
               </div>
 
               {/* Messages */}

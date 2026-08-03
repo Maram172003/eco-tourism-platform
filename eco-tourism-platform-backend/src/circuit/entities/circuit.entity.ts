@@ -35,6 +35,12 @@ export class Circuit {
   @Column({ type: 'jsonb', nullable: true })
   hebergement!: object | null;
 
+  @Column({ type: 'varchar', default: 'draft' })
+  status!: string;
+
+  @Column({ type: 'varchar', default: 'provider' })
+  owner_type!: string;
+
   @CreateDateColumn()
   created_at!: Date;
 

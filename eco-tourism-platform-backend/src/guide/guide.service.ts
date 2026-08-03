@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Inject, Injectable, NotFoundException, forwardRef } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Guide } from './entities/guide.entity';
@@ -21,6 +21,7 @@ import {
 import { GuideMongoService } from './guide-mongo.service';
 import { NotificationService } from '../notifications/notification.service';
 import { SlotLike, overlappingDays, dispoEqual, toSlotType } from '../shared/slot.utils';
+import { CircuitService } from '../circuit/circuit.service';
 
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -41,6 +42,8 @@ export class GuideService {
     private readonly providerRepo: Repository<Provider>,
     private readonly mongoService: GuideMongoService,
     private readonly notifService: NotificationService,
+    @Inject(forwardRef(() => CircuitService))
+    private readonly circuitService: CircuitService,
   ) {}
 
   async getProfile(userId: string) {
@@ -786,6 +789,7 @@ export class GuideService {
   async getAvailability(guideId: string) {
     // Nettoyer en arrière-plan les notifications de conflit qui ne sont plus valides
     this.syncCollabConflictNotifications(guideId).catch(() => {});
+    this.circuitService.syncCircuitConflictNotifications(guideId).catch(() => {});
     return this.availRepo.find({
       where: { guide_id: guideId },
       order: { created_at: 'ASC' },
@@ -806,6 +810,7 @@ export class GuideService {
     const saved = await this.availRepo.save(slot);
     // Re-vérifier les conflits collab après tout changement de créneau personnel
     await this.syncCollabConflictNotifications(guideId).catch(() => {});
+    await this.circuitService.syncCircuitConflictNotifications(guideId).catch(() => {});
     return saved;
   }
 
@@ -815,6 +820,7 @@ export class GuideService {
     await this.availRepo.remove(slot);
     // Re-vérifier les conflits collab après suppression d'un créneau personnel
     await this.syncCollabConflictNotifications(guideId).catch(() => {});
+    await this.circuitService.syncCircuitConflictNotifications(guideId).catch(() => {});
     return { deleted: true };
   }
 
@@ -1062,9 +1068,11 @@ export class GuideService {
     userId: string,
     collabId: string,
     status: 'accepted' | 'declined',
-  ): Promise<OfferCollaboration> {
+  ): Promise<OfferCollaboration | any> {
     const collab = await this.collabRepo.findOne({ where: { id: collabId, invited_user_id: userId } });
-    if (!collab) throw new NotFoundException('Invitation introuvable ou non autorisée');
+    if (!collab) {
+      return this.circuitService.respondToCircuitCollab(userId, collabId, status);
+    }
 
     const offer = await this.offerRepo.findOne({ where: { id: collab.offer_id } });
     const offerTitle = (offer as any)?.title ?? 'votre offre';
@@ -1146,9 +1154,11 @@ export class GuideService {
     userId: string,
     collabId: string,
     data: Record<string, any>,
-  ): Promise<OfferCollaboration> {
+  ): Promise<OfferCollaboration | any> {
     const collab = await this.collabRepo.findOne({ where: { id: collabId, invited_user_id: userId } });
-    if (!collab) throw new NotFoundException('Invitation introuvable');
+    if (!collab) {
+      return this.circuitService.saveCircuitContribution(userId, collabId, data);
+    }
     if (collab.status !== 'accepted' && collab.status !== 'completed') throw new BadRequestException('Vous devez accepter l\'invitation avant de contribuer');
 
     // Bloquer toute modification si l'offre est déjà publiée
@@ -1198,7 +1208,9 @@ export class GuideService {
 
   async withdrawContribution(userId: string, collabId: string): Promise<void> {
     const collab = await this.collabRepo.findOne({ where: { id: collabId, invited_user_id: userId } });
-    if (!collab) throw new NotFoundException('Invitation introuvable');
+    if (!collab) {
+      return this.circuitService.withdrawCircuitContribution(userId, collabId);
+    }
     if (!['accepted', 'completed'].includes((collab as any).status)) throw new BadRequestException('Impossible de quitter cette collaboration');
 
     const offer = await this.offerRepo.findOne({ where: { id: (collab as any).offer_id } });
@@ -1208,8 +1220,8 @@ export class GuideService {
       throw new BadRequestException('Cette offre est déjà publiée. Vous ne pouvez plus quitter la collaboration. Contactez le propriétaire de l\'offre.');
     }
 
-    // Quitter la collaboration : effacer les données et passer à "declined"
-    (collab as any).contribution_data = null;
+    // Quitter la collaboration : marquer guide_quit et passer à "declined"
+    (collab as any).contribution_data = { guide_quit: true, offer_title: (offer as any)?.title ?? '' };
     (collab as any).status = 'declined';
     await this.collabRepo.save(collab);
 
@@ -1270,33 +1282,37 @@ export class GuideService {
   }
 
   async leaveCollabBySlotLabel(userId: string, slotLabel: string): Promise<void> {
-    // Support em dash (—), en dash (–) and regular hyphen for robustness
-    const match = slotLabel.match(/^\[Collab\]\s+(.+?)\s+[—–-]\s+(\w+)$/);
-    if (!match) throw new BadRequestException('Label de créneau invalide');
-    const offerTitle = match[1].trim();
-    const section    = match[2].trim();
-
-    // Delete the slot immediately using the exact known label — this is the user's primary goal
-    // and must succeed even if the offer or collab record no longer exist in the DB
+    // Delete the slot immediately using the exact known label
     const directSlots = await this.availRepo.find({ where: { guide_id: userId, label: slotLabel } });
     if (directSlots.length) await this.availRepo.remove(directSlots);
 
-    // Best-effort: find the matching collab record and clean it up
+    // Format circuit: [Collab] Title — section JN
+    const circuitMatch = slotLabel.match(/^\[Collab\]\s+(.+?)\s+—\s+(\S+)\s+J(-?\d+)$/);
+    if (circuitMatch) {
+      const target = await this.circuitService.getCircuitCollabBySlotLabel(userId, slotLabel);
+      if (target) {
+        await this.circuitService.withdrawCircuitContribution(userId, (target as any).id).catch(() => {});
+      }
+      return;
+    }
+
+    // Format offre: [Collab] Title — section
+    const match = slotLabel.match(/^\[Collab\]\s+(.+?)\s+[—–-]\s+(\w+)$/);
+    if (!match) return;
+    const offerTitle = match[1].trim();
+    const section    = match[2].trim();
+
     const collabs = await this.collabRepo.find({ where: { invited_user_id: userId, section } });
     const active = collabs.filter(c => ['accepted', 'completed'].includes((c as any).status));
+    if (!active.length) return;
 
-    if (!active.length) return; // slot already deleted above — orphan cleaned up
-
-    // Try exact title match first
     let target: OfferCollaboration | null = null;
     for (const c of active) {
       const offer = await this.offerRepo.findOne({ where: { id: (c as any).offer_id } });
       if ((offer as any)?.title === offerTitle) { target = c; break; }
     }
-    // Fallback: only one active collab for this section — must be the right one
     if (!target && active.length === 1) target = active[0];
-
-    if (!target) return; // slot cleaned up but couldn't determine which collab — acceptable
+    if (!target) return;
 
     await this.withdrawContribution(userId, (target as any).id);
   }
@@ -1308,18 +1324,22 @@ export class GuideService {
     if (!collab) {
       // Vérifier si l'appelant est le guide auteur de l'offre
       collab = await this.collabRepo.findOne({ where: { id: collabId } });
-      if (!collab) throw new NotFoundException('Invitation introuvable');
+      if (!collab) {
+        return this.circuitService.dismissCircuitCollab(userId, collabId);
+      }
       const offer = await this.offerRepo.findOne({ where: { id: (collab as any).offer_id, author_id: userId } });
-      if (!offer) throw new NotFoundException('Invitation introuvable ou accès non autorisé');
+      if (!offer) {
+        return this.circuitService.dismissCircuitCollab(userId, collabId);
+      }
       isOfferAuthor = true;
     }
 
     const status = (collab as any).status as string;
 
-    // Bloquer toute modification si l'offre est publiée (approved)
+    // Bloquer seulement les collabs actives sur une offre publiée — les declined peuvent toujours être supprimées
     const offerForCheck = await this.offerRepo.findOne({ where: { id: (collab as any).offer_id } });
-    if ((offerForCheck as any)?.status === 'approved') {
-      throw new BadRequestException('Cette offre est publiée. Les collaborations ne peuvent plus être modifiées.');
+    if ((offerForCheck as any)?.status === 'approved' && ['accepted', 'completed'].includes(status)) {
+      throw new BadRequestException('Cette offre est publiée. Les collaborations actives ne peuvent plus être modifiées.');
     }
 
     // Si le collab a déjà contribué (accepted/completed), nettoyer ses données dans offer.details
@@ -1370,10 +1390,14 @@ export class GuideService {
 
   async kickCollaborator(guideId: string, collabId: string): Promise<void> {
     const collab = await this.collabRepo.findOne({ where: { id: collabId } });
-    if (!collab) throw new NotFoundException('Invitation introuvable');
+    if (!collab) {
+      return this.circuitService.kickCircuitCollaborator(guideId, collabId);
+    }
 
     const offer = await this.offerRepo.findOne({ where: { id: (collab as any).offer_id, author_id: guideId } });
-    if (!offer) throw new NotFoundException('Offre introuvable ou accès non autorisé');
+    if (!offer) {
+      return this.circuitService.kickCircuitCollaborator(guideId, collabId);
+    }
     if ((offer as any).status === 'approved') {
       throw new BadRequestException('Cette offre est publiée. Les collaborations ne peuvent plus être modifiées.');
     }
@@ -1472,20 +1496,23 @@ export class GuideService {
       where: { invited_user_id: userId },
       order: { created_at: 'DESC' } as any,
     });
-    return Promise.all(
+    const offerResults = await Promise.all(
       collabs.map(async (c) => {
         const offer = await this.offerRepo.findOne({ where: { id: (c as any).offer_id } });
         const contribData = (c as any).contribution_data ?? {};
         const isOfferDeleted = contribData.offer_deleted === true;
         const isKicked = contribData.kicked === true;
+        const isGuideQuit = contribData.guide_quit === true;
         const images: string[] | null = (offer as any)?.images ?? null;
         const cover = (Array.isArray(images) && images.length > 0) ? images[0] : (contribData.offer_cover ?? null);
         let offerStatusResolved: string;
         if (isOfferDeleted) offerStatusResolved = 'offer_deleted';
         else if (isKicked) offerStatusResolved = 'collab_kicked';
+        else if (isGuideQuit) offerStatusResolved = 'collab_quit';
         else offerStatusResolved = (offer as any)?.status ?? null;
         return {
           ...(c as any),
+          source_type: 'offer' as const,
           offer_title: (offer as any)?.title ?? contribData.offer_title ?? 'Offre supprimée',
           offer_description: (offer as any)?.description ?? contribData.offer_description ?? null,
           offer_cover: cover,
@@ -1494,16 +1521,25 @@ export class GuideService {
         };
       }),
     );
+
+    const circuitResults = await this.circuitService.findMyCircuitCollaborations(userId);
+
+    return [...offerResults, ...circuitResults].sort(
+      (a, b) => new Date((b as any).created_at).getTime() - new Date((a as any).created_at).getTime(),
+    );
   }
 
   async getCollaborationStatus(userId: string, collabId: string) {
     const collab = await this.collabRepo.findOne({ where: { id: collabId, invited_user_id: userId } });
-    if (!collab) throw new NotFoundException('Invitation introuvable');
-    return {
-      status: (collab as any).status,
-      section: (collab as any).section,
-      contribution_data: (collab as any).contribution_data ?? null,
-    };
+    if (collab) {
+      return {
+        status: (collab as any).status,
+        section: (collab as any).section,
+        contribution_data: (collab as any).contribution_data ?? null,
+      };
+    }
+    // Fallback : collab circuit (stockée dans circuit_collaborations, pas offer_collaborations)
+    return this.circuitService.getCircuitCollabStatus(userId, collabId);
   }
 
   async getOfferCollaborations(guideId: string, offerId: string): Promise<OfferCollaboration[]> {

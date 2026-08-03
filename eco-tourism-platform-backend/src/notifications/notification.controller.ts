@@ -1,4 +1,4 @@
-import { Controller, Delete, Get, Param, Patch, Req } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Req } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { NotificationService } from './notification.service';
 
@@ -21,6 +21,16 @@ export class NotificationController {
   @Patch('read-all')
   markAllRead(@Req() req: any) {
     return this.service.markAllRead(req.user.sub);
+  }
+
+  @Delete('all')
+  deleteAll(@Req() req: any) {
+    return this.service.deleteAll(req.user.sub);
+  }
+
+  @Delete('bulk')
+  deleteBulk(@Req() req: any, @Body() body: { ids: string[] }) {
+    return this.service.deleteBulk(req.user.sub, body.ids ?? []);
   }
 
   @Patch(':id/read')

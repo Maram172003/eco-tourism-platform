@@ -168,6 +168,8 @@ export default function MultiLocationPicker({
 
     // Toggle : 1er clic → épingle, 2e clic sur même lieu → supprime
     function addEntry(lat: number, lng: number, label: string) {
+      // Garde : la carte a été détruite (démontage) → ignorer
+      if (!mapRef.current) return;
       const existingIdx = labelsRef.current.indexOf(label);
       if (existingIdx !== -1) {
         // Lieu déjà présent → on le retire
@@ -197,9 +199,9 @@ export default function MultiLocationPicker({
 
     return () => {
       addEntryRef.current = null;
-      map.remove();
-      mapRef.current   = null;
+      mapRef.current = null;       // annuler avant map.remove() pour bloquer les callbacks async en vol
       markersRef.current = [];
+      try { map.remove(); } catch {}
       try { document.head.removeChild(link); } catch {}
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps

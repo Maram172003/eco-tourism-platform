@@ -311,9 +311,11 @@ function InlineHoursEditor({ keys, value, onChange, onRemove }: InlineHoursEdito
 export function OfferAvailPicker({
   value,
   onChange,
+  hideTimeSlots = false,
 }: {
   value: OfferAvailSlot;
   onChange: (v: OfferAvailSlot) => void;
+  hideTimeSlots?: boolean;
 }) {
   const [newDate,  setNewDate]  = useState("");
   const [sMStart,  setSMStart]  = useState(new Date().getMonth());
@@ -574,7 +576,7 @@ export function OfferAvailPicker({
       )}
 
       {/* ── Horaires inline (tous modes sauf saison) ─────────────────────── */}
-      {value.type && value.type !== "season" && hoursKeys.length > 0 && (
+      {!hideTimeSlots && value.type && value.type !== "season" && hoursKeys.length > 0 && (
         <>
           {!hasHours && !showHours ? (
             /* Bouton "Ajouter des horaires" */
@@ -624,7 +626,7 @@ export function OfferAvailPicker({
       )}
 
       {/* Hint quand les clés ne sont pas encore disponibles */}
-      {value.type && value.type !== "season" && hoursKeys.length === 0 && (
+      {!hideTimeSlots && value.type && value.type !== "season" && hoursKeys.length === 0 && (
         <p className="text-[11px] text-slate-400 text-center py-2 border border-dashed border-slate-200 rounded-2xl">
           {value.type === "recurring"
             ? "Sélectionnez des jours ci-dessus pour configurer les horaires"

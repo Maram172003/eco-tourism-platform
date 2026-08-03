@@ -4,19 +4,23 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import CollaborationModal from "@/components/CollaborationModal";
 import OfferDetailView, { type OfferFull } from "@/components/offer/OfferDetailView";
+import CircuitViewContent from "@/components/circuit/CircuitViewContent";
+import CircuitDetailView from "@/components/circuit/CircuitDetailView";
 import dynamic from "next/dynamic";
 import {
   Plus, Edit3, ShieldCheck, MapPin, Calendar, Leaf, ArrowLeft,
   LayoutGrid, Tag, Users, Info, Sparkles, ArrowRight, X, Search, UserPlus,
   Clock, ChevronLeft, ChevronRight, Check, Globe, Star, BookOpen,
-  MoreVertical, UserX, ShieldBan, Flag,
+  MoreVertical, UserX, ShieldBan, Flag, Route, Trash2,
 } from "lucide-react";
 import { apiFetch, ApiError } from "@/lib/api";
 import { DOMAIN_CASCADE_CONFIG } from "@/lib/domainCascadeConfig";
 import { OFFER_DETAIL_FIELDS } from "@/lib/offer-schema";
+import { PROVIDER_SCHEMA } from "@/lib/provider-schema";
 import MessagerieWidget from "@/components/MessagerieWidget";
 import PubInteractions from "@/components/PubInteractions";
 import GuideOfferModal from "@/components/GuideOfferModal";
+import GuideCircuitModal from "@/components/guide/circuit/GuideCircuitModal";
 
 const MapPicker = dynamic(() => import("@/components/map/MapPicker"),
   { ssr: false, loading: () => <div className="h-[268px] rounded-2xl bg-slate-100 animate-pulse" /> }
@@ -412,16 +416,38 @@ const LANGUAGES_LIST = [
   { value: "de", label: "Allemand" }, { value: "it", label: "Italien" },
 ];
 
-type Tab = "tout" | "offres" | "reseau" | "apropos" | "agenda" | "collaborations";
+type Tab = "tout" | "offres" | "reseau" | "apropos" | "agenda" | "collaborations" | "circuits";
 
 type MyCollab = {
   id: string;
-  offer_id: string;
-  offer_title: string;
-  offer_description: string | null;
-  offer_cover: string | null;
-  offer_status: string;
-  guide_id: string;
+  source_type?: "offer" | "circuit";
+  // champs offre guide
+  offer_id?: string | null;
+  offer_title?: string | null;
+  offer_description?: string | null;
+  offer_cover?: string | null;
+  offer_status?: string | null;
+  guide_id?: string | null;
+  // champs circuit
+  circuit_id?: string | null;
+  circuit_title?: string | null;
+  circuit_cover?: string | null;
+  circuit_status?: string | null;
+  circuit_nb_jours?: number | null;
+  circuit_description?: string | null;
+  circuit_nb_etapes?: number | null;
+  circuit_etapes_preview?: { jour: number | null; titre: string | null; destination: string | null; categorie: string | null; subtypes: string[]; etape_mode?: string | null; expertises?: string[]; heure_debut?: string | null; heure_fin?: string | null }[];
+  circuit_categories?: string[];
+  owner_id?: string | null;
+  circuit_owner_type?: string | null;
+  etape_id?: string | null;
+  etape_jour?: number | null;
+  etape_destination?: string | null;
+  etape_titre?: string | null;
+  etape_heure_debut?: string | null;
+  etape_heure_fin?: string | null;
+  etape_subtypes?: string[];
+  etape_description_courte?: string | null;
   section: string;
   status: "pending" | "accepted" | "completed" | "declined";
   message: string | null;
@@ -495,6 +521,8 @@ export default function GuideProfilePage() {
   const [showCollabForm, setShowCollabForm] = useState(false);
   const [detailOffer, setDetailOffer] = useState<OfferFull | null>(null);
   const [detailOfferLoading, setDetailOfferLoading] = useState(false);
+  const [circuitFullDetail, setCircuitFullDetail] = useState<any>(null);
+  const [circuitFullDetailLoading, setCircuitFullDetailLoading] = useState(false);
   type NetUser = { user_id: string; full_name: string; photo: string | null; _type: string; sub?: string | null };
   const [following,      setFollowing]      = useState<NetUser[]>([]);
   const [followers,      setFollowers]      = useState<NetUser[]>([]);
@@ -563,19 +591,29 @@ export default function GuideProfilePage() {
   const [publishOfferLoading,  setPublishOfferLoading]  = useState(false);
   const [publishOfferSaving,   setPublishOfferSaving]   = useState(false);
 
+  // ── Circuits (guide) ─────────────────────────────────────────────────────
+  const [guideCircuits,          setGuideCircuits]          = useState<any[]>([]);
+  const [guideCircuitsLoading,   setGuideCircuitsLoading]   = useState(false);
+  const [guideCircuitModalOpen,  setGuideCircuitModalOpen]  = useState(false);
+  const [guideEditingCircuit,    setGuideEditingCircuit]    = useState<any | null>(null);
+  const [guideViewingCircuit,    setGuideViewingCircuit]    = useState<any | null>(null);
+  const [guidePublishingCircuit, setGuidePublishingCircuit] = useState(false);
+  const [guidePublishCircuitError, setGuidePublishCircuitError] = useState("");
+
 
   useEffect(() => {
     const tab = searchParams.get("tab");
-    if (tab && ["tout","offres","reseau","apropos","agenda","collaborations"].includes(tab)) {
+    if (tab && ["tout","offres","reseau","apropos","agenda","collaborations","circuits"].includes(tab)) {
       setActiveTab(tab as Tab);
     }
   }, [searchParams]);
 
   useEffect(() => {
-    if (activeTab !== "collaborations" || !token) return;
+    if ((activeTab !== "collaborations" && activeTab !== "tout") || !token) return;
     setCollabLoading(true);
-    const autoOpenId = searchParams.get("openCollab");
-    const autoOpenByOffer = searchParams.get("openCollabByOffer");
+    const autoOpenId       = activeTab === "collaborations" ? searchParams.get("openCollab") : null;
+    const autoOpenByOffer  = activeTab === "collaborations" ? searchParams.get("openCollabByOffer") : null;
+    const autoOpenByCircuit = activeTab === "collaborations" ? searchParams.get("openCollabByCircuit") : null;
     apiFetch<MyCollab[]>("/guide/collaborations/mine", { headers: { Authorization: `Bearer ${token}` } })
       .then((list) => {
         setCollaborations(list);
@@ -588,11 +626,24 @@ export default function GuideProfilePage() {
             setHighlightCollabId(target.id);
             scrollToElement(`collab-${target.id}`, () => setHighlightCollabId(null));
           }
+        } else if (autoOpenByCircuit) {
+          const target = list.find((x: any) => x.circuit_id === autoOpenByCircuit);
+          if (target) {
+            setHighlightCollabId(target.id);
+            scrollToElement(`collab-${target.id}`, () => setHighlightCollabId(null));
+          }
         }
       })
       .catch(() => setCollaborations([]))
       .finally(() => setCollabLoading(false));
   }, [activeTab, token, searchParams]);
+
+  useEffect(() => {
+    if ((activeTab !== "circuits" && activeTab !== "tout") || !token || guideCircuits.length > 0 || guideCircuitsLoading) return;
+    setGuideCircuitsLoading(true);
+    apiFetch<any[]>("/circuits/mine", { headers: { Authorization: `Bearer ${token}` } })
+      .then(setGuideCircuits).catch(() => {}).finally(() => setGuideCircuitsLoading(false));
+  }, [activeTab, token]);
 
   useEffect(() => {
     if (activeTab !== "offres") return;
@@ -2033,9 +2084,10 @@ export default function GuideProfilePage() {
                 { key: "tout",           label: "Tout",           Icon: LayoutGrid },
                 { key: "offres",         label: "Offres",         Icon: Tag },
                 { key: "reseau",         label: "Réseau",         Icon: Users },
-                { key: "apropos",        label: "À propos",       Icon: Info },
                 { key: "agenda",         label: "Agenda",         Icon: Calendar },
                 { key: "collaborations", label: "Collaborations", Icon: Users },
+                { key: "circuits",       label: "Circuits",       Icon: Route },
+                { key: "apropos",        label: "À propos",       Icon: Info },
               ].map(({ key, label, Icon }) => (
                 <button key={key} onClick={() => setActiveTab(key as Tab)}
                   className={`flex-1 min-w-[70px] py-3 px-4 rounded-xl text-xs font-black tracking-tight flex items-center justify-center gap-1.5 transition-all cursor-pointer ${activeTab === key ? "bg-white text-slate-800 shadow-sm" : "text-slate-500 hover:text-slate-700 hover:bg-slate-50/50"}`}>
@@ -2045,28 +2097,201 @@ export default function GuideProfilePage() {
             </div>
 
             {/* TAB: TOUT */}
-            {activeTab === "tout" && (
-              <div className="space-y-5">
-                <h3 className="text-xs font-black uppercase text-slate-400 tracking-widest flex items-center gap-1.5">
-                  <Sparkles size={12} className="text-primary" /><span>Offres de guide</span>
-                </h3>
-                {offers.length === 0 ? (
-                  <div className="bg-white rounded-3xl border border-slate-100/90 shadow-sm p-12 text-center">
-                    <div className="w-14 h-14 bg-primary/10 rounded-2xl flex items-center justify-center mx-auto mb-4">
-                      <span className="material-symbols-outlined text-primary text-3xl">hiking</span>
+            {activeTab === "tout" && (() => {
+              const approvedOffers = offers.filter((o) => o.status === "approved");
+              const approvedCircuits = guideCircuits.filter((c) => (c.status ?? "draft") === "approved");
+              const approvedCollabs = collaborations.filter((c) =>
+                c.source_type !== "circuit" ? c.offer_status === "approved" : c.circuit_status === "approved"
+              );
+              const isEmpty = approvedOffers.length === 0 && approvedCircuits.length === 0 && approvedCollabs.length === 0;
+              const isLoading = guideCircuitsLoading || collabLoading;
+              return (
+                <div className="space-y-8">
+                  {isLoading && (
+                    <div className="flex items-center justify-center py-10 gap-3 text-slate-400">
+                      <span className="w-5 h-5 rounded-full border-2 border-primary border-t-transparent animate-spin" />
+                      <span className="text-sm">Chargement…</span>
                     </div>
-                    <p className="text-slate-800 font-extrabold text-base mb-1">Aucune offre publiée</p>
-                    <p className="text-slate-400 text-sm mb-5">Publiez votre première expérience guidée.</p>
-                    <button onClick={() => setShowCreateOffer(true)}
-                      className="inline-flex items-center gap-2 px-5 py-2.5 bg-primary text-white rounded-2xl text-sm font-bold hover:bg-primary/90 shadow-sm">
-                      <Plus size={16} />Créer une offre
-                    </button>
-                  </div>
-                ) : (
-                  offers.map((offer) => <OfferCard key={offer.id} offer={offer} />)
-                )}
-              </div>
-            )}
+                  )}
+                  {!isLoading && isEmpty && (
+                    <div className="bg-white rounded-3xl border border-slate-100/90 shadow-sm p-14 text-center">
+                      <span className="material-symbols-outlined text-5xl text-slate-300 block mb-3">public</span>
+                      <p className="font-extrabold text-slate-700 text-base mb-1">Aucune publication</p>
+                      <p className="text-slate-400 text-sm">Vos offres, circuits et collaborations publiés apparaîtront ici.</p>
+                    </div>
+                  )}
+
+                  {/* ── Offres publiées ─────────────────────────────────────────── */}
+                  {!isLoading && approvedOffers.length > 0 && (
+                    <div className="space-y-4">
+                      <h3 className="text-xs font-black uppercase text-slate-400 tracking-widest flex items-center gap-1.5">
+                        <Tag size={12} className="text-primary" /><span>Offres publiées</span>
+                      </h3>
+                      {approvedOffers.map((offer) => <OfferCard key={offer.id} offer={offer} />)}
+                    </div>
+                  )}
+
+                  {/* ── Circuits publiés — même carte que l'onglet Circuits ─────── */}
+                  {!isLoading && approvedCircuits.length > 0 && (
+                    <div className="space-y-4">
+                      <h3 className="text-xs font-black uppercase text-slate-400 tracking-widest flex items-center gap-1.5">
+                        <Route size={12} className="text-primary" /><span>Circuits publiés</span>
+                      </h3>
+                      <div className="grid grid-cols-1 gap-4">
+                        {approvedCircuits.map((circuit) => {
+                          const etapes: any[] = circuit.etapes ?? [];
+                          return (
+                            <div key={circuit.id} className="bg-white rounded-3xl border border-slate-100/80 shadow-sm overflow-hidden hover:shadow-md transition-all">
+                              <div className="flex gap-0">
+                                <div className="relative w-40 shrink-0 bg-gradient-to-br from-primary/20 to-emerald-100 flex items-center justify-center">
+                                  {circuit.cover_image
+                                    ? <img src={circuit.cover_image} alt="" className="w-full h-full object-cover absolute inset-0" />
+                                    : <Route size={32} className="text-primary/40" />}
+                                  <span className="absolute top-2 left-2 text-[9px] font-black tracking-widest uppercase px-2 py-0.5 rounded-lg bg-emerald-500 text-white">Publié</span>
+                                </div>
+                                <div className="flex-1 p-5">
+                                  <h4 className="text-base font-extrabold text-slate-800 leading-tight">{circuit.title}</h4>
+                                  {circuit.description && <p className="text-xs text-slate-500 mt-1 line-clamp-2">{circuit.description}</p>}
+                                  <div className="flex flex-wrap gap-2 mt-3">
+                                    <span className="flex items-center gap-1 text-[10px] font-black tracking-widest uppercase text-primary bg-primary/10 px-2.5 py-1 rounded-xl">
+                                      <Calendar size={10} />{circuit.nb_jours} jour{circuit.nb_jours > 1 ? "s" : ""}
+                                    </span>
+                                    <span className="flex items-center gap-1 text-[10px] font-black tracking-widest uppercase text-slate-500 bg-slate-100 px-2.5 py-1 rounded-xl">
+                                      <MapPin size={10} />{etapes.length} étape{etapes.length !== 1 ? "s" : ""}
+                                    </span>
+                                  </div>
+                                  <div className="mt-3 space-y-1">
+                                    {etapes.slice(0, 3).map((etape: any) => {
+                                      const eCat = PROVIDER_SCHEMA.find((c) => c.value === etape.categorie);
+                                      const catLabel = eCat?.label ?? DOMAINES_META[etape.categorie]?.label ?? etape.categorie;
+                                      const displayName = etape.titre || etape.destination || catLabel || "Étape";
+                                      const stLabels = ((etape.subtypes as string[]) ?? []).slice(0, 2).map((sv: string) => (eCat as any)?.subtypes?.find((s: any) => s.value === sv)?.label ?? sv);
+                                      const expertiseLabels = ((etape.fields as any)?.expertises as string[] | undefined ?? []).slice(0, 2);
+                                      const secondaryLabel = stLabels.length > 0 ? stLabels.join(", ") : expertiseLabels.join(", ");
+                                      return (
+                                        <div key={etape.id} className="flex items-center gap-2 text-xs">
+                                          <span className="w-5 h-5 rounded-full bg-primary/10 text-primary font-black flex items-center justify-center text-[10px] shrink-0">{etape.jour}</span>
+                                          <span className="font-semibold text-slate-700 truncate">{displayName}</span>
+                                          {secondaryLabel && (<><span className="text-slate-300 shrink-0">·</span><span className="text-slate-400 truncate text-[11px]">{secondaryLabel}</span></>)}
+                                          {etape.heure_debut && (<><span className="text-slate-300 shrink-0">·</span><span className="text-slate-400 truncate text-[10px] shrink-0">{etape.heure_debut}{etape.heure_fin ? ` → ${etape.heure_fin}` : ""}</span></>)}
+                                        </div>
+                                      );
+                                    })}
+                                    {etapes.length > 3 && <p className="text-[10px] text-slate-400 font-semibold">+{etapes.length - 3} étape{etapes.length - 3 > 1 ? "s" : ""}…</p>}
+                                  </div>
+                                  <button onClick={async () => { setGuideViewingCircuit(circuit); setGuidePublishCircuitError(""); try { const enriched = await apiFetch<any>(`/circuits/${circuit.id}/view`, { headers: { Authorization: `Bearer ${token}` } }); if (enriched) setGuideViewingCircuit(enriched); } catch {} }} className="mt-3 flex items-center gap-1.5 text-[11px] font-extrabold text-primary hover:text-primary/80 transition-colors cursor-pointer">
+                                    <Info size={12} />Voir les détails
+                                  </button>
+                                </div>
+                              </div>
+                              <PubInteractions pubId={circuit.id} token={token} viewerId={profile?.user_id ?? ""} shareUrl={`${typeof window !== "undefined" ? window.location.origin : ""}/profile/guide/${profile?.user_id}?tab=circuits&circuit=${circuit.id}`} pubTitle={circuit.title} itemApiBase="/interactions/circuit" commentApiBase="/interactions" />
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* ── Collaborations publiées — même carte que l'onglet Collabs ── */}
+                  {!isLoading && approvedCollabs.length > 0 && (() => {
+                    const SM: Record<string, { label: string; icon: string; grad: string }> = {
+                      restauration: { label: "Restauration", icon: "restaurant",    grad: "from-emerald-600 to-green-500" },
+                      transport:    { label: "Transport",    icon: "directions_bus", grad: "from-slate-600 to-slate-500" },
+                      hebergement:  { label: "Hébergement", icon: "hotel",          grad: "from-teal-600 to-emerald-500" },
+                      guide:        { label: "Guidage",     icon: "hiking",         grad: "from-emerald-500 to-green-500" },
+                      autre:        { label: "Autre",       icon: "category",       grad: "from-slate-500 to-slate-600" },
+                      nature_ecotourisme: { label: "Nature & Écotourisme", icon: "park", grad: "from-green-600 to-emerald-500" },
+                      culture_patrimoine: { label: "Culture & Patrimoine", icon: "account_balance", grad: "from-amber-600 to-orange-500" },
+                      aventure_randonnee: { label: "Aventure & Randonnée", icon: "hiking", grad: "from-teal-600 to-cyan-500" },
+                      gastronomie_locale: { label: "Gastronomie locale", icon: "restaurant", grad: "from-orange-600 to-amber-500" },
+                      eco_tour: { label: "Éco-Tour", icon: "eco", grad: "from-green-600 to-teal-500" },
+                      autre_service: { label: "Autre service", icon: "category", grad: "from-slate-500 to-slate-600" },
+                    };
+                    const STMETA: Record<string, { label: string; cls: string; icon: string }> = {
+                      accepted:  { label: "Acceptée",   cls: "bg-teal-100 text-teal-700 border-teal-200",       icon: "check_circle" },
+                      completed: { label: "Complétée",  cls: "bg-emerald-100 text-emerald-700 border-emerald-200", icon: "task_alt" },
+                    };
+                    return (
+                      <div className="space-y-4">
+                        <h3 className="text-xs font-black uppercase text-slate-400 tracking-widest flex items-center gap-1.5">
+                          <Users size={12} className="text-primary" /><span>Collaborations publiées</span>
+                        </h3>
+                        {approvedCollabs.map((c) => {
+                          const isCircuit = c.source_type === "circuit";
+                          const sm = SM[c.section] ?? SM.autre;
+                          const st = STMETA[c.status] ?? STMETA.accepted;
+                          const displayTitle = isCircuit ? (c.circuit_title ?? "Circuit") : (c.offer_title ?? "Offre");
+                          const displayCover = isCircuit ? c.circuit_cover : c.offer_cover;
+                          return (
+                            <div key={c.id} className="relative group bg-white rounded-3xl border border-slate-100/90 shadow-sm overflow-hidden hover:shadow-md transition-all duration-300">
+                              {isCircuit ? (
+                                <div className="flex gap-0">
+                                  <div className="relative w-40 shrink-0 bg-gradient-to-br from-primary/20 to-emerald-100 flex items-center justify-center overflow-hidden">
+                                    {displayCover ? <img src={displayCover} alt={displayTitle} className="absolute inset-0 w-full h-full object-cover" /> : <span className="material-symbols-outlined text-primary/30" style={{ fontSize: 32 }}>route</span>}
+                                    <span className={`absolute top-2 left-2 text-[9px] font-black tracking-widest uppercase px-2 py-0.5 rounded-lg ${st.cls}`}>{st.label}</span>
+                                  </div>
+                                  <div className="flex-1 p-5">
+                                    <h4 className="text-base font-extrabold text-slate-800 leading-tight">{displayTitle}</h4>
+                                    {c.circuit_description && <p className="text-xs text-slate-500 mt-1 line-clamp-2">{c.circuit_description}</p>}
+                                    <div className="flex flex-wrap gap-2 mt-3">
+                                      {c.circuit_nb_jours && <span className="flex items-center gap-1 text-[10px] font-black tracking-widest uppercase text-primary bg-primary/10 px-2.5 py-1 rounded-xl"><Calendar size={10} />{c.circuit_nb_jours} jour{c.circuit_nb_jours > 1 ? "s" : ""}</span>}
+                                      {c.circuit_nb_etapes != null && c.circuit_nb_etapes > 0 && <span className="flex items-center gap-1 text-[10px] font-black tracking-widest uppercase text-slate-500 bg-slate-100 px-2.5 py-1 rounded-xl"><MapPin size={10} />{c.circuit_nb_etapes} étape{c.circuit_nb_etapes > 1 ? "s" : ""}</span>}
+                                    </div>
+                                    {c.message && <p className="mt-2 text-slate-400 text-xs leading-relaxed line-clamp-1 italic border-l-2 border-slate-200 pl-2">&ldquo;{c.message}&rdquo;</p>}
+                                    <button onClick={() => { setOpenCollab(c); setDetailOffer(null); setCircuitFullDetail(null); if (c.circuit_id) { setCircuitFullDetailLoading(true); apiFetch<any>(`/circuits/${c.circuit_id}/view`, { headers: { Authorization: `Bearer ${token}` } }).then(setCircuitFullDetail).catch(() => setCircuitFullDetail(null)).finally(() => setCircuitFullDetailLoading(false)); } }} className="mt-3 flex items-center gap-1.5 text-[11px] font-extrabold text-primary hover:text-primary/80 cursor-pointer"><Info size={12} />Voir les détails</button>
+                                  </div>
+                                </div>
+                              ) : (
+                                <div className="flex flex-col sm:flex-row">
+                                  <div className="relative bg-slate-50 flex items-center justify-center overflow-hidden border-b sm:border-b-0 sm:border-r border-slate-100 sm:w-2/5 min-h-[180px]">
+                                    {displayCover ? <img src={displayCover} alt={displayTitle} className="absolute inset-0 w-full h-full object-cover" /> : (<><div className={`absolute inset-0 bg-gradient-to-br ${sm.grad} opacity-90`} /><span className="material-symbols-outlined text-white/40 relative z-10" style={{ fontSize: 100 }}>{sm.icon}</span></>)}
+                                    <div className={`absolute top-2 left-2 text-[10px] font-black tracking-widest uppercase px-2.5 py-1 rounded-xl shadow border flex items-center gap-1 ${st.cls}`}><span className="material-symbols-outlined text-xs">{st.icon}</span>{st.label}</div>
+                                  </div>
+                                  <div className="flex-1 flex flex-col justify-between p-6 md:p-8">
+                                    <div>
+                                      <h3 className="text-lg md:text-xl font-extrabold text-slate-800 tracking-tight leading-tight mb-2">{displayTitle}</h3>
+                                      {c.offer_description && <p className="text-slate-500 text-sm leading-relaxed mb-3 line-clamp-2">{c.offer_description}</p>}
+                                      {c.message && <p className="text-slate-400 text-xs leading-relaxed mb-3 line-clamp-2 italic border-l-2 border-slate-200 pl-3">&ldquo;{c.message}&rdquo;</p>}
+                                      <div className="flex flex-wrap gap-2.5 mb-4"><span className={`flex items-center gap-1.5 text-[11px] font-extrabold tracking-wider px-3 py-1 rounded-xl text-white bg-gradient-to-r ${sm.grad} uppercase`}><span className="material-symbols-outlined text-sm">{sm.icon}</span>{sm.label}</span></div>
+                                    </div>
+                                    <div className="flex items-center justify-between border-t border-slate-50 pt-4 mt-3">
+                                      <p className="text-[11px] font-bold text-slate-400">{new Date(c.created_at).toLocaleDateString("fr-FR", { day: "numeric", month: "long", year: "numeric" })}</p>
+                                      <button onClick={() => { setOpenCollab(c); setDetailOffer(null); setCircuitFullDetail(null); if (c.offer_id) { setDetailOfferLoading(true); apiFetch<OfferFull>(`/guide/offers/${c.offer_id}/detail`, { headers: { Authorization: `Bearer ${token}` } }).then(setDetailOffer).catch(() => setDetailOffer(null)).finally(() => setDetailOfferLoading(false)); } }} className="text-primary hover:text-primary/80 font-extrabold text-xs inline-flex items-center gap-1 hover:translate-x-1 transition-transform duration-200"><span>Voir les détails</span><ArrowRight size={14} strokeWidth={2.5} /></button>
+                                    </div>
+                                  </div>
+                                </div>
+                              )}
+                              {!isCircuit && c.offer_status === "approved" && c.offer_id && (
+                                <PubInteractions
+                                  pubId={c.offer_id}
+                                  token={token}
+                                  viewerId={profile?.user_id ?? ""}
+                                  shareUrl={`${typeof window !== "undefined" ? window.location.origin : ""}/profile/guide/${c.guide_id}?offer=${c.offer_id}`}
+                                  pubTitle={c.offer_title ?? undefined}
+                                  itemApiBase="/interactions/offer"
+                                  commentApiBase="/interactions"
+                                />
+                              )}
+                              {isCircuit && c.circuit_status === "approved" && c.circuit_id && (
+                                <PubInteractions
+                                  pubId={c.circuit_id}
+                                  token={token}
+                                  viewerId={profile?.user_id ?? ""}
+                                  shareUrl={`${typeof window !== "undefined" ? window.location.origin : ""}/profile/${c.circuit_owner_type === "guide" ? "guide" : "provider"}/${c.owner_id}?tab=circuits&circuit=${c.circuit_id}`}
+                                  pubTitle={c.circuit_title ?? undefined}
+                                  itemApiBase="/interactions/circuit"
+                                  commentApiBase="/interactions"
+                                />
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    );
+                  })()}
+                </div>
+              );
+            })()}
 
             {/* TAB: OFFRES */}
             {activeTab === "offres" && (
@@ -2566,19 +2791,35 @@ export default function GuideProfilePage() {
             {/* ── Onglet Collaborations ── */}
             {activeTab === "collaborations" && (() => {
               const SECTION_META: Record<string, { label: string; icon: string; grad: string }> = {
+                // Sections offre guide
                 restauration: { label: "Restauration", icon: "restaurant",    grad: "from-emerald-600 to-green-500" },
                 transport:    { label: "Transport",    icon: "directions_bus", grad: "from-slate-600 to-slate-500" },
                 hebergement:  { label: "Hébergement", icon: "hotel",          grad: "from-teal-600 to-emerald-500" },
                 guide:        { label: "Guidage",     icon: "hiking",         grad: "from-emerald-500 to-green-500" },
                 autre:        { label: "Autre",       icon: "category",       grad: "from-slate-500 to-slate-600" },
+                // Domaines guidage circuit
+                nature_ecotourisme:   { label: "Nature & Écotourisme",    icon: "park",                grad: "from-green-600 to-emerald-500" },
+                culture_patrimoine:   { label: "Culture & Patrimoine",    icon: "account_balance",     grad: "from-amber-600 to-orange-500" },
+                historique_archeo:    { label: "Historique & Archéo",     icon: "history_edu",         grad: "from-stone-600 to-amber-700" },
+                aventure_randonnee:   { label: "Aventure & Randonnée",    icon: "hiking",              grad: "from-teal-600 to-cyan-500" },
+                gastronomie_locale:   { label: "Gastronomie locale",      icon: "restaurant",          grad: "from-orange-600 to-amber-500" },
+                artisanat_traditions: { label: "Artisanat & Traditions",  icon: "palette",             grad: "from-rose-600 to-pink-500" },
+                decouverte_urbaine:   { label: "Découverte urbaine",      icon: "location_city",       grad: "from-slate-600 to-blue-600" },
+                eco_tour:             { label: "Éco-Tour",                icon: "eco",                 grad: "from-green-600 to-teal-500" },
+                activite:             { label: "Activité",                icon: "sports",              grad: "from-teal-600 to-emerald-500" },
+                bien_etre_spa:        { label: "Bien-être & Spa",         icon: "spa",                 grad: "from-purple-500 to-violet-500" },
+                volontariat_eco:      { label: "Volontariat Éco",         icon: "volunteer_activism",  grad: "from-emerald-600 to-green-500" },
+                autre_service:        { label: "Autre service",           icon: "category",            grad: "from-slate-500 to-slate-600" },
               };
               const STATUS_META: Record<string, { label: string; cls: string; icon: string }> = {
-                pending:       { label: "En attente",      cls: "bg-slate-100 text-slate-600 border-slate-200",     icon: "schedule" },
-                accepted:      { label: "Acceptée",        cls: "bg-teal-100 text-teal-700 border-teal-200",       icon: "check_circle" },
-                completed:     { label: "Complétée",       cls: "bg-emerald-100 text-emerald-700 border-emerald-200", icon: "task_alt" },
-                declined:      { label: "Refusée",         cls: "bg-red-100 text-red-700 border-red-200",          icon: "cancel" },
-                offer_deleted: { label: "Offre supprimée", cls: "bg-orange-100 text-orange-700 border-orange-200", icon: "delete_forever" },
-                collab_kicked: { label: "Retiré par le propriétaire", cls: "bg-red-100 text-red-700 border-red-200", icon: "person_remove" },
+                pending:        { label: "En attente",               cls: "bg-slate-100 text-slate-600 border-slate-200",     icon: "schedule" },
+                accepted:       { label: "Acceptée",                 cls: "bg-teal-100 text-teal-700 border-teal-200",       icon: "check_circle" },
+                completed:      { label: "Complétée",                cls: "bg-emerald-100 text-emerald-700 border-emerald-200", icon: "task_alt" },
+                declined:       { label: "Refusée",                  cls: "bg-red-100 text-red-700 border-red-200",          icon: "cancel" },
+                offer_deleted:  { label: "Offre supprimée",          cls: "bg-orange-100 text-orange-700 border-orange-200", icon: "delete_forever" },
+                circuit_deleted:{ label: "Circuit supprimé",         cls: "bg-orange-100 text-orange-700 border-orange-200", icon: "delete_forever" },
+                collab_kicked:  { label: "Retiré par le propriétaire", cls: "bg-red-100 text-red-700 border-red-200",       icon: "person_remove" },
+                collab_quit:    { label: "Vous avez quitté",         cls: "bg-slate-100 text-slate-500 border-slate-200",   icon: "exit_to_app" },
               };
               return (
                 <div className="space-y-4">
@@ -2595,11 +2836,16 @@ export default function GuideProfilePage() {
                     </div>
                   ) : (
                     collaborations.map((c) => {
+                      const isCircuit = c.source_type === "circuit";
                       const sm = SECTION_META[c.section] ?? SECTION_META.autre;
-                      const isOfferDeleted = c.offer_status === "offer_deleted";
-                      const isKicked = c.offer_status === "collab_kicked";
-                      const isInactive = isOfferDeleted || isKicked;
-                      const st = isOfferDeleted ? STATUS_META.offer_deleted : isKicked ? STATUS_META.collab_kicked : (STATUS_META[c.status] ?? STATUS_META.pending);
+                      const effectiveStatus = isCircuit ? c.circuit_status : c.offer_status;
+                      const isOfferDeleted = effectiveStatus === "offer_deleted" || effectiveStatus === "circuit_deleted";
+                      const isKicked = effectiveStatus === "collab_kicked";
+                      const isGuideQuit = effectiveStatus === "collab_quit";
+                      const isInactive = isOfferDeleted || isKicked || isGuideQuit;
+                      const st = isOfferDeleted ? (isCircuit ? STATUS_META.circuit_deleted : STATUS_META.offer_deleted) : isKicked ? STATUS_META.collab_kicked : isGuideQuit ? STATUS_META.collab_quit : (STATUS_META[c.status] ?? STATUS_META.pending);
+                      const displayTitle = isCircuit ? (c.circuit_title ?? "Circuit") : (c.offer_title ?? "Offre");
+                      const displayCover = isCircuit ? c.circuit_cover : c.offer_cover;
                       return (
                         <div key={c.id} id={`collab-${c.id}`} className={`relative group bg-white rounded-3xl border shadow-sm overflow-hidden hover:shadow-md transition-all duration-300 ${highlightCollabId === c.id ? "border-primary ring-2 ring-primary/30 shadow-primary/20" : "border-slate-100/90"}`}>
                           <button
@@ -2616,62 +2862,178 @@ export default function GuideProfilePage() {
                             className="absolute top-2.5 right-2.5 z-10 w-7 h-7 rounded-full bg-white/80 hover:bg-red-50 border border-slate-100 hover:border-red-200 text-slate-300 hover:text-red-400 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all shadow-sm">
                             <span className="material-symbols-outlined text-sm">delete</span>
                           </button>
-                          <div className="flex flex-col lg:flex-row">
-                            {/* Image gauche — même proportion que les cartes d'offre */}
-                            <div className="lg:w-2/5 relative min-h-[200px] bg-slate-50 flex items-center justify-center overflow-hidden border-b lg:border-b-0 lg:border-r border-slate-100">
-                              {c.offer_cover ? (
-                                <img src={c.offer_cover} alt={c.offer_title} className="absolute inset-0 w-full h-full object-cover" />
-                              ) : (
-                                <>
-                                  <div className={`absolute inset-0 bg-gradient-to-br ${sm.grad} opacity-90`} />
-                                  <span className="material-symbols-outlined text-white/40 relative z-10" style={{ fontSize: 100 }}>{sm.icon}</span>
-                                </>
-                              )}
-                              {/* Badge statut */}
-                              <div className={`absolute top-3 left-3 text-[10px] font-black tracking-widest uppercase px-3 py-1 rounded-xl shadow border flex items-center gap-1 ${st.cls}`}>
-                                <span className="material-symbols-outlined text-xs">{st.icon}</span>{st.label}
+                          {isCircuit ? (
+                            /* ── Card circuit — même design que la card Circuits du propriétaire ── */
+                            <div className="flex gap-0">
+                              {/* Cover compact w-40 */}
+                              <div className="relative w-40 shrink-0 bg-gradient-to-br from-primary/20 to-emerald-100 flex items-center justify-center overflow-hidden">
+                                {displayCover
+                                  ? <img src={displayCover} alt={displayTitle} className="absolute inset-0 w-full h-full object-cover" />
+                                  : <span className="material-symbols-outlined text-primary/30" style={{ fontSize: 32 }}>route</span>
+                                }
+                                <span className={`absolute top-2 left-2 text-[9px] font-black tracking-widest uppercase px-2 py-0.5 rounded-lg ${st.cls}`}>{st.label}</span>
                               </div>
-                            </div>
-                            {/* Contenu droite */}
-                            <div className="lg:w-3/5 p-6 md:p-8 flex flex-col justify-between">
-                              <div>
-                                <h3 className="text-lg md:text-xl font-extrabold text-slate-800 tracking-tight leading-tight mb-2">{c.offer_title}</h3>
-                                {c.offer_description && (
-                                  <p className="text-slate-500 text-sm leading-relaxed mb-3 line-clamp-2">{c.offer_description}</p>
+                              {/* Contenu */}
+                              <div className="flex-1 p-5">
+                                <h4 className="text-base font-extrabold text-slate-800 leading-tight">{displayTitle}</h4>
+                                {c.circuit_description && (
+                                  <p className="text-xs text-slate-500 mt-1 line-clamp-2">{c.circuit_description}</p>
+                                )}
+                                {/* Badges : jours + étapes — même style que l'onglet Circuits */}
+                                <div className="flex flex-wrap gap-2 mt-3">
+                                  {c.circuit_nb_jours && (
+                                    <span className="flex items-center gap-1 text-[10px] font-black tracking-widest uppercase text-primary bg-primary/10 px-2.5 py-1 rounded-xl">
+                                      <Calendar size={10} />{c.circuit_nb_jours} jour{c.circuit_nb_jours > 1 ? "s" : ""}
+                                    </span>
+                                  )}
+                                  {c.circuit_nb_etapes != null && c.circuit_nb_etapes > 0 && (
+                                    <span className="flex items-center gap-1 text-[10px] font-black tracking-widest uppercase text-slate-500 bg-slate-100 px-2.5 py-1 rounded-xl">
+                                      <MapPin size={10} />{c.circuit_nb_etapes} étape{c.circuit_nb_etapes > 1 ? "s" : ""}
+                                    </span>
+                                  )}
+                                </div>
+                                {/* Liste étapes preview — même style que l'onglet Circuits */}
+                                {(c.circuit_etapes_preview ?? []).length > 0 && (
+                                  <div className="mt-3 space-y-1">
+                                    {(c.circuit_etapes_preview ?? []).map((etape, i) => {
+                                      const isGuidage = etape.etape_mode === "guidage";
+                                      const eCat = PROVIDER_SCHEMA.find((s) => s.value === etape.categorie);
+                                      const catLabel = eCat?.label ?? SECTION_META[etape.categorie ?? ""]?.label ?? etape.categorie ?? "";
+                                      const displayName = etape.titre || etape.destination || catLabel || "Étape";
+                                      const stLabels = isGuidage
+                                        ? (etape.expertises ?? []).slice(0, 2)
+                                        : (etape.subtypes ?? []).slice(0, 2).map((sv) => eCat?.subtypes.find((s) => s.value === sv)?.label ?? sv);
+                                      return (
+                                        <div key={i} className="flex items-center gap-2 text-xs">
+                                          <span className="w-5 h-5 rounded-full bg-primary/10 text-primary font-black flex items-center justify-center text-[10px] shrink-0">{etape.jour}</span>
+                                          <span className="font-semibold text-slate-700 truncate">{displayName}</span>
+                                          {stLabels.length > 0 && (
+                                            <>
+                                              <span className="text-slate-300 shrink-0">·</span>
+                                              <span className="text-slate-400 truncate text-[11px]">{stLabels.join(", ")}</span>
+                                            </>
+                                          )}
+                                          {etape.heure_debut && (
+                                            <>
+                                              <span className="text-slate-300 shrink-0">·</span>
+                                              <span className="text-slate-400 truncate text-[10px] shrink-0">{etape.heure_debut}{etape.heure_fin ? ` → ${etape.heure_fin}` : ""}</span>
+                                            </>
+                                          )}
+                                        </div>
+                                      );
+                                    })}
+                                    {(c.circuit_nb_etapes ?? 0) > (c.circuit_etapes_preview ?? []).length && (
+                                      <p className="text-[10px] text-slate-400 font-semibold">+{(c.circuit_nb_etapes ?? 0) - (c.circuit_etapes_preview ?? []).length} étape{((c.circuit_nb_etapes ?? 0) - (c.circuit_etapes_preview ?? []).length) > 1 ? "s" : ""}…</p>
+                                    )}
+                                  </div>
                                 )}
                                 {c.message && (
-                                  <p className="text-slate-400 text-xs leading-relaxed mb-3 line-clamp-2 italic border-l-2 border-slate-200 pl-3">&ldquo;{c.message}&rdquo;</p>
+                                  <p className="mt-2 text-slate-400 text-xs leading-relaxed line-clamp-1 italic border-l-2 border-slate-200 pl-2">&ldquo;{c.message}&rdquo;</p>
                                 )}
-                                <div className="flex flex-wrap gap-2.5 mb-4">
-                                  <span className={`flex items-center gap-1.5 text-[11px] font-extrabold tracking-wider px-3 py-1 rounded-xl text-white bg-gradient-to-r ${sm.grad} uppercase`}>
-                                    <span className="material-symbols-outlined text-sm">{sm.icon}</span>{sm.label}
-                                  </span>
-                                </div>
-                              </div>
-                              <div className="flex items-center justify-between border-t border-slate-50 pt-4 mt-3">
-                                <p className="text-[11px] font-bold text-slate-400">
-                                  {new Date(c.created_at).toLocaleDateString("fr-FR", { day: "numeric", month: "long", year: "numeric" })}
-                                </p>
                                 {isInactive ? (
-                                  <span className={`font-extrabold text-xs inline-flex items-center gap-1 ${isKicked ? "text-red-400" : "text-orange-400"}`}>
-                                    <span className="material-symbols-outlined text-sm">{isKicked ? "person_remove" : "info"}</span>
-                                    {isKicked ? "Retiré par le propriétaire" : "Supprimée par le propriétaire"}
+                                  <span className={`mt-3 inline-flex items-center gap-1 font-extrabold text-xs ${isKicked ? "text-red-400" : isGuideQuit ? "text-slate-400" : "text-orange-400"}`}>
+                                    <span className="material-symbols-outlined text-sm">{st.icon}</span>
+                                    {st.label}
                                   </span>
                                 ) : (
                                   <button onClick={() => {
                                     setOpenCollab(c);
                                     setDetailOffer(null);
-                                    setDetailOfferLoading(true);
-                                    apiFetch<OfferFull>(`/guide/offers/${c.offer_id}/detail`, { headers: { Authorization: `Bearer ${token}` } })
-                                      .then(setDetailOffer).catch(() => setDetailOffer(null)).finally(() => setDetailOfferLoading(false));
+                                    setCircuitFullDetail(null);
+                                    if (c.circuit_id) {
+                                      setCircuitFullDetailLoading(true);
+                                      apiFetch<any>(`/circuits/${c.circuit_id}/view`, { headers: { Authorization: `Bearer ${token}` } })
+                                        .then(setCircuitFullDetail).catch(() => setCircuitFullDetail(null)).finally(() => setCircuitFullDetailLoading(false));
+                                    }
                                   }}
-                                    className="text-primary hover:text-primary/80 font-extrabold text-xs inline-flex items-center gap-1 hover:translate-x-1 transition-transform duration-200">
-                                    <span>Voir les détails</span><ArrowRight size={14} strokeWidth={2.5} />
+                                    className="mt-3 flex items-center gap-1.5 text-[11px] font-extrabold text-primary hover:text-primary/80 cursor-pointer">
+                                    <Info size={12} />Voir les détails
                                   </button>
                                 )}
                               </div>
                             </div>
-                          </div>
+                          ) : (
+                            /* ── Card offre — layout d'origine ── */
+                            <div className="flex flex-col sm:flex-row">
+                              <div className="relative bg-slate-50 flex items-center justify-center overflow-hidden border-b sm:border-b-0 sm:border-r border-slate-100 sm:w-2/5 min-h-[180px]">
+                                {displayCover ? (
+                                  <img src={displayCover} alt={displayTitle} className="absolute inset-0 w-full h-full object-cover" />
+                                ) : (
+                                  <>
+                                    <div className={`absolute inset-0 bg-gradient-to-br ${sm.grad} opacity-90`} />
+                                    <span className="material-symbols-outlined text-white/40 relative z-10" style={{ fontSize: 100 }}>{sm.icon}</span>
+                                  </>
+                                )}
+                                <div className={`absolute top-2 left-2 text-[10px] font-black tracking-widest uppercase px-2.5 py-1 rounded-xl shadow border flex items-center gap-1 ${st.cls}`}>
+                                  <span className="material-symbols-outlined text-xs">{st.icon}</span>{st.label}
+                                </div>
+                              </div>
+                              <div className="flex-1 flex flex-col justify-between p-6 md:p-8">
+                                <div>
+                                  <h3 className="text-lg md:text-xl font-extrabold text-slate-800 tracking-tight leading-tight mb-2">{displayTitle}</h3>
+                                  {c.offer_description && (
+                                    <p className="text-slate-500 text-sm leading-relaxed mb-3 line-clamp-2">{c.offer_description}</p>
+                                  )}
+                                  {c.message && (
+                                    <p className="text-slate-400 text-xs leading-relaxed mb-3 line-clamp-2 italic border-l-2 border-slate-200 pl-3">&ldquo;{c.message}&rdquo;</p>
+                                  )}
+                                  <div className="flex flex-wrap gap-2.5 mb-4">
+                                    <span className={`flex items-center gap-1.5 text-[11px] font-extrabold tracking-wider px-3 py-1 rounded-xl text-white bg-gradient-to-r ${sm.grad} uppercase`}>
+                                      <span className="material-symbols-outlined text-sm">{sm.icon}</span>{sm.label}
+                                    </span>
+                                  </div>
+                                </div>
+                                <div className="flex items-center justify-between border-t border-slate-50 pt-4 mt-3">
+                                  <p className="text-[11px] font-bold text-slate-400">
+                                    {new Date(c.created_at).toLocaleDateString("fr-FR", { day: "numeric", month: "long", year: "numeric" })}
+                                  </p>
+                                  {isInactive ? (
+                                    <span className={`font-extrabold text-xs inline-flex items-center gap-1 ${isKicked ? "text-red-400" : isGuideQuit ? "text-slate-400" : "text-orange-400"}`}>
+                                      <span className="material-symbols-outlined text-sm">{st.icon}</span>
+                                      {st.label}
+                                    </span>
+                                  ) : (
+                                    <button onClick={() => {
+                                      setOpenCollab(c);
+                                      setDetailOffer(null);
+                                      setCircuitFullDetail(null);
+                                      if (c.offer_id) {
+                                        setDetailOfferLoading(true);
+                                        apiFetch<OfferFull>(`/guide/offers/${c.offer_id}/detail`, { headers: { Authorization: `Bearer ${token}` } })
+                                          .then(setDetailOffer).catch(() => setDetailOffer(null)).finally(() => setDetailOfferLoading(false));
+                                      }
+                                    }}
+                                      className="text-primary hover:text-primary/80 font-extrabold text-xs inline-flex items-center gap-1 hover:translate-x-1 transition-transform duration-200">
+                                      <span>Voir les détails</span><ArrowRight size={14} strokeWidth={2.5} />
+                                    </button>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          )}
+                          {/* J'aime / Commentaire / Partage de la ressource associée */}
+                          {!isCircuit && c.offer_status === "approved" && c.offer_id && (
+                            <PubInteractions
+                              pubId={c.offer_id}
+                              token={token}
+                              viewerId={profile?.user_id ?? ""}
+                              shareUrl={`${typeof window !== "undefined" ? window.location.origin : ""}/profile/guide/${c.guide_id}?offer=${c.offer_id}`}
+                              pubTitle={c.offer_title ?? undefined}
+                              itemApiBase="/interactions/offer"
+                              commentApiBase="/interactions"
+                            />
+                          )}
+                          {isCircuit && c.circuit_status === "approved" && c.circuit_id && (
+                            <PubInteractions
+                              pubId={c.circuit_id}
+                              token={token}
+                              viewerId={profile?.user_id ?? ""}
+                              shareUrl={`${typeof window !== "undefined" ? window.location.origin : ""}/profile/${c.circuit_owner_type === "guide" ? "guide" : "provider"}/${c.owner_id}?tab=circuits&circuit=${c.circuit_id}`}
+                              pubTitle={c.circuit_title ?? undefined}
+                              itemApiBase="/interactions/circuit"
+                              commentApiBase="/interactions"
+                            />
+                          )}
                         </div>
                       );
                     })
@@ -2686,10 +3048,12 @@ export default function GuideProfilePage() {
                 <div className="w-full max-w-3xl h-[90vh] bg-white dark:bg-slate-900 rounded-3xl shadow-2xl overflow-hidden flex flex-col">
                   <CollaborationModal
                     collabId={openCollab.id}
-                    offerId={openCollab.offer_id}
+                    offerId={openCollab.offer_id ?? ""}
                     section={openCollab.section}
                     token={token}
-                    offerApproved={openCollab.offer_status === "approved"}
+                    offerApproved={openCollab.source_type === "circuit" ? openCollab.circuit_status === "approved" : openCollab.offer_status === "approved"}
+                    circuitId={openCollab.source_type === "circuit" ? (openCollab.circuit_id ?? undefined) : undefined}
+                    etapeId={openCollab.source_type === "circuit" ? (openCollab.etape_id ?? undefined) : undefined}
                     onClose={() => { setShowCollabForm(false); setOpenCollab(null); }}
                     onContributed={() => {
                       setCollaborations((prev) => prev.map((x) => x.id === openCollab!.id ? { ...x, status: "completed" as const } : x));
@@ -2715,13 +3079,21 @@ export default function GuideProfilePage() {
             {openCollab && !showCollabForm && (
               <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
                 <div className="w-full max-w-3xl h-[90vh] bg-white rounded-3xl shadow-2xl overflow-hidden flex flex-col relative">
-                  <button onClick={() => { setOpenCollab(null); setDetailOffer(null); }}
+                  <button onClick={() => { setOpenCollab(null); setDetailOffer(null); setCircuitFullDetail(null); }}
                     className="absolute top-3 right-3 z-10 w-8 h-8 rounded-full bg-black/40 hover:bg-black/60 flex items-center justify-center transition-colors">
                     <X size={16} className="text-white" />
                   </button>
                   {/* Collaboration context banner */}
                   {(() => {
-                    const sectionLabels: Record<string, string> = { restauration: "Restauration", transport: "Transport", hebergement: "Hébergement", guide: "Guidage", autre_service: "Autre service", autre: "Autre" };
+                    const sectionLabels: Record<string, string> = {
+                      restauration: "Restauration", transport: "Transport", hebergement: "Hébergement",
+                      guide: "Guidage", autre_service: "Autre service", autre: "Autre",
+                      nature_ecotourisme: "Nature & Écotourisme", culture_patrimoine: "Culture & Patrimoine",
+                      historique_archeo: "Historique & Archéo", aventure_randonnee: "Aventure & Randonnée",
+                      gastronomie_locale: "Gastronomie locale", artisanat_traditions: "Artisanat & Traditions",
+                      decouverte_urbaine: "Découverte urbaine", eco_tour: "Éco-Tour",
+                      activite: "Activité", bien_etre_spa: "Bien-être & Spa", volontariat_eco: "Volontariat Éco",
+                    };
                     const statusInfo: Record<string, { label: string; cls: string }> = {
                       pending:   { label: "En attente", cls: "bg-slate-100 text-slate-600 border-slate-200" },
                       accepted:  { label: "Acceptée",   cls: "bg-teal-50 text-teal-700 border-teal-200" },
@@ -2741,9 +3113,51 @@ export default function GuideProfilePage() {
                       </div>
                     );
                   })()}
-                  {/* Corps scrollable : OfferDetailView */}
+                  {/* Corps scrollable : OfferDetailView ou résumé circuit */}
                   <div className="flex-1 overflow-y-auto">
-                    {detailOfferLoading ? (
+                    {openCollab.source_type === "circuit" ? (
+                      /* ── Circuit complet côté collaborateur ── */
+                      circuitFullDetailLoading ? (
+                        <div className="flex items-center justify-center h-full gap-3 text-slate-400">
+                          <span className="w-7 h-7 rounded-full border-2 border-primary border-t-transparent animate-spin" />
+                          <span className="text-sm">Chargement du circuit…</span>
+                        </div>
+                      ) : circuitFullDetail ? (
+                        <>
+                          {/* Hero cover */}
+                          <div className="relative shrink-0">
+                            {circuitFullDetail.cover_image
+                              ? <img src={circuitFullDetail.cover_image} alt="" className="w-full h-40 object-cover" />
+                              : <div className="w-full h-40 bg-gradient-to-br from-primary/20 to-emerald-100 flex items-center justify-center">
+                                  <span className="material-symbols-outlined text-primary/30" style={{ fontSize: 56 }}>route</span>
+                                </div>
+                            }
+                            <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent" />
+                            <div className="absolute bottom-0 left-0 right-0 px-6 pb-4">
+                              <h3 className="text-xl font-extrabold text-white leading-tight">{circuitFullDetail.title}</h3>
+                              <div className="flex items-center gap-3 mt-1">
+                                <span className="flex items-center gap-1 text-[11px] font-black text-white/90">
+                                  <Calendar size={11} />{circuitFullDetail.nb_jours} jour{circuitFullDetail.nb_jours > 1 ? "s" : ""}
+                                </span>
+                                <span className="flex items-center gap-1 text-[11px] font-black text-white/90">
+                                  <MapPin size={11} />{(circuitFullDetail.etapes ?? []).length} étape{(circuitFullDetail.etapes ?? []).length > 1 ? "s" : ""}
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+                          <CircuitViewContent circuit={circuitFullDetail} />
+                        </>
+                      ) : (
+                        /* Fallback si le fetch a échoué */
+                        <div className="flex flex-col items-center justify-center h-full gap-4 p-8 text-slate-400">
+                          <span className="material-symbols-outlined text-5xl text-slate-300">route</span>
+                          <div className="text-center">
+                            <p className="font-extrabold text-slate-600 text-sm mb-1">Impossible de charger le circuit</p>
+                            <p className="text-xs text-slate-400">Vérifiez votre connexion et réessayez.</p>
+                          </div>
+                        </div>
+                      )
+                    ) : detailOfferLoading ? (
                       <div className="flex items-center justify-center h-full gap-3 text-slate-400">
                         <span className="w-7 h-7 rounded-full border-2 border-primary border-t-transparent animate-spin" />
                         <span className="text-sm">Chargement de l&apos;offre…</span>
@@ -2775,7 +3189,7 @@ export default function GuideProfilePage() {
                         <button onClick={() => {
                           if (collabConflict && openCollab) {
                             setAgendaConflictHighlight({
-                              offer: openCollab.offer_title,
+                              offer: openCollab.offer_title ?? "",
                               section: openCollab.section,
                               conflictSlotLabel: collabConflict.label,
                               days: collabConflict.days,
@@ -2844,23 +3258,24 @@ export default function GuideProfilePage() {
                         <span className="material-symbols-outlined text-base">edit</span>Compléter ma contribution
                       </button>
                     )}
-                    {openCollab.status === "completed" && openCollab.offer_status === "approved" && (
-                      <button onClick={() => setShowCollabForm(true)}
-                        className="flex-1 flex items-center justify-center gap-2 py-3 rounded-2xl bg-emerald-600 text-white font-extrabold text-sm hover:bg-emerald-700 transition-all">
-                        <span className="material-symbols-outlined text-base">visibility</span>Voir ma contribution
-                      </button>
-                    )}
-                    {openCollab.status === "completed" && openCollab.offer_status !== "approved" && (
-                      <div className="flex-1 flex items-center justify-end gap-3">
-                        <button onClick={() => setOpenCollab(null)}
-                          className="px-5 py-2.5 border border-slate-200 text-slate-600 bg-white rounded-2xl text-xs font-bold hover:bg-slate-50 transition-colors cursor-pointer">
-                          Fermer
-                        </button>
+                    {openCollab.status === "completed" && (
+                      (openCollab.source_type === "circuit" ? openCollab.circuit_status === "approved" : openCollab.offer_status === "approved") ? (
                         <button onClick={() => setShowCollabForm(true)}
-                          className="flex items-center gap-2 px-6 py-2.5 bg-primary hover:bg-primary/90 text-slate-900 font-extrabold rounded-2xl text-xs shadow-sm transition-all active:scale-95 cursor-pointer">
-                          <span className="material-symbols-outlined text-base">edit</span>Gérer
+                          className="flex-1 flex items-center justify-center gap-2 py-3 rounded-2xl bg-emerald-600 text-white font-extrabold text-sm hover:bg-emerald-700 transition-all">
+                          <span className="material-symbols-outlined text-base">visibility</span>Voir ma contribution
                         </button>
-                      </div>
+                      ) : (
+                        <div className="flex-1 flex items-center justify-end gap-3">
+                          <button onClick={() => setOpenCollab(null)}
+                            className="px-5 py-2.5 border border-slate-200 text-slate-600 bg-white rounded-2xl text-xs font-bold hover:bg-slate-50 transition-colors cursor-pointer">
+                            Fermer
+                          </button>
+                          <button onClick={() => setShowCollabForm(true)}
+                            className="flex items-center gap-2 px-6 py-2.5 bg-primary hover:bg-primary/90 text-slate-900 font-extrabold rounded-2xl text-xs shadow-sm transition-all active:scale-95 cursor-pointer">
+                            <span className="material-symbols-outlined text-base">edit</span>Gérer
+                          </button>
+                        </div>
+                      )
                     )}
                     {openCollab.status === "declined" && (
                       <div className="flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-2xl bg-red-50 border border-red-100 text-red-600 text-sm font-bold">
@@ -2872,10 +3287,290 @@ export default function GuideProfilePage() {
               </div>
             )}
 
+            {/* ── Onglet Circuits ── */}
+            {activeTab === "circuits" && (
+              <div className="space-y-5">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h3 className="text-sm font-extrabold text-slate-800">Mes circuits</h3>
+                    <p className="text-xs text-slate-400 mt-0.5">Créez des itinéraires multi-jours avec vos activités guidées et des prestataires partenaires</p>
+                  </div>
+                  <button
+                    onClick={() => { setGuideEditingCircuit(null); setGuideCircuitModalOpen(true); }}
+                    className="flex items-center gap-1.5 px-4 py-2 bg-primary hover:bg-primary/90 text-white font-extrabold rounded-2xl text-xs shadow-sm transition-all active:scale-95 cursor-pointer"
+                  >
+                    <Plus size={13} />Nouveau circuit
+                  </button>
+                </div>
+
+                {guideCircuitsLoading ? (
+                  <div className="flex items-center justify-center py-20 gap-3 text-slate-400">
+                    <span className="w-6 h-6 rounded-full border-2 border-primary border-t-transparent animate-spin" />
+                    <span className="text-sm">Chargement…</span>
+                  </div>
+                ) : guideCircuits.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center py-20 bg-white rounded-3xl border border-slate-100/80 shadow-sm text-center gap-4">
+                    <div className="w-16 h-16 rounded-3xl bg-primary/10 flex items-center justify-center">
+                      <Route size={28} className="text-primary" />
+                    </div>
+                    <div>
+                      <p className="text-slate-800 font-extrabold text-base">Aucun circuit créé</p>
+                      <p className="text-slate-400 text-sm mt-1 max-w-xs">Créez votre premier circuit multi-étapes guidé.</p>
+                    </div>
+                    <button
+                      onClick={() => { setGuideEditingCircuit(null); setGuideCircuitModalOpen(true); }}
+                      className="flex items-center gap-1.5 px-5 py-2.5 bg-primary hover:bg-primary/90 text-white font-extrabold rounded-2xl text-xs shadow-sm transition-all cursor-pointer"
+                    >
+                      <Plus size={13} />Créer mon premier circuit
+                    </button>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 gap-4">
+                    {guideCircuits.map((circuit) => {
+                      const cStatus = circuit.status ?? "draft";
+                      const cStatusLabel = cStatus === "approved" ? "Publié" : cStatus === "attente_publication" ? "Prêt à publier" : "Brouillon";
+                      const cStatusCls   = cStatus === "approved" ? "bg-emerald-500 text-white" : cStatus === "attente_publication" ? "bg-teal-500 text-white" : "bg-slate-400 text-white";
+                      const etapes: any[] = circuit.etapes ?? [];
+                      return (
+                        <div key={circuit.id} className="bg-white rounded-3xl border border-slate-100/80 shadow-sm overflow-hidden hover:shadow-md transition-all">
+                          <div className="flex gap-0">
+                            {/* Cover */}
+                            <div className="relative w-40 shrink-0 bg-gradient-to-br from-primary/20 to-emerald-100 flex items-center justify-center">
+                              {circuit.cover_image
+                                ? <img src={circuit.cover_image} alt="" className="w-full h-full object-cover absolute inset-0" />
+                                : <Route size={32} className="text-primary/40" />}
+                              <span className={`absolute top-2 left-2 text-[9px] font-black tracking-widest uppercase px-2 py-0.5 rounded-lg ${cStatusCls}`}>{cStatusLabel}</span>
+                            </div>
+                            {/* Info */}
+                            <div className="flex-1 p-5">
+                              <div className="flex items-start justify-between gap-3">
+                                <div className="flex-1 min-w-0">
+                                  <h4 className="text-base font-extrabold text-slate-800 leading-tight">{circuit.title}</h4>
+                                  {circuit.description && <p className="text-xs text-slate-500 mt-1 line-clamp-2">{circuit.description}</p>}
+                                </div>
+                                <div className="flex items-center gap-2 shrink-0">
+                                  {cStatus !== "approved" && (
+                                    <button
+                                      onClick={() => { setGuideEditingCircuit(circuit); setGuideCircuitModalOpen(true); }}
+                                      className="w-8 h-8 rounded-xl bg-slate-50 hover:bg-primary/10 text-slate-500 hover:text-primary flex items-center justify-center transition-colors cursor-pointer"
+                                      title="Modifier"
+                                    >
+                                      <Edit3 size={14} />
+                                    </button>
+                                  )}
+                                  <button
+                                    onClick={async () => {
+                                      if (!confirm(cStatus === "approved" ? "Supprimer ce circuit publié ?" : "Supprimer ce circuit ?")) return;
+                                      try {
+                                        await apiFetch(`/circuits/${circuit.id}`, { method: "DELETE", headers: { Authorization: `Bearer ${token}` } });
+                                        setGuideCircuits((prev) => prev.filter((c) => c.id !== circuit.id));
+                                        if (guideViewingCircuit?.id === circuit.id) setGuideViewingCircuit(null);
+                                      } catch {}
+                                    }}
+                                    className="w-8 h-8 rounded-xl bg-slate-50 hover:bg-red-50 text-slate-500 hover:text-red-500 flex items-center justify-center transition-colors cursor-pointer"
+                                  >
+                                    <Trash2 size={14} />
+                                  </button>
+                                </div>
+                              </div>
+                              <div className="flex flex-wrap gap-2 mt-3">
+                                <span className="flex items-center gap-1 text-[10px] font-black tracking-widest uppercase text-primary bg-primary/10 px-2.5 py-1 rounded-xl">
+                                  <Calendar size={10} />{circuit.nb_jours} jour{circuit.nb_jours > 1 ? "s" : ""}
+                                </span>
+                                <span className="flex items-center gap-1 text-[10px] font-black tracking-widest uppercase text-slate-500 bg-slate-100 px-2.5 py-1 rounded-xl">
+                                  <MapPin size={10} />{etapes.length} étape{etapes.length !== 1 ? "s" : ""}
+                                </span>
+                              </div>
+                              {/* Étapes preview */}
+                              <div className="mt-3 space-y-1">
+                                {etapes.slice(0, 3).map((etape: any) => {
+                                  const eCat = PROVIDER_SCHEMA.find((c) => c.value === etape.categorie);
+                                  const catLabel = eCat?.label
+                                    ?? DOMAINES_META[etape.categorie]?.label
+                                    ?? etape.categorie;
+                                  const displayName = etape.titre || etape.destination || catLabel || "Étape";
+                                  const stLabels = ((etape.subtypes as string[]) ?? [])
+                                    .slice(0, 2)
+                                    .map((sv: string) => (eCat as any)?.subtypes?.find((s: any) => s.value === sv)?.label ?? sv);
+                                  const expertiseLabels = ((etape.fields as any)?.expertises as string[] | undefined ?? []).slice(0, 2);
+                                  const secondaryLabel = stLabels.length > 0 ? stLabels.join(", ") : expertiseLabels.join(", ");
+                                  return (
+                                    <div key={etape.id} className="flex items-center gap-2 text-xs">
+                                      <span className="w-5 h-5 rounded-full bg-primary/10 text-primary font-black flex items-center justify-center text-[10px] shrink-0">{etape.jour}</span>
+                                      <span className="font-semibold text-slate-700 truncate">{displayName}</span>
+                                      {secondaryLabel && (
+                                        <>
+                                          <span className="text-slate-300 shrink-0">·</span>
+                                          <span className="text-slate-400 truncate text-[11px]">{secondaryLabel}</span>
+                                        </>
+                                      )}
+                                      {etape.heure_debut && (
+                                        <>
+                                          <span className="text-slate-300 shrink-0">·</span>
+                                          <span className="text-slate-400 truncate text-[10px] shrink-0">{etape.heure_debut}{etape.heure_fin ? ` → ${etape.heure_fin}` : ""}</span>
+                                        </>
+                                      )}
+                                    </div>
+                                  );
+                                })}
+                                {etapes.length > 3 && <p className="text-[10px] text-slate-400 font-semibold">+{etapes.length - 3} étape{etapes.length - 3 > 1 ? "s" : ""}…</p>}
+                              </div>
+                              <button
+                                onClick={async () => {
+                                  setGuideViewingCircuit(circuit);
+                                  setGuidePublishCircuitError("");
+                                  try {
+                                    const enriched = await apiFetch<any>(`/circuits/${circuit.id}/view`, { headers: { Authorization: `Bearer ${token}` } });
+                                    if (enriched) setGuideViewingCircuit(enriched);
+                                  } catch {}
+                                }}
+                                className="mt-3 flex items-center gap-1.5 text-[11px] font-extrabold text-primary hover:text-primary/80 transition-colors cursor-pointer"
+                              >
+                                <Info size={12} />Voir les détails
+                              </button>
+                            </div>
+                          </div>
+
+                          {/* Bandeau prêt à publier */}
+                          {cStatus === "attente_publication" && (
+                            <div className="border-t border-teal-200 bg-teal-50 px-6 py-3 flex items-center gap-3">
+                              <span className="material-symbols-outlined text-teal-600 text-[18px]">pending_actions</span>
+                              <p className="text-teal-700 text-xs font-bold flex-1">Tous les collaborateurs ont complété leur partie. Vérifiez et confirmez la publication.</p>
+                              <button
+                                onClick={async () => {
+                                  setGuideViewingCircuit(circuit);
+                                  setGuidePublishCircuitError("");
+                                  try {
+                                    const enriched = await apiFetch<any>(`/circuits/${circuit.id}/view`, { headers: { Authorization: `Bearer ${token}` } });
+                                    if (enriched) setGuideViewingCircuit(enriched);
+                                  } catch {}
+                                }}
+                                className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-teal-600 text-white text-xs font-extrabold hover:bg-teal-700 transition-colors shrink-0 cursor-pointer"
+                              >
+                                <span className="material-symbols-outlined text-sm">check_circle</span>
+                                Vérifier et confirmer
+                              </button>
+                            </div>
+                          )}
+                          {/* J'aime / Commentaire / Partage — circuits publiés uniquement */}
+                          {cStatus === "approved" && (
+                            <PubInteractions
+                              pubId={circuit.id}
+                              token={token}
+                              viewerId={profile?.user_id ?? ""}
+                              shareUrl={`${typeof window !== "undefined" ? window.location.origin : ""}/profile/guide/${profile?.user_id}?tab=circuits&circuit=${circuit.id}`}
+                              pubTitle={circuit.title}
+                              itemApiBase="/interactions/circuit"
+                              commentApiBase="/interactions"
+                            />
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
+
           </div>
         </div>
       </div>
     </div>
+
+    {/* Modale détail circuit — globale, accessible depuis tous les onglets (Tout, Circuits…) */}
+    {guideViewingCircuit && (
+      <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
+        onClick={(e) => { if (e.target === e.currentTarget) setGuideViewingCircuit(null); }}>
+        <div className="bg-white rounded-3xl shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col overflow-hidden relative">
+          <button onClick={() => setGuideViewingCircuit(null)}
+            className="absolute top-3 right-3 z-10 w-8 h-8 rounded-full bg-black/40 hover:bg-black/60 text-white flex items-center justify-center cursor-pointer transition-colors">
+            <X size={14} />
+          </button>
+          <div className="flex-1 overflow-y-auto">
+            <CircuitDetailView circuit={guideViewingCircuit} />
+          </div>
+          <div className="px-6 py-4 border-t border-slate-100 shrink-0 flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              {guideViewingCircuit.status !== "approved" && (
+                <button
+                  onClick={() => { setGuideViewingCircuit(null); setGuideEditingCircuit(guideViewingCircuit); setGuideCircuitModalOpen(true); }}
+                  className="flex items-center gap-1.5 px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-extrabold rounded-2xl text-xs transition-all cursor-pointer"
+                >
+                  <Edit3 size={12} />Modifier
+                </button>
+              )}
+              <button
+                onClick={async () => {
+                  const msg = guideViewingCircuit.status === "approved"
+                    ? "Supprimer ce circuit publié ? Les créneaux agenda de tous les collaborateurs seront supprimés."
+                    : "Supprimer ce circuit ?";
+                  if (!confirm(msg)) return;
+                  try {
+                    await apiFetch(`/circuits/${guideViewingCircuit.id}`, { method: "DELETE", headers: { Authorization: `Bearer ${token}` } });
+                    setGuideCircuits((prev) => prev.filter((c) => c.id !== guideViewingCircuit.id));
+                    setGuideViewingCircuit(null);
+                  } catch {}
+                }}
+                className="flex items-center gap-1.5 px-4 py-2 bg-red-50 hover:bg-red-100 text-red-500 font-extrabold rounded-2xl text-xs transition-all cursor-pointer"
+              >
+                <span className="material-symbols-outlined text-sm">delete</span>Supprimer
+              </button>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => { setGuideViewingCircuit(null); setGuidePublishCircuitError(""); }}
+                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-extrabold rounded-2xl text-xs transition-all cursor-pointer"
+              >
+                Fermer
+              </button>
+              {guideViewingCircuit.status === "attente_publication" && (
+                <button
+                  disabled={guidePublishingCircuit}
+                  onClick={async () => {
+                    setGuidePublishingCircuit(true);
+                    setGuidePublishCircuitError("");
+                    try {
+                      await apiFetch(`/circuits/${guideViewingCircuit.id}/publish`, {
+                        method: "POST",
+                        headers: { Authorization: `Bearer ${token}` },
+                      });
+                      setGuideCircuits((prev) => prev.map((c) => c.id === guideViewingCircuit.id ? { ...c, status: "approved" } : c));
+                      setGuideViewingCircuit(null);
+                    } catch (e: any) {
+                      setGuidePublishCircuitError(e?.message ?? "Erreur lors de la publication.");
+                    } finally {
+                      setGuidePublishingCircuit(false);
+                    }
+                  }}
+                  className="flex items-center gap-1.5 px-5 py-2 bg-teal-600 hover:bg-teal-700 text-white font-extrabold rounded-2xl text-xs transition-all cursor-pointer disabled:opacity-60"
+                >
+                  {guidePublishingCircuit
+                    ? <><div className="w-3 h-3 rounded-full border-2 border-white border-t-transparent animate-spin" />Publication...</>
+                    : <><span className="material-symbols-outlined text-sm">rocket_launch</span>Publier le circuit</>}
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+    )}
+
+    {/* Wizard création/édition circuit — global */}
+    <GuideCircuitModal
+      open={guideCircuitModalOpen}
+      token={token}
+      editingCircuit={guideEditingCircuit}
+      onClose={() => { setGuideCircuitModalOpen(false); setGuideEditingCircuit(null); }}
+      onSaved={(circuit, isNew) => {
+        setGuideCircuitModalOpen(false);
+        setGuideEditingCircuit(null);
+        if (isNew) {
+          setGuideCircuits((prev) => [circuit, ...prev]);
+        } else {
+          setGuideCircuits((prev) => prev.map((c) => c.id === circuit.id ? circuit : c));
+        }
+      }}
+    />
 
     {/* ══ OFFER SUSTAINABILITY QUESTIONNAIRE ═══════════════════════════════ */}
     {oqOpen && (() => {

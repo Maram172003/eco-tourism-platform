@@ -5,7 +5,7 @@ import { Roles } from '../common/decorators/roles.decorator';
 import { Role } from '../common/enums/roles.enum';
 import { InteractionsService } from './interactions.service';
 
-const ALL_ROLES = [Role.ECO_TRAVELER, Role.GUIDE, Role.PROJECT, Role.ADMIN];
+const ALL_ROLES = [Role.ECO_TRAVELER, Role.GUIDE, Role.PROVIDER, Role.PROJECT, Role.ADMIN];
 
 @ApiTags('Interactions')
 @Controller('interactions')
