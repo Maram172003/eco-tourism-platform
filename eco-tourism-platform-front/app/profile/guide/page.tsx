@@ -695,8 +695,9 @@ export default function GuideProfilePage() {
         apiFetch<any[]>(`/providers/search?q=${encodeURIComponent(netSearch)}`, { headers: { Authorization: `Bearer ${token}` } }).catch(() => []),
         apiFetch<any[]>(`/guide/public/search?q=${encodeURIComponent(netSearch)}`, { headers: { Authorization: `Bearer ${token}` } }).catch(() => []),
       ]).then(([providers, guides]) => {
-        const p = providers.map((o: any) => ({ user_id: o.user_id, full_name: o.organization ?? o.full_name, photo: o.photo, _type: "provider", sub: o.provider_type ?? null }));
-        const g = guides.map((o: any) => ({ user_id: o.user_id, full_name: o.full_name, photo: o.photo, _type: "guide", sub: o.zone ?? null }));
+        const myId = profile?.user_id ?? "";
+        const p = providers.filter((o: any) => o.user_id !== myId).map((o: any) => ({ user_id: o.user_id, full_name: o.organization ?? o.full_name, photo: o.org_logo ?? o.photo, _type: "provider", sub: o.full_name ?? o.provider_type ?? null }));
+        const g = guides.filter((o: any) => o.user_id !== myId).map((o: any) => ({ user_id: o.user_id, full_name: o.full_name, photo: o.photo, _type: "guide", sub: o.zone ?? null }));
         setNetResults([...p, ...g]);
       }).catch(() => setNetResults([]))
         .finally(() => setNetLoading(false));
@@ -2340,7 +2341,10 @@ export default function GuideProfilePage() {
                               <div className="w-10 h-10 rounded-xl bg-slate-100 overflow-hidden flex items-center justify-center shrink-0">{r.photo ? <img src={r.photo} alt={r.full_name} className="w-full h-full object-cover" /> : <span className="material-symbols-outlined text-slate-400">person</span>}</div>
                               <div className="min-w-0">
                                 <p className="font-extrabold text-slate-800 text-sm truncate">{r.full_name}</p>
-                                <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-slate-100 text-slate-500">{typeLabel}</span>
+                                <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
+                                  <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-slate-100 text-slate-500">{typeLabel}</span>
+                                  {r.sub && r._type === "provider" && <span className="text-[10px] text-slate-400 font-medium truncate">{r.sub}</span>}
+                                </div>
                               </div>
                             </button>
                             <button onClick={() => router.push(path)} className="shrink-0 px-3 py-1.5 bg-primary/10 border border-primary/30 text-primary text-xs font-bold rounded-xl hover:bg-primary hover:text-slate-900 transition-all">Voir</button>

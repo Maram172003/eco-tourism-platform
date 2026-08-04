@@ -934,8 +934,9 @@ export default function ProviderProfilePage() {
         apiFetch<any[]>(`/guide/public/search?q=${encodeURIComponent(netSearch)}`, { headers: { Authorization: `Bearer ${token}` } }).catch(() => []),
         apiFetch<any[]>(`/providers/search?q=${encodeURIComponent(netSearch)}`, { headers: { Authorization: `Bearer ${token}` } }).catch(() => []),
       ]).then(([guides, providers]) => {
-        const g = guides.map((g: any) => ({ user_id: g.user_id, full_name: g.full_name, photo: g.photo, _type: "guide", sub: g.zone ?? null }));
-        const p = providers.map((p: any) => ({ user_id: p.user_id, full_name: p.full_name ?? p.organization, photo: p.photo, _type: "provider", sub: p.provider_type ?? null }));
+        const myId = profile?.user_id ?? "";
+        const g = guides.filter((g: any) => g.user_id !== myId).map((g: any) => ({ user_id: g.user_id, full_name: g.full_name, photo: g.photo, _type: "guide", sub: g.zone ?? null }));
+        const p = providers.filter((p: any) => p.user_id !== myId).map((p: any) => ({ user_id: p.user_id, full_name: p.organization ?? p.full_name, photo: p.org_logo ?? p.photo, _type: "provider", sub: p.full_name ?? p.provider_type ?? null }));
         setNetResults([...g, ...p]);
       }).catch(() => setNetResults([]))
         .finally(() => setNetLoading(false));
@@ -8088,7 +8089,10 @@ export default function ProviderProfilePage() {
                             <div className="w-10 h-10 rounded-xl bg-slate-100 overflow-hidden flex items-center justify-center shrink-0">{r.photo ? <img src={r.photo} alt={r.full_name} className="w-full h-full object-cover" /> : <span className="material-symbols-outlined text-slate-400">person</span>}</div>
                             <div className="min-w-0">
                               <p className="font-extrabold text-slate-800 text-sm truncate">{r.full_name}</p>
-                              <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-slate-100 text-slate-500">{typeLabel}</span>
+                              <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
+                                <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-slate-100 text-slate-500">{typeLabel}</span>
+                                {r.sub && r._type === "provider" && <span className="text-[10px] text-slate-400 font-medium truncate">{r.sub}</span>}
+                              </div>
                             </div>
                           </button>
                           <button onClick={() => router.push(path)} className="shrink-0 px-3 py-1.5 bg-primary/10 border border-primary/30 text-primary text-xs font-bold rounded-xl hover:bg-primary hover:text-slate-900 transition-all">Voir</button>
@@ -8108,14 +8112,18 @@ export default function ProviderProfilePage() {
                   </h3>
                   {following.length === 0 ? <p className="text-sm text-slate-400">Vous ne suivez personne encore.</p> : (
                     <div className="divide-y divide-slate-50" onClick={() => setNetMenuId(null)}>
-                      {following.map((f) => (
+                      {following.map((f) => {
+                        const fwPath = f._type === "guide" ? `/profile/guide/${f.user_id}` : f._type === "provider" ? `/profile/provider/${f.user_id}` : f._type === "project" ? `/profile/project-owner/${f.user_id}` : `/profile/ecovoyageur/${f.user_id}`;
+                        const fwLabel = f._type === "guide" ? "Guide" : f._type === "provider" ? "Prestataire" : f._type === "project" ? "Organisation" : "Éco-Voyageur";
+                        const fwIcon = f._type === "provider" || f._type === "project" ? "business" : "person";
+                        return (
                         <div key={f.user_id} className="flex items-center justify-between py-3 gap-2">
-                          <button onClick={() => router.push(`/profile/guide/${f.user_id}`)} className="flex items-center gap-3 flex-1 min-w-0 hover:opacity-80 text-left">
-                            <div className="w-10 h-10 rounded-xl bg-slate-100 overflow-hidden flex items-center justify-center shrink-0">{f.photo ? <img src={f.photo} alt={f.full_name} className="w-full h-full object-cover" /> : <span className="material-symbols-outlined text-slate-400">person</span>}</div>
-                            <div className="min-w-0"><p className="font-extrabold text-slate-800 text-sm truncate">{f.full_name}</p>{f.sub && <p className="text-xs text-slate-400">{f.sub}</p>}</div>
+                          <button onClick={() => router.push(fwPath)} className="flex items-center gap-3 flex-1 min-w-0 hover:opacity-80 text-left">
+                            <div className="w-10 h-10 rounded-xl bg-slate-100 overflow-hidden flex items-center justify-center shrink-0">{f.photo ? <img src={f.photo} alt={f.full_name} className="w-full h-full object-cover" /> : <span className="material-symbols-outlined text-slate-400">{fwIcon}</span>}</div>
+                            <div className="min-w-0"><p className="font-extrabold text-slate-800 text-sm truncate">{f.full_name}</p><span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-slate-100 text-slate-500">{fwLabel}</span></div>
                           </button>
                           <div className="flex items-center gap-1.5 shrink-0">
-                            <button onClick={() => router.push(`/profile/guide/${f.user_id}`)} className="px-3 py-1.5 bg-primary/10 border border-primary/30 text-primary text-xs font-bold rounded-xl hover:bg-primary hover:text-slate-900 transition-all">Voir</button>
+                            <button onClick={() => router.push(fwPath)} className="px-3 py-1.5 bg-primary/10 border border-primary/30 text-primary text-xs font-bold rounded-xl hover:bg-primary hover:text-slate-900 transition-all">Voir</button>
                             <div className="relative" onClick={(e) => e.stopPropagation()}>
                               <button onClick={() => setNetMenuId(netMenuId === `fw-${f.user_id}` ? null : `fw-${f.user_id}`)}
                                 className="w-8 h-8 rounded-lg hover:bg-slate-100 flex items-center justify-center text-slate-400 hover:text-slate-600 transition-colors">
@@ -8141,7 +8149,7 @@ export default function ProviderProfilePage() {
                             </div>
                           </div>
                         </div>
-                      ))}
+                      ); })}
                     </div>
                   )}
                 </div>
@@ -8202,8 +8210,8 @@ export default function ProviderProfilePage() {
                   {followers.length === 0 ? <p className="text-sm text-slate-400">Aucun abonné pour l'instant.</p> : (
                     <div className="divide-y divide-slate-50" onClick={() => setNetMenuId(null)}>
                       {followers.map((f) => {
-                        const path = f._type === "eco_traveler" ? `/profile/ecovoyageur/${f.user_id}` : f._type === "guide" ? `/profile/guide/${f.user_id}` : `/profile/project-owner/${f.user_id}`;
-                        const typeLabel = f._type === "eco_traveler" ? "Éco-Voyageur" : f._type === "guide" ? "Guide" : "Prestataire";
+                        const path = f._type === "eco_traveler" ? `/profile/ecovoyageur/${f.user_id}` : f._type === "guide" ? `/profile/guide/${f.user_id}` : f._type === "provider" ? `/profile/provider/${f.user_id}` : `/profile/project-owner/${f.user_id}`;
+                        const typeLabel = f._type === "eco_traveler" ? "Éco-Voyageur" : f._type === "guide" ? "Guide" : f._type === "provider" ? "Prestataire" : "Organisation";
                         return (
                           <div key={f.user_id} className="flex items-center justify-between py-3 gap-2">
                             <button onClick={() => router.push(path)} className="flex items-center gap-3 flex-1 min-w-0 hover:opacity-80 text-left">

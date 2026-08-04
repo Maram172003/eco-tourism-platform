@@ -138,7 +138,7 @@ export class Provider {
 
   // ── Statut ────────────────────────────────────────────────────────────────
   // pending | active | rejected
-  @Column({ type: 'varchar', default: 'pending' })
+  @Column({ type: 'varchar', default: 'active' })
   status!: string;
 
   @Column({ type: 'text', nullable: true })

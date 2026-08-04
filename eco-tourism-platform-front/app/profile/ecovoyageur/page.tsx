@@ -259,7 +259,7 @@ export default function EcoTravelerProfilePage() {
   // ── Social network ───────────────────────────────────────────────────────
   type Traveler = { user_id: string; full_name: string; photo: string | null; country: string | null; sustainability_score: number | null; friendship_id?: string | null };
   type FriendRequest = { id: string; created_at: string; sender: Traveler };
-  type AnyResult = { user_id: string; full_name: string; photo: string | null; _type: "traveler" | "guide" | "project"; sub?: string | null };
+  type AnyResult = { user_id: string; full_name: string; photo: string | null; _type: "traveler" | "guide" | "project" | "provider"; sub?: string | null };
   type FollowUser = { user_id: string; full_name: string | null; photo: string | null; _type: string; sub: string | null };
   const [searchQuery,    setSearchQuery]    = useState("");
   const [searchResults,  setSearchResults]  = useState<Traveler[]>([]);
@@ -334,11 +334,13 @@ export default function EcoTravelerProfilePage() {
         apiFetch<Traveler[]>(`/eco-traveler/search?q=${enc}`, { headers: { Authorization: `Bearer ${token}` } }).catch(() => []),
         apiFetch<AnyResult[]>(`/guide/public/search?q=${enc}`, { headers: { Authorization: `Bearer ${token}` } }).catch(() => []),
         apiFetch<AnyResult[]>(`/project-owner/public/search?q=${enc}`, { headers: { Authorization: `Bearer ${token}` } }).catch(() => []),
-      ]).then(([travelers, guides, owners]) => {
+        apiFetch<AnyResult[]>(`/providers/search?q=${enc}`, { headers: { Authorization: `Bearer ${token}` } }).catch(() => []),
+      ]).then(([travelers, guides, owners, providers]) => {
         setAllResults([
           ...travelers.map((t) => ({ user_id: t.user_id, full_name: t.full_name, photo: t.photo, _type: "traveler" as const, sub: t.country })),
           ...guides.map((g: any) => ({ user_id: g.user_id, full_name: g.full_name, photo: g.photo, _type: "guide" as const, sub: g.zone ?? null })),
           ...owners.map((o: any) => ({ user_id: o.user_id, full_name: o.full_name, photo: o.photo, _type: "project" as const, sub: o.organization ?? null })),
+          ...providers.map((p: any) => ({ user_id: p.user_id, full_name: p.organization ?? p.full_name, photo: p.org_logo ?? p.photo, _type: "provider" as const, sub: p.full_name ?? p.provider_type ?? null })),
         ]);
       }).finally(() => setAllLoading(false));
     }, 350);
@@ -742,19 +744,22 @@ export default function EcoTravelerProfilePage() {
   // ── Follow user path helper ──────────────────────────────────────────────
   function followUserPath(u: FollowUser) {
     if (u._type === "guide") return `/profile/guide/${u.user_id}`;
+    if (u._type === "provider") return `/profile/provider/${u.user_id}`;
     if (u._type === "project") return `/profile/project-owner/${u.user_id}`;
     return `/profile/ecovoyageur/${u.user_id}`;
   }
 
   function followTypeLabel(type: string) {
     if (type === "guide") return "Guide";
-    if (type === "project") return "Prestataire";
+    if (type === "provider") return "Prestataire";
+    if (type === "project") return "Propriétaire de projet";
     return "Éco-Voyageur";
   }
 
   function followTypeBadgeColor(type: string) {
     if (type === "guide") return "bg-emerald-50 text-emerald-700";
-    if (type === "project") return "bg-blue-50 text-blue-700";
+    if (type === "provider") return "bg-blue-50 text-blue-700";
+    if (type === "project") return "bg-violet-50 text-violet-700";
     return "bg-teal-50 text-teal-700";
   }
 
@@ -1935,7 +1940,7 @@ export default function EcoTravelerProfilePage() {
                   <div className="relative">
                     <Search size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
                     <input type="text" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)}
-                      placeholder="Nom d'un éco-voyageur, guide ou propriétaire…"
+                      placeholder="Nom d'un éco-voyageur, guide ou prestataire…"
                       className="w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-primary focus:bg-white transition-colors" />
                     {searchQuery && (
                       <button onClick={() => { setSearchQuery(""); setAllResults([]); }}
@@ -1953,14 +1958,14 @@ export default function EcoTravelerProfilePage() {
                   {!allLoading && allResults.length > 0 && (
                     <div className="mt-3 divide-y divide-slate-50">
                       {allResults.map((r) => {
-                        const path = r._type === "traveler" ? `/profile/ecovoyageur/${r.user_id}` : r._type === "guide" ? `/profile/guide/${r.user_id}` : `/profile/project-owner/${r.user_id}`;
-                        const typeLabel = r._type === "traveler" ? "Éco-Voyageur" : r._type === "guide" ? "Guide" : "Prestataire";
-                        const typeColor = r._type === "traveler" ? "bg-teal-50 text-teal-700" : r._type === "guide" ? "bg-emerald-50 text-emerald-700" : "bg-blue-50 text-blue-700";
+                        const path = r._type === "traveler" ? `/profile/ecovoyageur/${r.user_id}` : r._type === "guide" ? `/profile/guide/${r.user_id}` : r._type === "provider" ? `/profile/provider/${r.user_id}` : `/profile/project-owner/${r.user_id}`;
+                        const typeLabel = r._type === "traveler" ? "Éco-Voyageur" : r._type === "guide" ? "Guide" : r._type === "provider" ? "Prestataire" : "Propriétaire de projet";
+                        const typeColor = r._type === "traveler" ? "bg-teal-50 text-teal-700" : r._type === "guide" ? "bg-emerald-50 text-emerald-700" : r._type === "provider" ? "bg-blue-50 text-blue-700" : "bg-violet-50 text-violet-700";
                         return (
                           <div key={`${r._type}-${r.user_id}`} className="flex items-center justify-between py-3 gap-3">
                             <button onClick={() => router.push(path)} className="flex items-center gap-3 flex-1 min-w-0 hover:opacity-80 text-left">
                               <div className="w-10 h-10 rounded-xl bg-slate-100 border border-slate-200 overflow-hidden flex items-center justify-center shrink-0">
-                                {r.photo ? <img src={r.photo} alt={r.full_name} className="w-full h-full object-cover" /> : <span className="material-symbols-outlined text-slate-400">{r._type === "project" ? "business" : "person"}</span>}
+                                {r.photo ? <img src={r.photo} alt={r.full_name} className="w-full h-full object-cover" /> : <span className="material-symbols-outlined text-slate-400">{r._type === "project" || r._type === "provider" ? "business" : "person"}</span>}
                               </div>
                               <div className="min-w-0">
                                 <p className="font-extrabold text-slate-800 text-sm truncate">{r.full_name}</p>
@@ -2102,7 +2107,7 @@ export default function EcoTravelerProfilePage() {
                     <div className="text-center py-8">
                       <Users size={36} className="text-slate-200 mx-auto mb-2" />
                       <p className="text-sm text-slate-400 font-medium">Vous ne suivez personne pour l'instant.</p>
-                      <p className="text-xs text-slate-300 mt-1">Découvrez des guides et propriétaires de projets.</p>
+                      <p className="text-xs text-slate-300 mt-1">Découvrez des guides et prestataires à suivre.</p>
                     </div>
                   ) : (
                     <div className="divide-y divide-slate-50">

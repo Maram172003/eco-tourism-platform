@@ -1,7 +1,8 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { ILike, Repository } from 'typeorm';
+import { ILike, In, Repository } from 'typeorm';
 import { Provider } from './entities/provider.entity';
+import { Organization } from '../organization/entities/organization.entity';
 import { OnboardingProviderDto, UpdateProviderDto } from './dto/provider.dto';
 
 @Injectable()
@@ -9,6 +10,8 @@ export class ProviderService {
   constructor(
     @InjectRepository(Provider)
     private readonly repo: Repository<Provider>,
+    @InjectRepository(Organization)
+    private readonly orgRepo: Repository<Organization>,
   ) {}
 
   async findOrCreate(userId: string): Promise<Provider> {
@@ -43,8 +46,8 @@ export class ProviderService {
     return this.repo.save(provider);
   }
 
-  async search(q: string): Promise<Provider[]> {
-    return this.repo.find({
+  async search(q: string): Promise<(Provider & { org_logo: string | null })[]> {
+    const providers = await this.repo.find({
       where: [
         { full_name: ILike(`%${q}%`), status: 'active' },
         { organization: ILike(`%${q}%`), status: 'active' },
@@ -52,6 +55,10 @@ export class ProviderService {
       ],
       take: 20,
     });
+    if (providers.length === 0) return [];
+    const orgs = await this.orgRepo.find({ where: { provider_id: In(providers.map(p => p.user_id)) } });
+    const orgMap = new Map(orgs.map(o => [o.provider_id, o.logo]));
+    return providers.map(p => ({ ...p, org_logo: orgMap.get(p.user_id) ?? null }));
   }
 
   async findAll(): Promise<Provider[]> {

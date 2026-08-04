@@ -56,12 +56,13 @@ export class FollowService {
       if (existing.status === 'accepted') throw new BadRequestException('Vous suivez déjà cet utilisateur.');
     }
 
+    // Suivi professionnel : accepté immédiatement (pas d'approbation requise)
     const follow = this.repo.create({
       follower_id: followerId,
       follower_type: followerType,
       following_id: followingId,
       following_type: followingType,
-      status: 'pending',
+      status: 'accepted',
     });
     return this.repo.save(follow);
   }

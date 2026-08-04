@@ -237,7 +237,7 @@ export default function PublicProviderProfile() {
         setFollowPending(false); setFollowId(null);
       } else {
         const f = await apiFetch<{ id: string }>(`/follows/${userId}/provider`, { method: "POST", headers: { Authorization: `Bearer ${token}` } });
-        setFollowPending(true); setFollowId(f.id);
+        setFollowing(true); setFollowId(f.id);
       }
     } finally { setFollowLoading(false); }
   }

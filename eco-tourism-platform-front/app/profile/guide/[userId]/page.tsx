@@ -397,7 +397,7 @@ export default function PublicGuideProfile() {
         setFollowPending(false); setFollowId(null);
       } else {
         const f = await apiFetch<{ id: string }>(`/follows/${userId}/guide`, { method: "POST", headers: { Authorization: `Bearer ${token}` } });
-        setFollowPending(true); setFollowId(f.id);
+        setFollowing(true); setFollowId(f.id); setFollowerCount((c) => c + 1);
       }
     } finally { setFollowLoading(false); }
   }
