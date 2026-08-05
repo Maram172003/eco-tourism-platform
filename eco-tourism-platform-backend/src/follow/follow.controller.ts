@@ -107,4 +107,11 @@ export class FollowController {
   getFollowersOfUser(@Param('userId') userId: string) {
     return this.service.getFollowersOfUserWithProfiles(userId);
   }
+
+  /** Suivis publics d'un utilisateur */
+  @Roles(Role.ECO_TRAVELER, Role.GUIDE, Role.PROJECT, Role.PROVIDER, Role.ADMIN)
+  @Get('following/public/:userId')
+  getFollowingOfUser(@Param('userId') userId: string) {
+    return this.service.getFollowingOfUserWithProfiles(userId);
+  }
 }

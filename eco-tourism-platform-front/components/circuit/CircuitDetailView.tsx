@@ -196,6 +196,7 @@ export default function CircuitDetailView({
                     const collabDest = contrib?.collab_destination ?? hb.collab_destination;
                     const collabTitre = contrib?.titre ?? hb.titre;
                     const collabDescCourte = contrib?.description_courte ?? hb.description_courte;
+                    const collabDescLongue = contrib?.description_longue ?? hb.description_longue;
                     return (
                       <div className="space-y-3 pt-1">
                         <div>
@@ -205,6 +206,7 @@ export default function CircuitDetailView({
                           )}
                         </div>
                         {collabDescCourte && <p className="text-xs text-slate-600">{collabDescCourte}</p>}
+                        {collabDescLongue && <p className="text-xs text-slate-500">{collabDescLongue}</p>}
                         {hb.subtypes?.length > 0 && (
                           <div className="space-y-3">
                             {hb.subtypes.map((sv: string) => {

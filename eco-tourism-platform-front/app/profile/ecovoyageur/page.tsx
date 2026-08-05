@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import dynamic from "next/dynamic";
 import {
@@ -74,7 +74,7 @@ type EcoTravelerProfile = {
   traveler_types: string[] | null;
   motivations: string[] | null;
   sustainability_values: string[] | null;
-  interests: { name: string; level: string }[] | null;
+  interests: string[] | null;
   landscapes: string[] | null;
   travel_styles: string[] | null;
   sustainability_goals: string[] | null;
@@ -105,25 +105,26 @@ type Publication = {
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const TRAVELER_TYPES = [
-  { value: "solo",           label: "Voyageur Solo" },
-  { value: "couple",        label: "En couple" },
-  { value: "family",        label: "En famille" },
-  { value: "group",         label: "En groupe" },
-  { value: "digital_nomad", label: "Nomade digital" },
-  { value: "slow_traveler", label: "Slow Travel" },
-  { value: "explorer",      label: "Explorateur" },
-  { value: "adventure",     label: "Aventurier" },
+  { value: "solo",      label: "Solo" },
+  { value: "couples",   label: "Couples" },
+  { value: "familles",  label: "Familles" },
+  { value: "groupes",   label: "Groupes" },
+  { value: "seniors",   label: "Seniors" },
+  { value: "scolaires", label: "Scolaires" },
+  { value: "photo",     label: "Photographes" },
 ];
 
-const MOTIVATIONS = [
-  { value: "cultural_discovery", label: "Découverte culturelle" },
-  { value: "nature",             label: "Nature & Faune" },
-  { value: "adventure",          label: "Aventure" },
-  { value: "outdoor_sport",      label: "Sport outdoor" },
-  { value: "relaxation",         label: "Détente & Bien-être" },
-  { value: "local_immersion",    label: "Immersion locale" },
-  { value: "gastronomy",         label: "Gastronomie" },
-  { value: "photography",        label: "Photographie" },
+const UNIVERS = [
+  { value: "nature",                 label: "Nature" },
+  { value: "histoire_archeologie",   label: "Histoire & Archéologie" },
+  { value: "aventure_sport",         label: "Aventure & Sport" },
+  { value: "gastronomie",            label: "Gastronomie" },
+  { value: "artisanat",              label: "Artisanat" },
+  { value: "decouverte_urbaine",     label: "Découverte urbaine" },
+  { value: "culture_patrimoine",     label: "Culture & Patrimoine" },
+  { value: "bien_etre",              label: "Bien-être" },
+  { value: "transport_experientiel", label: "Transport expérientiel" },
+  { value: "volontariat",            label: "Volontariat" },
 ];
 
 const SUSTAINABILITY_VALUES = [
@@ -136,38 +137,113 @@ const SUSTAINABILITY_VALUES = [
   { value: "avoid_mass_tourism",      label: "Éviter le tourisme de masse" },
 ];
 
-const INTERESTS_LIST = [
-  "Randonnée", "Spéléologie", "Vélo", "Kayak",
-  "Gastronomie", "Artisanat", "Photographie",
-  "Observation faune", "Culture", "Patrimoine",
-];
-
-const INTEREST_LEVELS = [
-  { value: "beginner",     label: "Débutant" },
-  { value: "intermediate", label: "Intermédiaire" },
-  { value: "advanced",     label: "Avancé" },
-];
+const TAXONOMY_TAGS: Record<string, { value: string; label: string }[]> = {
+  nature: [
+    { value: "faune", label: "Faune" }, { value: "flore", label: "Flore" },
+    { value: "biodiversite", label: "Biodiversité" }, { value: "ornithologie", label: "Ornithologie & oiseaux" },
+    { value: "geologie", label: "Géologie" }, { value: "botanique", label: "Botanique" },
+    { value: "ecologie_marine", label: "Écologie marine" }, { value: "zones_humides", label: "Zones humides" },
+    { value: "forets_maquis", label: "Forêts & maquis" }, { value: "desert_dunes", label: "Désert & dunes" },
+    { value: "oasis", label: "Oasis" }, { value: "parcs_naturels", label: "Parcs naturels" },
+    { value: "astronomie", label: "Astronomie & ciel nocturne" }, { value: "photographie_nature", label: "Photographie nature" },
+    { value: "conservation_protection", label: "Conservation & protection" }, { value: "observation_faune", label: "Observation faune & mammifères" },
+    { value: "safari_desert", label: "Safari désert" }, { value: "circuit_nature", label: "Circuit nature" },
+    { value: "circuit_montagne", label: "Circuit montagne" }, { value: "tour_cotier", label: "Tour côtier" },
+  ],
+  histoire_archeologie: [
+    { value: "periode_punique", label: "Période punique" }, { value: "periode_romaine", label: "Période romaine" },
+    { value: "periode_byzantine", label: "Période byzantine" }, { value: "periode_arabe_medievale", label: "Période arabe & médiévale" },
+    { value: "periode_ottomane", label: "Période ottomane" }, { value: "periode_coloniale", label: "Période coloniale" },
+    { value: "prehistoire", label: "Préhistoire" }, { value: "fouilles_archeologiques", label: "Fouilles archéologiques" },
+    { value: "mosaiques_antiques", label: "Mosaïques antiques" }, { value: "thermes_romains", label: "Thermes romains" },
+    { value: "amphitheatres", label: "Amphithéâtres" }, { value: "necropoles", label: "Nécropoles" },
+    { value: "ksour_greniers_berberes", label: "Ksour & greniers berbères" }, { value: "routes_commerciales", label: "Routes commerciales" },
+    { value: "carthage_civilisation_punique", label: "Carthage & civilisation punique" }, { value: "circuit_historique", label: "Circuit historique" },
+  ],
+  aventure_sport: [
+    { value: "randonnee_pedestre", label: "Randonnée pédestre" }, { value: "trek_multi_jours", label: "Trek multi-jours" },
+    { value: "escalade", label: "Escalade" }, { value: "via_ferrata", label: "Via ferrata" },
+    { value: "speleologie", label: "Spéléologie" }, { value: "canyoning", label: "Canyoning" },
+    { value: "vtt_cyclisme", label: "VTT & cyclisme" }, { value: "kayak_canoe", label: "Kayak & canoë" },
+    { value: "surf_windsurf", label: "Surf & windsurf" }, { value: "plongee_sous_marine", label: "Plongée sous-marine" },
+    { value: "snorkeling", label: "Snorkeling" }, { value: "quad_4x4", label: "Quad & 4x4" },
+    { value: "bivouac", label: "Bivouac" }, { value: "equitation", label: "Équitation" },
+    { value: "tir_arc", label: "Tir à l'arc" }, { value: "peche_traditionnelle", label: "Pêche traditionnelle" },
+  ],
+  gastronomie: [
+    { value: "cuisine_tunisienne_traditionnelle", label: "Cuisine tunisienne traditionnelle" }, { value: "cuisine_berbere", label: "Cuisine berbère" },
+    { value: "cuisine_cotiere_fruits_mer", label: "Cuisine côtière & fruits de mer" }, { value: "street_food", label: "Street food" },
+    { value: "epices_condiments", label: "Épices & condiments" }, { value: "huile_olive_oleiculture", label: "Huile d'olive & oléiculture" },
+    { value: "dattes_palmeraies", label: "Dattes & palmeraies" }, { value: "marches_locaux", label: "Marchés locaux" },
+    { value: "cours_cuisine", label: "Cours de cuisine" }, { value: "degustation_thes", label: "Dégustation de thés" },
+    { value: "vins_viticulture", label: "Vins & viticulture" }, { value: "boulangerie_traditionnelle", label: "Boulangerie traditionnelle" },
+    { value: "miel_apiculture", label: "Miel & apiculture" }, { value: "restaurant_traditionnel", label: "Restaurant traditionnel" },
+    { value: "cafe_salon_the", label: "Café & salon de thé" }, { value: "ferme_restaurant", label: "Ferme-restaurant" },
+    { value: "food_truck", label: "Food truck" }, { value: "table_hotes", label: "Table d'hôtes" },
+    { value: "degustation_produits", label: "Dégustation de produits" }, { value: "diner_panoramique", label: "Dîner panoramique" },
+    { value: "visite_ferme", label: "Visite ferme" }, { value: "cueillette", label: "Cueillette" },
+    { value: "atelier_fromage_yaourt", label: "Atelier fromage & yaourt" }, { value: "jardinage", label: "Jardinage & plantation" },
+    { value: "elevage_responsable", label: "Élevage responsable" },
+  ],
+  artisanat: [
+    { value: "poterie_ceramique", label: "Poterie & céramique" }, { value: "tissage_tapis", label: "Tissage & tapis" },
+    { value: "broderie", label: "Broderie" }, { value: "bijoux_berberes", label: "Bijoux berbères" },
+    { value: "bijoux_argent", label: "Bijoux en argent" }, { value: "maroquinerie_cuir", label: "Maroquinerie & cuir" },
+    { value: "sculpture_bois", label: "Sculpture sur bois" }, { value: "thuya_marqueterie", label: "Thuya & marqueterie" },
+    { value: "vannerie_alfa", label: "Vannerie & alfa" }, { value: "calligraphie", label: "Calligraphie arabe" },
+    { value: "enluminure", label: "Enluminure" }, { value: "teinture_naturelle", label: "Teinture naturelle" },
+    { value: "dinanderie", label: "Dinanderie" }, { value: "savon_artisanal", label: "Savon artisanal" },
+    { value: "couture_caftan", label: "Couture & caftan" }, { value: "tannerie", label: "Tannerie" },
+    { value: "parfumerie_naturelle", label: "Parfumerie naturelle" }, { value: "peinture_traditionnelle", label: "Peinture traditionnelle" },
+  ],
+  decouverte_urbaine: [
+    { value: "architecture_moderne", label: "Architecture moderne" }, { value: "street_art_graffiti", label: "Street art & graffiti" },
+    { value: "quartiers_historiques", label: "Quartiers historiques" }, { value: "vie_de_quartier", label: "Vie de quartier" },
+    { value: "marches_urbains", label: "Marchés urbains" }, { value: "cafes_culture_locale", label: "Cafés & culture locale" },
+    { value: "gastronomie_urbaine", label: "Gastronomie urbaine" }, { value: "transport_local", label: "Transport local" },
+    { value: "scene_artistique", label: "Scène artistique" }, { value: "musique_nuits_locales", label: "Musique & nuits locales" },
+    { value: "shopping_alternatif", label: "Shopping alternatif" }, { value: "communautes_locales", label: "Communautés locales" },
+    { value: "parcs_espaces_verts", label: "Parcs & espaces verts" }, { value: "port_activites_maritimes", label: "Port & activités maritimes" },
+  ],
+  culture_patrimoine: [
+    { value: "architecture_islamique", label: "Architecture islamique" }, { value: "architecture_romaine", label: "Architecture romaine" },
+    { value: "architecture_coloniale", label: "Architecture coloniale" }, { value: "musees", label: "Musées" },
+    { value: "medinas", label: "Médinas" }, { value: "traditions_locales", label: "Traditions locales" },
+    { value: "costumes_bijoux", label: "Costumes & bijoux" }, { value: "musique_traditionnelle", label: "Musique traditionnelle" },
+    { value: "danse_folklorique", label: "Danse folklorique" }, { value: "litterature_poesie", label: "Littérature & poésie" },
+    { value: "fetes_festivals", label: "Fêtes & festivals" }, { value: "contes_legendes", label: "Contes & légendes" },
+    { value: "religion_spiritualite", label: "Religion & spiritualité" }, { value: "berbere_amazigh", label: "Berbère & amazigh" },
+    { value: "art_contemporain", label: "Art contemporain" }, { value: "soiree_culturelle", label: "Soirée culturelle" },
+    { value: "spectacle_traditionnel", label: "Spectacle traditionnel" }, { value: "atelier_musical", label: "Atelier musical" },
+    { value: "visite_medina", label: "Visite médina guidée" }, { value: "visite_musee", label: "Visite musée" },
+  ],
+  bien_etre: [
+    { value: "hammam_traditionnel", label: "Hammam traditionnel" }, { value: "massage_naturel", label: "Massage naturel" },
+    { value: "retraite_yoga", label: "Retraite yoga" }, { value: "meditation", label: "Méditation" },
+    { value: "bain_thermal", label: "Bain thermal" }, { value: "therapie_plantes", label: "Thérapie par les plantes" },
+    { value: "gommage_savon_noir", label: "Gommage & savon noir" }, { value: "yoga", label: "Yoga" },
+  ],
+  transport_experientiel: [
+    { value: "location_velo", label: "Balade à vélo" }, { value: "caleche", label: "Calèche" },
+    { value: "bateau_traditionnel", label: "Bateau traditionnel" }, { value: "tuk_tuk", label: "Tuk-tuk" },
+    { value: "dromadaire", label: "Balade à dromadaire" }, { value: "transfert_partage", label: "Transfert partagé & covoiturage local" },
+  ],
+  volontariat: [
+    { value: "plantation_arbres", label: "Plantation d'arbres" }, { value: "nettoyage_plage", label: "Nettoyage plage" },
+    { value: "nettoyage_foret", label: "Nettoyage forêt" }, { value: "education_environnementale", label: "Éducation environnementale" },
+    { value: "jardin_communautaire", label: "Jardin communautaire" }, { value: "sensibilisation_ecoles", label: "Sensibilisation dans les écoles" },
+  ],
+};
 
 const LANDSCAPES = [
   { value: "mountain",    label: "Montagne" },
   { value: "desert",      label: "Désert" },
-  { value: "sea",         label: "Mer & Côte" },
+  { value: "sea",         label: "Mer" },
   { value: "forest",      label: "Forêt" },
-  { value: "lake",        label: "Lacs & Zones humides" },
-  { value: "village",     label: "Villages" },
-  { value: "archaeology", label: "Sites archéologiques" },
+  { value: "lake",        label: "Lac" },
+  { value: "village",     label: "Village" },
+  { value: "archaeology", label: "Archéologie" },
   { value: "oasis",       label: "Oasis" },
-];
-
-const TRAVEL_STYLES = [
-  { value: "adventure",    label: "Aventure" },
-  { value: "cultural",     label: "Culturel" },
-  { value: "nature",       label: "Nature" },
-  { value: "sport",        label: "Sport" },
-  { value: "slow_tourism", label: "Slow Tourism" },
-  { value: "eco_tourism",  label: "Éco-tourisme" },
-  { value: "wellness",     label: "Bien-être" },
-  { value: "photography",  label: "Photographie" },
 ];
 
 const GOALS = [
@@ -220,6 +296,7 @@ export default function EcoTravelerProfilePage() {
   const router = useRouter();
 
   const [profile,       setProfile]       = useState<EcoTravelerProfile | null>(null);
+  const profileUserIdRef = useRef<string | undefined>(undefined);
   const [publications,  setPublications]  = useState<Publication[]>([]);
   const [contribCounts, setContribCounts] = useState<Record<string, number>>({});
   const [topPhotos,     setTopPhotos]     = useState<Record<string, TopPhotoData | null>>({});
@@ -237,7 +314,6 @@ export default function EcoTravelerProfilePage() {
   const [pubError,     setPubError]     = useState("");
   const [pubImages,    setPubImages]    = useState<{ file: File; preview: string }[]>([]);
   const [pubCoverIdx,  setPubCoverIdx]  = useState(0);
-  const [showPubMap,   setShowPubMap]   = useState(false);
   const [pubMapLat,    setPubMapLat]    = useState<number | null>(null);
   const [pubMapLng,    setPubMapLng]    = useState<number | null>(null);
 
@@ -255,6 +331,8 @@ export default function EcoTravelerProfilePage() {
   const [editPubCover, setEditPubCover] = useState(0);
   const [editPubErr,   setEditPubErr]   = useState("");
   const [editPubSaving,setEditPubSaving]= useState(false);
+  const [editPubMapLat,setEditPubMapLat]= useState<number | null>(null);
+  const [editPubMapLng,setEditPubMapLng]= useState<number | null>(null);
 
   // ── Social network ───────────────────────────────────────────────────────
   type Traveler = { user_id: string; full_name: string; photo: string | null; country: string | null; sustainability_score: number | null; friendship_id?: string | null };
@@ -287,9 +365,9 @@ export default function EcoTravelerProfilePage() {
   const [editTravTypes,     setEditTravTypes]     = useState<string[]>([]);
   const [editMotivations,   setEditMotivations]   = useState<string[]>([]);
   const [editSustValues,    setEditSustValues]    = useState<string[]>([]);
-  const [editInterests,     setEditInterests]     = useState<{ name: string; level: string }[]>([]);
-  const [editLandscapes,    setEditLandscapes]    = useState<string[]>([]);
-  const [editTravelStyles,  setEditTravelStyles]  = useState<string[]>([]);
+  const [editInterests,       setEditInterests]       = useState<string[]>([]);
+  const [editLandscapes,      setEditLandscapes]      = useState<string[]>([]);
+  const [editInterestSearch,  setEditInterestSearch]  = useState("");
   const [editGoals,         setEditGoals]         = useState<string[]>([]);
   const [editProfileSaving, setEditProfileSaving] = useState(false);
   const [editProfileError,  setEditProfileError]  = useState("");
@@ -307,6 +385,7 @@ export default function EcoTravelerProfilePage() {
           apiFetch<Publication[]>("/publications/mine", { headers: { Authorization: `Bearer ${tkn}` } }).catch(() => [] as Publication[]),
         ]);
         setProfile(p);
+        profileUserIdRef.current = p.user_id;
         setPublications(pubs);
         // Load social data in background
         Promise.all([
@@ -336,12 +415,22 @@ export default function EcoTravelerProfilePage() {
         apiFetch<AnyResult[]>(`/project-owner/public/search?q=${enc}`, { headers: { Authorization: `Bearer ${token}` } }).catch(() => []),
         apiFetch<AnyResult[]>(`/providers/search?q=${enc}`, { headers: { Authorization: `Bearer ${token}` } }).catch(() => []),
       ]).then(([travelers, guides, owners, providers]) => {
-        setAllResults([
+        const currentUserId = profileUserIdRef.current;
+        const raw = [
           ...travelers.map((t) => ({ user_id: t.user_id, full_name: t.full_name, photo: t.photo, _type: "traveler" as const, sub: t.country })),
           ...guides.map((g: any) => ({ user_id: g.user_id, full_name: g.full_name, photo: g.photo, _type: "guide" as const, sub: g.zone ?? null })),
           ...owners.map((o: any) => ({ user_id: o.user_id, full_name: o.full_name, photo: o.photo, _type: "project" as const, sub: o.organization ?? null })),
           ...providers.map((p: any) => ({ user_id: p.user_id, full_name: p.organization ?? p.full_name, photo: p.org_logo ?? p.photo, _type: "provider" as const, sub: p.full_name ?? p.provider_type ?? null })),
-        ]);
+        ];
+        const seen = new Set<string>();
+        const deduped = raw.filter((r) => {
+          if (r.user_id === currentUserId) return false;
+          const key = `${r._type}-${r.user_id}`;
+          if (seen.has(key)) return false;
+          seen.add(key);
+          return true;
+        });
+        setAllResults(deduped);
       }).finally(() => setAllLoading(false));
     }, 350);
     return () => clearTimeout(t);
@@ -375,7 +464,7 @@ export default function EcoTravelerProfilePage() {
     setPubForm({ title: "", description: "", place_name: "", region: "" });
     setPubTitleErr(""); setPubError("");
     setPubImages([]); setPubCoverIdx(0);
-    setShowPubMap(false); setPubMapLat(null); setPubMapLng(null);
+    setPubMapLat(null); setPubMapLng(null);
     setAddPubOpen(true);
   }
 
@@ -451,6 +540,8 @@ export default function EcoTravelerProfilePage() {
     });
     const imgs = (pub.images ?? []).filter((s) => s.startsWith("http"));
     setEditPubImgs(imgs.map((src) => ({ src })));
+    setEditPubMapLat(pub.latitude ?? null);
+    setEditPubMapLng(pub.longitude ?? null);
     setEditPubCover(0); setEditPubErr("");
     setEditPubOpen(true);
   }
@@ -478,7 +569,8 @@ export default function EcoTravelerProfilePage() {
           title: editPubForm.title.trim() || undefined,
           description: editPubForm.description.trim() || undefined,
           place_name: editPubForm.place_name.trim() || undefined,
-          region: editPubForm.region.trim() || undefined,
+          latitude: editPubMapLat ?? undefined,
+          longitude: editPubMapLng ?? undefined,
           images: ordered.length ? ordered : [],
         }),
       });
@@ -506,27 +598,15 @@ export default function EcoTravelerProfilePage() {
     setEditTravTypes(profile.traveler_types    ?? []);
     setEditMotivations(profile.motivations     ?? []);
     setEditSustValues(profile.sustainability_values ?? []);
-    setEditInterests(profile.interests         ?? []);
-    setEditLandscapes(profile.landscapes       ?? []);
-    setEditTravelStyles(profile.travel_styles  ?? []);
+    setEditInterests(profile.interests   ?? []);
+    setEditLandscapes(profile.landscapes ?? []);
+    setEditInterestSearch("");
     setEditGoals(profile.sustainability_goals  ?? []);
     setEditProfileError("");
     setEditProfileOpen(true);
   }
 
   function closeEditProfile() { setEditProfileOpen(false); setEditProfileError(""); }
-
-  function toggleInterest(name: string) {
-    setEditInterests((prev) => {
-      const exists = prev.find((i) => i.name === name);
-      if (exists) return prev.filter((i) => i.name !== name);
-      return [...prev, { name, level: "beginner" }];
-    });
-  }
-
-  function setInterestLevel(name: string, level: string) {
-    setEditInterests((prev) => prev.map((i) => i.name === name ? { ...i, level } : i));
-  }
 
   async function handleSaveProfile(e: React.SyntheticEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -562,7 +642,7 @@ export default function EcoTravelerProfilePage() {
         }).catch(() => {}),
         apiFetch("/eco-traveler/interests", {
           method: "PATCH", headers: { Authorization: `Bearer ${token}` },
-          body: JSON.stringify({ interests: editInterests, landscapes: editLandscapes, travel_styles: editTravelStyles }),
+          body: JSON.stringify({ interests: editInterests, landscapes: editLandscapes }),
         }).catch(() => {}),
         apiFetch("/eco-traveler/goals", {
           method: "PATCH", headers: { Authorization: `Bearer ${token}` },
@@ -576,9 +656,8 @@ export default function EcoTravelerProfilePage() {
         traveler_types:       editTravTypes,
         motivations:          editMotivations,
         sustainability_values: editSustValues,
-        interests:            editInterests,
-        landscapes:           editLandscapes,
-        travel_styles:        editTravelStyles,
+        interests:  editInterests,
+        landscapes: editLandscapes,
         sustainability_goals: editGoals,
       } : prev);
       setEditProfileOpen(false);
@@ -743,16 +822,18 @@ export default function EcoTravelerProfilePage() {
 
   // ── Follow user path helper ──────────────────────────────────────────────
   function followUserPath(u: FollowUser) {
-    if (u._type === "guide") return `/profile/guide/${u.user_id}`;
-    if (u._type === "provider") return `/profile/provider/${u.user_id}`;
-    if (u._type === "project") return `/profile/project-owner/${u.user_id}`;
+    const t = u._type ?? (u as any).role;
+    if (t === "guide") return `/profile/guide/${u.user_id}`;
+    if (t === "provider") return `/profile/provider/${u.user_id}`;
+    if (t === "project") return `/profile/project-owner/${u.user_id}`;
     return `/profile/ecovoyageur/${u.user_id}`;
   }
 
   function followTypeLabel(type: string) {
-    if (type === "guide") return "Guide";
-    if (type === "provider") return "Prestataire";
-    if (type === "project") return "Propriétaire de projet";
+    const t = type ?? (type as any);
+    if (t === "guide") return "Guide";
+    if (t === "provider") return "Prestataire";
+    if (t === "project") return "Propriétaire de projet";
     return "Éco-Voyageur";
   }
 
@@ -1050,11 +1131,11 @@ export default function EcoTravelerProfilePage() {
                   </div>
                 </div>
 
-                {/* Motivations */}
+                {/* Univers */}
                 <div>
-                  <label className="text-[10px] font-black tracking-widest text-slate-400 uppercase mb-2 block">Motivations de voyage</label>
+                  <label className="text-[10px] font-black tracking-widest text-slate-400 uppercase mb-2 block">Univers qui vous attirent</label>
                   <div className="flex flex-wrap gap-2">
-                    {MOTIVATIONS.map(({ value, label }) => {
+                    {UNIVERS.map(({ value, label }) => {
                       const active = editMotivations.includes(value);
                       return (
                         <button key={value} type="button"
@@ -1084,37 +1165,55 @@ export default function EcoTravelerProfilePage() {
                   </div>
                 </div>
 
-                {/* Centres d'intérêt + niveaux */}
+                {/* Centres d'intérêt — tags taxonomie */}
                 <div>
-                  <label className="text-[10px] font-black tracking-widest text-slate-400 uppercase mb-2 block">Centres d'intérêt</label>
-                  <div className="space-y-2">
-                    {INTERESTS_LIST.map((name) => {
-                      const interest = editInterests.find((i) => i.name === name);
-                      const active = !!interest;
-                      return (
-                        <div key={name} className={`rounded-xl border-2 transition-all overflow-hidden ${active ? "border-primary" : "border-slate-100"}`}>
-                          <button type="button" onClick={() => toggleInterest(name)}
-                            className={`w-full flex items-center gap-3 px-4 py-2.5 text-sm font-bold text-left ${active ? "bg-primary/5 text-slate-900" : "bg-white text-slate-600 hover:bg-slate-50"}`}>
-                            <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 ${active ? "border-primary bg-primary" : "border-slate-300"}`}>
-                              {active && <Check size={10} className="text-white" />}
-                            </div>
-                            {name}
-                          </button>
-                          {active && (
-                            <div className="flex gap-1.5 px-4 pb-3 pt-1">
-                              {INTEREST_LEVELS.map(({ value, label }) => (
-                                <button key={value} type="button"
-                                  onClick={() => setInterestLevel(name, value)}
-                                  className={`px-2.5 py-1 rounded-lg text-[10px] font-extrabold border transition-all ${interest.level === value ? "bg-primary text-white border-primary" : "bg-slate-50 border-slate-200 text-slate-500 hover:border-primary/40"}`}>
-                                  {label}
-                                </button>
-                              ))}
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })}
+                  <label className="text-[10px] font-black tracking-widest text-slate-400 uppercase mb-2 block">Activités & intérêts</label>
+                  {/* Barre de recherche */}
+                  <div className="relative mb-3">
+                    <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                    <input
+                      type="text"
+                      value={editInterestSearch}
+                      onChange={(e) => setEditInterestSearch(e.target.value)}
+                      placeholder="Filtrer les activités…"
+                      className="w-full pl-9 pr-9 py-2.5 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-primary focus:border-transparent placeholder:text-slate-400 font-medium"
+                    />
+                    {editInterestSearch && (
+                      <button type="button" onClick={() => setEditInterestSearch("")}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
+                        <X size={14} />
+                      </button>
+                    )}
                   </div>
+                  {/* Tags filtrés par univers sélectionnés */}
+                  {(() => {
+                    const cats = editMotivations.length > 0 ? editMotivations : Object.keys(TAXONOMY_TAGS);
+                    const raw = cats.flatMap((c) => TAXONOMY_TAGS[c] ?? []);
+                    const seen = new Set<string>();
+                    const pool = raw.filter((t) => { if (seen.has(t.value)) return false; seen.add(t.value); return true; });
+                    const visible = editInterestSearch.trim()
+                      ? pool.filter((t) => t.label.toLowerCase().includes(editInterestSearch.toLowerCase()))
+                      : pool;
+                    return (
+                      <div className="flex flex-wrap gap-1.5 max-h-48 overflow-y-auto pr-1">
+                        {visible.length === 0
+                          ? <p className="text-xs text-slate-400 italic">Aucun tag correspondant.</p>
+                          : visible.map((tag) => {
+                            const active = editInterests.includes(tag.value);
+                            return (
+                              <button key={tag.value} type="button"
+                                onClick={() => setEditInterests((prev) => active ? prev.filter((s) => s !== tag.value) : [...prev, tag.value])}
+                                className={`px-3 py-1.5 rounded-xl text-xs font-bold border transition-all ${active ? "bg-primary/10 border-primary text-primary" : "bg-slate-50 border-slate-200 text-slate-500 hover:border-primary/40"}`}>
+                                {active && <Check size={10} className="inline mr-1" />}{tag.label}
+                              </button>
+                            );
+                          })}
+                      </div>
+                    );
+                  })()}
+                  {editInterests.length > 0 && (
+                    <p className="text-[10px] text-slate-400 mt-2 font-medium">{editInterests.length} activité{editInterests.length > 1 ? "s" : ""} sélectionnée{editInterests.length > 1 ? "s" : ""}</p>
+                  )}
                 </div>
 
                 {/* Paysages */}
@@ -1126,23 +1225,6 @@ export default function EcoTravelerProfilePage() {
                       return (
                         <button key={value} type="button"
                           onClick={() => setEditLandscapes((prev) => active ? prev.filter((x) => x !== value) : [...prev, value])}
-                          className={`px-3 py-1.5 rounded-xl text-xs font-bold border transition-all ${active ? "bg-primary/10 border-primary text-primary" : "bg-slate-50 border-slate-200 text-slate-500 hover:border-primary/40"}`}>
-                          {active && <Check size={10} className="inline mr-1" />}{label}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-
-                {/* Styles de voyage */}
-                <div>
-                  <label className="text-[10px] font-black tracking-widest text-slate-400 uppercase mb-2 block">Styles de voyage</label>
-                  <div className="flex flex-wrap gap-2">
-                    {TRAVEL_STYLES.map(({ value, label }) => {
-                      const active = editTravelStyles.includes(value);
-                      return (
-                        <button key={value} type="button"
-                          onClick={() => setEditTravelStyles((prev) => active ? prev.filter((x) => x !== value) : [...prev, value])}
                           className={`px-3 py-1.5 rounded-xl text-xs font-bold border transition-all ${active ? "bg-primary/10 border-primary text-primary" : "bg-slate-50 border-slate-200 text-slate-500 hover:border-primary/40"}`}>
                           {active && <Check size={10} className="inline mr-1" />}{label}
                         </button>
@@ -1258,40 +1340,19 @@ export default function EcoTravelerProfilePage() {
 
                 {/* Localisation */}
                 <div>
-                  <div className="flex items-center justify-between mb-1.5">
-                    <label className="text-[10px] font-black tracking-widest text-slate-400 uppercase">Localisation</label>
-                    <button type="button" onClick={() => setShowPubMap((v) => !v)}
-                      className="flex items-center gap-1 text-[10px] font-extrabold text-primary hover:text-primary/80 transition-colors">
-                      <MapPin size={12} />{showPubMap ? "Masquer la carte" : "Choisir sur la carte"}
-                    </button>
-                  </div>
+                  <label className="text-[10px] font-black tracking-widest text-slate-400 uppercase mb-1.5 block">Localisation</label>
                   <input type="text"
                     placeholder={pubType === "experience" ? "Ex : Jebel Chaambi, Kasserine" : "Ex : Lac de Bizerte, Bizerte"}
                     value={pubForm.place_name}
                     onChange={(e) => setPubForm((f) => ({ ...f, place_name: e.target.value }))}
                     className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:bg-white placeholder:text-slate-400 mb-2"
                   />
-                  {showPubMap && (
-                    <MapPicker lat={pubMapLat} lng={pubMapLng}
-                      onPick={(lat, lng, address) => {
-                        setPubMapLat(lat); setPubMapLng(lng);
-                        if (address) setPubForm((f) => ({ ...f, place_name: address }));
-                      }}
-                    />
-                  )}
-                </div>
-
-                {/* Région */}
-                <div>
-                  <label className="text-[10px] font-black tracking-widest text-slate-400 uppercase mb-1.5 block">Région / Gouvernorat</label>
-                  <div className="relative">
-                    <Globe size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
-                    <input type="text" placeholder="Ex : Kasserine"
-                      value={pubForm.region}
-                      onChange={(e) => setPubForm((f) => ({ ...f, region: e.target.value }))}
-                      className="w-full pl-9 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:bg-white"
-                    />
-                  </div>
+                  <MapPicker lat={pubMapLat} lng={pubMapLng}
+                    onPick={(lat, lng, address) => {
+                      setPubMapLat(lat); setPubMapLng(lng);
+                      if (address) setPubForm((f) => ({ ...f, place_name: address }));
+                    }}
+                  />
                 </div>
 
                 {/* Photos */}
@@ -1579,21 +1640,18 @@ export default function EcoTravelerProfilePage() {
                   />
                 </div>
 
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="text-[10px] font-black tracking-widest text-slate-400 uppercase mb-1.5 block">Lieu</label>
-                    <input type="text" value={editPubForm.place_name}
-                      onChange={(e) => setEditPubForm((f) => ({ ...f, place_name: e.target.value }))}
-                      className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:bg-white"
-                    />
-                  </div>
-                  <div>
-                    <label className="text-[10px] font-black tracking-widest text-slate-400 uppercase mb-1.5 block">Région</label>
-                    <input type="text" value={editPubForm.region}
-                      onChange={(e) => setEditPubForm((f) => ({ ...f, region: e.target.value }))}
-                      className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:bg-white"
-                    />
-                  </div>
+                <div>
+                  <label className="text-[10px] font-black tracking-widest text-slate-400 uppercase mb-1.5 block">Localisation</label>
+                  <input type="text" value={editPubForm.place_name}
+                    onChange={(e) => setEditPubForm((f) => ({ ...f, place_name: e.target.value }))}
+                    className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:bg-white mb-2"
+                  />
+                  <MapPicker lat={editPubMapLat} lng={editPubMapLng}
+                    onPick={(lat, lng, address) => {
+                      setEditPubMapLat(lat); setEditPubMapLng(lng);
+                      if (address) setEditPubForm((f) => ({ ...f, place_name: address }));
+                    }}
+                  />
                 </div>
 
                 {/* Gérer les photos existantes */}
@@ -1699,7 +1757,7 @@ export default function EcoTravelerProfilePage() {
                     <ShieldCheck size={20} className="text-emerald-500 fill-emerald-100 hidden sm:block shrink-0" />
                   </div>
                   <div className="flex items-center justify-center sm:justify-start gap-1.5 mt-1 text-primary font-semibold text-sm">
-                    <span>{roleLabel}</span>
+                    <span>Éco-Voyageur</span>
                     <span className="relative flex h-2 w-2 shrink-0">
                       <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75" />
                       <span className="relative inline-flex rounded-full h-2 w-2 bg-primary" />
@@ -1755,25 +1813,17 @@ export default function EcoTravelerProfilePage() {
                     </div>
                   </div>
                 )}
-                {profile.language && (
-                  <div className="flex items-start gap-3">
-                    <div className="mt-0.5 p-1.5 rounded-lg bg-slate-50 text-slate-400">
-                      <span className="material-symbols-outlined leading-none" style={{ fontSize: 16 }}>translate</span>
-                    </div>
-                    <div>
-                      <p className="text-[10px] font-extrabold text-slate-400 tracking-wider uppercase">Langue</p>
-                      <p className="text-sm font-semibold text-slate-700 mt-0.5">{LANG_LABELS[profile.language] ?? profile.language}</p>
-                    </div>
-                  </div>
-                )}
-                {profile.traveler_types?.[0] && (
+                {profile.traveler_types && profile.traveler_types.length > 0 && (
                   <div className="flex items-start gap-3">
                     <div className="mt-0.5 p-1.5 rounded-lg bg-slate-50 text-slate-400"><Compass size={16} /></div>
                     <div>
                       <p className="text-[10px] font-extrabold text-slate-400 tracking-wider uppercase">Type de voyageur</p>
-                      <p className="text-sm font-semibold text-slate-700 mt-0.5">
-                        {TRAVELER_TYPES.find((t) => t.value === profile.traveler_types![0])?.label ?? profile.traveler_types![0]}
-                      </p>
+                      <div className="flex flex-wrap gap-1 mt-1">
+                        {profile.traveler_types.map((v) => {
+                          const t = TRAVELER_TYPES.find((x) => x.value === v);
+                          return <span key={v} className="text-xs font-semibold text-slate-700">{t?.label ?? v}</span>;
+                        })}
+                      </div>
                     </div>
                   </div>
                 )}
@@ -1784,14 +1834,38 @@ export default function EcoTravelerProfilePage() {
                     <p className="text-sm font-semibold text-slate-700 mt-0.5">{profile.sustainability_score !== null ? `${profile.sustainability_score}/100` : "—"}</p>
                   </div>
                 </div>
-                <div className="flex items-start gap-3">
-                  <div className="mt-0.5 p-1.5 rounded-lg bg-slate-50 text-slate-400"><Leaf size={16} /></div>
-                  <div>
-                    <p className="text-[10px] font-extrabold text-slate-400 tracking-wider uppercase">Statut</p>
-                    <p className="text-sm font-semibold text-primary mt-0.5">{scoreLabel(profile.sustainability_score)}</p>
+                {profile.motivations && profile.motivations.length > 0 && (
+                  <div className="flex items-start gap-3">
+                    <div className="mt-0.5 p-1.5 rounded-lg bg-slate-50 text-slate-400"><Globe size={16} /></div>
+                    <div>
+                      <p className="text-[10px] font-extrabold text-slate-400 tracking-wider uppercase">Univers</p>
+                      <div className="flex flex-wrap gap-1 mt-1">
+                        {profile.motivations.map((v) => {
+                          const u = UNIVERS.find((x) => x.value === v);
+                          return <span key={v} className="text-xs font-semibold text-slate-700">{u?.label ?? v}</span>;
+                        })}
+                      </div>
+                    </div>
                   </div>
-                </div>
-                {!profile.country && !profile.language && !profile.traveler_types?.[0] && (
+                )}
+                {profile.interests && profile.interests.length > 0 && (
+                  <div className="flex items-start gap-3">
+                    <div className="mt-0.5 p-1.5 rounded-lg bg-slate-50 text-slate-400"><Heart size={16} /></div>
+                    <div>
+                      <p className="text-[10px] font-extrabold text-slate-400 tracking-wider uppercase">Activités & intérêts</p>
+                      <div className="flex flex-wrap gap-1 mt-1">
+                        {(profile.interests as string[]).slice(0, 6).map((slug) => {
+                          const tag = Object.values(TAXONOMY_TAGS).flat().find((t) => t.value === slug);
+                          return <span key={slug} className="text-xs font-semibold text-slate-700">{tag?.label ?? slug}</span>;
+                        })}
+                        {profile.interests.length > 6 && (
+                          <span className="text-xs text-slate-400 font-medium">+{profile.interests.length - 6} autres</span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )}
+                {!profile.country && !profile.traveler_types?.length && (
                   <p className="text-xs text-slate-400 italic">Aucune information renseignée.</p>
                 )}
               </div>
@@ -2118,13 +2192,13 @@ export default function EcoTravelerProfilePage() {
                             <div className="w-10 h-10 rounded-xl bg-slate-100 border border-slate-200 overflow-hidden flex items-center justify-center shrink-0">
                               {u.photo
                                 ? <img src={u.photo} alt={u.full_name ?? ""} className="w-full h-full object-cover" />
-                                : <span className="material-symbols-outlined text-slate-400">{u._type === "project" ? "business" : "person"}</span>
+                                : <span className="material-symbols-outlined text-slate-400">{u._type === "project" ? "business" : u._type === "provider" ? "storefront" : "person"}</span>
                               }
                             </div>
                             <div className="min-w-0">
                               <p className="font-extrabold text-slate-800 text-sm truncate">{u.full_name ?? "—"}</p>
                               <div className="flex items-center gap-1.5 mt-0.5">
-                                <span className={`text-[10px] font-black px-2 py-0.5 rounded-full ${followTypeBadgeColor(u._type)}`}>{followTypeLabel(u._type)}</span>
+                                <span className={`text-[10px] font-black px-2 py-0.5 rounded-full ${followTypeBadgeColor(u._type ?? (u as any).role)}`}>{followTypeLabel(u._type ?? (u as any).role)}</span>
                                 {u.sub && <span className="text-[10px] text-slate-400 font-medium truncate">{u.sub}</span>}
                               </div>
                             </div>
@@ -2192,7 +2266,7 @@ export default function EcoTravelerProfilePage() {
                 )}
 
                 {/* Profil voyageur */}
-                {((profile.traveler_types?.length ?? 0) > 0 || (profile.motivations?.length ?? 0) > 0 || (profile.travel_styles?.length ?? 0) > 0) && (
+                {((profile.traveler_types?.length ?? 0) > 0 || (profile.motivations?.length ?? 0) > 0) && (
                   <div className="bg-white p-6 rounded-3xl border border-slate-100/80 shadow-sm">
                     <div className="flex items-center gap-2.5 mb-4">
                       <div className="w-8 h-8 rounded-full bg-blue-50 flex items-center justify-center">
@@ -2213,23 +2287,12 @@ export default function EcoTravelerProfilePage() {
                         </div>
                       )}
                       {profile.motivations && profile.motivations.length > 0 && (
-                        <div className="py-3">
-                          <p className="text-[10px] font-black tracking-widest text-slate-400 uppercase mb-2">Motivations</p>
+                        <div className="py-3 last:pb-0">
+                          <p className="text-[10px] font-black tracking-widest text-slate-400 uppercase mb-2">Univers</p>
                           <div className="flex flex-wrap gap-1.5">
                             {profile.motivations.map((v) => {
-                              const m = MOTIVATIONS.find((x) => x.value === v);
-                              return <span key={v} className="bg-slate-50 text-slate-700 border border-slate-100 px-3 py-1 rounded-xl text-xs font-semibold">{m?.label ?? v}</span>;
-                            })}
-                          </div>
-                        </div>
-                      )}
-                      {profile.travel_styles && profile.travel_styles.length > 0 && (
-                        <div className="py-3 last:pb-0">
-                          <p className="text-[10px] font-black tracking-widest text-slate-400 uppercase mb-2">Styles de voyage</p>
-                          <div className="flex flex-wrap gap-1.5">
-                            {profile.travel_styles.map((v) => {
-                              const s = TRAVEL_STYLES.find((x) => x.value === v);
-                              return <span key={v} className="bg-teal-50 text-teal-700 border border-teal-100 px-3 py-1 rounded-xl text-xs font-semibold">{s?.label ?? v}</span>;
+                              const u = UNIVERS.find((x) => x.value === v);
+                              return <span key={v} className="bg-slate-50 text-slate-700 border border-slate-100 px-3 py-1 rounded-xl text-xs font-semibold">{u?.label ?? v}</span>;
                             })}
                           </div>
                         </div>
@@ -2245,18 +2308,15 @@ export default function EcoTravelerProfilePage() {
                       <div className="w-8 h-8 rounded-full bg-violet-50 flex items-center justify-center">
                         <Heart size={16} className="text-violet-600" />
                       </div>
-                      <h3 className="text-base font-extrabold text-slate-800">Centres d'intérêt</h3>
+                      <h3 className="text-base font-extrabold text-slate-800">Activités & intérêts</h3>
                     </div>
-                    <div className="divide-y divide-slate-50">
-                      {profile.interests.map((interest, i) => {
-                        const lvl = INTEREST_LEVELS.find((l) => l.value === interest.level);
+                    <div className="flex flex-wrap gap-1.5">
+                      {(profile.interests as string[]).map((slug) => {
+                        const tag = Object.values(TAXONOMY_TAGS).flat().find((t) => t.value === slug);
                         return (
-                          <div key={i} className="flex items-center justify-between py-2.5 first:pt-0 last:pb-0">
-                            <span className="text-sm font-semibold text-slate-700">{interest.name}</span>
-                            <span className="text-[10px] font-extrabold text-violet-600 bg-violet-50 border border-violet-100 px-2.5 py-1 rounded-full">
-                              {lvl?.label ?? interest.level}
-                            </span>
-                          </div>
+                          <span key={slug} className="bg-violet-50 text-violet-700 border border-violet-100 px-3 py-1 rounded-xl text-xs font-semibold">
+                            {tag?.label ?? slug}
+                          </span>
                         );
                       })}
                     </div>

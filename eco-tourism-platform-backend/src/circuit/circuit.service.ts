@@ -6,7 +6,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { In, Repository } from 'typeorm';
 import { Circuit } from './entities/circuit.entity';
 import { CircuitCollaboration } from './entities/circuit-collaboration.entity';
 import { GuideAvailabilitySlot } from '../guide/entities/guide-availability.entity';
@@ -90,6 +90,107 @@ export class CircuitService {
       where: { provider_id: providerId },
       order: { created_at: 'DESC' },
     });
+  }
+
+  async findAllPublic(): Promise<any[]> {
+    const circuits = await this.repo.find({
+      where: { status: 'approved' },
+      order: { created_at: 'DESC' },
+    });
+
+    if (circuits.length === 0) return [];
+
+    // Charger toutes les collaborations en une seule requête (batch)
+    const circuitIds = circuits.map((c) => c.id);
+    const allCollabs = await this.collabRepo.find({
+      where: { circuit_id: In(circuitIds) },
+    });
+    const collabsByCircuit: Record<string, typeof allCollabs> = {};
+    allCollabs.forEach((col) => {
+      if (!collabsByCircuit[col.circuit_id]) collabsByCircuit[col.circuit_id] = [];
+      collabsByCircuit[col.circuit_id].push(col);
+    });
+
+    return Promise.all(
+      circuits.map(async (circuit) => {
+        // ── Enrichissement collab (comme findPublicDetail) ──────────────────
+        const collabs = collabsByCircuit[circuit.id] ?? [];
+        const statusMap: Record<string, string> = {};
+        const contribMap: Record<string, any> = {};
+        collabs.forEach((c) => {
+          if (c.etape_id) {
+            statusMap[c.etape_id] = c.status;
+            if (c.contribution_data) contribMap[c.etape_id] = c.contribution_data;
+          }
+        });
+        const etapes = ((circuit.etapes as any[]) ?? []).map((e: any) => ({
+          ...e,
+          collaborator_status: statusMap[e.id] ?? e.collaborator_status ?? undefined,
+          collab_contribution: contribMap[e.id] ?? e.collab_contribution ?? undefined,
+        }));
+        const hebergCollab = collabs.find((c) => c.section === 'hebergement');
+        const heberg = circuit.hebergement as any;
+        const enrichedHeberg =
+          hebergCollab && heberg?.etape
+            ? {
+                ...heberg,
+                etape: {
+                  ...heberg.etape,
+                  collab_contribution: hebergCollab.contribution_data ?? heberg.etape?.collab_contribution ?? null,
+                  collab_status: hebergCollab.status ?? null,
+                },
+              }
+            : heberg;
+
+        // ── Nom / photo de l'auteur ─────────────────────────────────────────
+        let author_name: string | null = null;
+        let author_photo: string | null = null;
+
+        if (circuit.owner_type === 'guide') {
+          const guide = await this.guideRepo.findOne({ where: { user_id: circuit.provider_id } });
+          author_name = guide?.full_name ?? null;
+          author_photo = guide?.photo ?? null;
+        } else {
+          const provider = await this.providerRepo.findOne({ where: { user_id: circuit.provider_id } as any });
+          author_name = (provider as any)?.full_name ?? null;
+          author_photo = (provider as any)?.photo ?? null;
+        }
+
+        return { ...circuit, etapes, hebergement: enrichedHeberg, author_name, author_photo };
+      }),
+    );
+  }
+
+  async findPublishedByUser(userId: string): Promise<Circuit[]> {
+    return this.repo.find({
+      where: { provider_id: userId, status: 'approved' },
+      order: { created_at: 'DESC' },
+    });
+  }
+
+  async findPublicDetail(circuitId: string): Promise<any> {
+    const circuit = await this.repo.findOne({ where: { id: circuitId, status: 'approved' } });
+    if (!circuit) throw new NotFoundException('Circuit introuvable ou non publié.');
+    const collabs = await this.collabRepo.find({ where: { circuit_id: circuitId } });
+    const statusMap: Record<string, string> = {};
+    const contribMap: Record<string, any> = {};
+    collabs.forEach((c) => {
+      if (c.etape_id) {
+        statusMap[c.etape_id] = c.status;
+        if (c.contribution_data) contribMap[c.etape_id] = c.contribution_data;
+      }
+    });
+    const etapes = ((circuit.etapes as any[]) ?? []).map((e: any) => ({
+      ...e,
+      collaborator_status: statusMap[e.id] ?? undefined,
+      collab_contribution: contribMap[e.id] ?? undefined,
+    }));
+    const hebergCollab = collabs.find((c) => c.section === 'hebergement');
+    const heberg = circuit.hebergement as any;
+    const enrichedHeberg = hebergCollab && heberg?.etape
+      ? { ...heberg, etape: { ...heberg.etape, collab_contribution: hebergCollab.contribution_data ?? null, collab_status: hebergCollab.status ?? null } }
+      : heberg;
+    return { ...circuit, etapes, hebergement: enrichedHeberg };
   }
 
   async findOne(id: string): Promise<Circuit> {

@@ -132,6 +132,9 @@ export class Offer {
   @Column({ type: 'jsonb', nullable: true })
   offer_subtypes!: string[] | null;
 
+  @Column({ type: 'jsonb', nullable: true })
+  tags!: string[] | null;
+
   // 'single' | 'variant' (voyageur choisit) | 'package' (tout inclus)
   @Column({ type: 'varchar', default: 'single' })
   offer_mode!: string;

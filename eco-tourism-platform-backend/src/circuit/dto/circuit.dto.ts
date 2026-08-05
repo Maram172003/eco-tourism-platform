@@ -28,6 +28,11 @@ export class CreateCircuitDto {
 
   @IsOptional()
   hebergement?: object;
+
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  tags?: string[];
 }
 
 export class UpdateCircuitDto {
@@ -58,4 +63,9 @@ export class UpdateCircuitDto {
 
   @IsOptional()
   hebergement?: object;
+
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  tags?: string[];
 }

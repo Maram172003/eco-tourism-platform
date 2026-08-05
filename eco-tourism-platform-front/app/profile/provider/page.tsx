@@ -28,6 +28,7 @@ import { OfferAvailPicker, EMPTY_OFFER_AVAIL, type OfferAvailSlot } from "@/comp
 import { ConfirmationTypePicker, EMPTY_CONFIRMATION, type ConfirmationData } from "@/components/offer/ConfirmationTypePicker";
 import { PUBLIC_RECOMMANDE, DOMAINES } from "@/lib/guideOfferConfig";
 import { Bool, PrestSubBlock, InviteButton, SectionLockedBanner, TRANSPORT_ECO_SUBTYPES, TRANSPORT_STD_SUBTYPES, HEBERGEMENT_PREST_SUBTYPES, RepasBlock, AutreServiceBlock, type RepasBlockData, type AutreServiceBlockData } from "@/components/GuideOfferModal";
+import TaxonomyTagPicker from "@/components/common/TaxonomyTagPicker";
 
 const MapPicker = dynamic(
   () => import("@/components/map/MapPicker"),
@@ -708,6 +709,7 @@ export default function ProviderProfilePage() {
   // ── Offer enriched fields ────────────────────────────────────────────────
   const [offerActivity,      setOfferActivity]      = useState<OrgActivity | null>(null);
   const [offerSubtypes,      setOfferSubtypes]      = useState<string[]>([]);
+  const [offerTags,          setOfferTags]          = useState<string[]>([]);
   const [offerMode,          setOfferMode]          = useState<"single" | "variant" | "package">("single");
   const [subtypeDetails,     setSubtypeDetails]     = useState<Record<string, Record<string, any>>>({});
   const [constraintError,    setConstraintError]    = useState("");
@@ -1386,6 +1388,7 @@ export default function ProviderProfilePage() {
     setForm({ title: "", offer_type: "", description: "", price: "", duration: "", region: "", inclusions: "", meeting_point: "", min_group_size: "", max_group_size: "", min_age: "", cancellation_policy: "" });
     setPublishMapLat(null); setPublishMapLng(null); setShowPublishMap(false);
     setOfferEditMode(false); setOfferEditId(""); setPublishExistingImages([]);
+    setOfferTags([]);
     setOfferTypePrestation(null);
     setProviderOfferCollabs([]);
     setProviderInviteSection(null);
@@ -1497,6 +1500,7 @@ export default function ProviderProfilePage() {
         max_group_size:      form.max_group_size ? Number(form.max_group_size) : undefined,
         min_age:             form.min_age        ? Number(form.min_age)        : undefined,
         cancellation_policy: cancPolicy,
+        tags:                offerTags.length ? offerTags : undefined,
       };
 
       let finalOffer: Offer;
@@ -1720,6 +1724,7 @@ export default function ProviderProfilePage() {
     // 3 – Sous-types & mode
     const subtypes = offer.offer_subtypes ?? (offer.offer_subtype ? [offer.offer_subtype] : []);
     setOfferSubtypes(subtypes);
+    setOfferTags(offer.tags ?? []);
     setOfferMode((offer.offer_mode ?? "single") as "single" | "variant" | "package");
 
     // 4 – Données par unité (hébergement)
@@ -6807,11 +6812,34 @@ export default function ProviderProfilePage() {
 
                 {/* ── ÉTAPE 7 : CONDITIONS ─────────────────────────────── */}
                 {offerStep === 7 && (
-                  <ConfirmationTypePicker
-                    value={offerConfirmation}
-                    onChange={(v) => setOfferConfirmation((c) => ({ ...c, ...v }))}
-                    hideMeteо
-                  />
+                  <div className="space-y-8">
+                    <div className="space-y-3 border border-slate-100 rounded-2xl p-5 bg-white">
+                      <div>
+                        <p className="text-xs font-black tracking-widest text-slate-400 uppercase mb-0.5">Tags thématiques</p>
+                        <p className="text-xs text-slate-500">Facultatif — aide à classer et retrouver votre offre.</p>
+                      </div>
+                      <TaxonomyTagPicker
+                        value={offerTags}
+                        onChange={setOfferTags}
+                        onSuggest={async () => {
+                          const res = await fetch('/api/offers/suggest-tags', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ titre: form.title, description: offerDescCourte }),
+                          });
+                          if (!res.ok) throw new Error('fetch failed');
+                          const data = await res.json() as { tags?: unknown };
+                          if (!Array.isArray(data.tags)) throw new Error('invalid response');
+                          return data.tags as string[];
+                        }}
+                      />
+                    </div>
+                    <ConfirmationTypePicker
+                      value={offerConfirmation}
+                      onChange={(v) => setOfferConfirmation((c) => ({ ...c, ...v }))}
+                      hideMeteо
+                    />
+                  </div>
                 )}
 
 
@@ -7498,7 +7526,8 @@ export default function ProviderProfilePage() {
               {followers.length > 0 ? (
                 <div className="flex items-center gap-1.5 flex-wrap mb-3">
                   {followers.slice(0, 5).map((f) => {
-                    const path = f._type === "eco_traveler" ? `/profile/ecovoyageur/${f.user_id}` : f._type === "guide" ? `/profile/guide/${f.user_id}` : `/profile/project-owner/${f.user_id}`;
+                    const fType = f._type ?? (f as any).role;
+                    const path = fType === "eco_traveler" ? `/profile/ecovoyageur/${f.user_id}` : fType === "guide" ? `/profile/guide/${f.user_id}` : fType === "provider" ? `/profile/provider/${f.user_id}` : `/profile/project-owner/${f.user_id}`;
                     return (
                       <button key={f.user_id} onClick={() => router.push(path)}
                         className="w-10 h-10 rounded-xl bg-slate-100 border-2 border-white shadow-sm overflow-hidden flex items-center justify-center hover:scale-105 transition-transform"
@@ -8113,14 +8142,21 @@ export default function ProviderProfilePage() {
                   {following.length === 0 ? <p className="text-sm text-slate-400">Vous ne suivez personne encore.</p> : (
                     <div className="divide-y divide-slate-50" onClick={() => setNetMenuId(null)}>
                       {following.map((f) => {
-                        const fwPath = f._type === "guide" ? `/profile/guide/${f.user_id}` : f._type === "provider" ? `/profile/provider/${f.user_id}` : f._type === "project" ? `/profile/project-owner/${f.user_id}` : `/profile/ecovoyageur/${f.user_id}`;
-                        const fwLabel = f._type === "guide" ? "Guide" : f._type === "provider" ? "Prestataire" : f._type === "project" ? "Organisation" : "Éco-Voyageur";
-                        const fwIcon = f._type === "provider" || f._type === "project" ? "business" : "person";
+                        const fType = f._type ?? (f as any).role;
+                        const fwPath = fType === "guide" ? `/profile/guide/${f.user_id}` : fType === "provider" ? `/profile/provider/${f.user_id}` : fType === "project" ? `/profile/project-owner/${f.user_id}` : `/profile/ecovoyageur/${f.user_id}`;
+                        const fwLabel = fType === "guide" ? "Guide" : fType === "provider" ? "Prestataire" : fType === "project" ? "Organisation" : "Éco-Voyageur";
+                        const fwIcon = fType === "provider" ? "storefront" : fType === "project" ? "business" : "person";
                         return (
                         <div key={f.user_id} className="flex items-center justify-between py-3 gap-2">
                           <button onClick={() => router.push(fwPath)} className="flex items-center gap-3 flex-1 min-w-0 hover:opacity-80 text-left">
                             <div className="w-10 h-10 rounded-xl bg-slate-100 overflow-hidden flex items-center justify-center shrink-0">{f.photo ? <img src={f.photo} alt={f.full_name} className="w-full h-full object-cover" /> : <span className="material-symbols-outlined text-slate-400">{fwIcon}</span>}</div>
-                            <div className="min-w-0"><p className="font-extrabold text-slate-800 text-sm truncate">{f.full_name}</p><span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-slate-100 text-slate-500">{fwLabel}</span></div>
+                            <div className="min-w-0">
+                              <p className="font-extrabold text-slate-800 text-sm truncate">{f.full_name}</p>
+                              <div className="flex items-center gap-1.5 mt-0.5">
+                                <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-slate-100 text-slate-500">{fwLabel}</span>
+                                {(f as any).sub && <span className="text-[10px] text-slate-400 font-medium truncate">{(f as any).sub}</span>}
+                              </div>
+                            </div>
                           </button>
                           <div className="flex items-center gap-1.5 shrink-0">
                             <button onClick={() => router.push(fwPath)} className="px-3 py-1.5 bg-primary/10 border border-primary/30 text-primary text-xs font-bold rounded-xl hover:bg-primary hover:text-slate-900 transition-all">Voir</button>
@@ -8210,15 +8246,20 @@ export default function ProviderProfilePage() {
                   {followers.length === 0 ? <p className="text-sm text-slate-400">Aucun abonné pour l'instant.</p> : (
                     <div className="divide-y divide-slate-50" onClick={() => setNetMenuId(null)}>
                       {followers.map((f) => {
-                        const path = f._type === "eco_traveler" ? `/profile/ecovoyageur/${f.user_id}` : f._type === "guide" ? `/profile/guide/${f.user_id}` : f._type === "provider" ? `/profile/provider/${f.user_id}` : `/profile/project-owner/${f.user_id}`;
-                        const typeLabel = f._type === "eco_traveler" ? "Éco-Voyageur" : f._type === "guide" ? "Guide" : f._type === "provider" ? "Prestataire" : "Organisation";
+                        const fType = f._type ?? (f as any).role;
+                        const path = fType === "eco_traveler" ? `/profile/ecovoyageur/${f.user_id}` : fType === "guide" ? `/profile/guide/${f.user_id}` : fType === "provider" ? `/profile/provider/${f.user_id}` : `/profile/project-owner/${f.user_id}`;
+                        const typeLabel = fType === "eco_traveler" ? "Éco-Voyageur" : fType === "guide" ? "Guide" : fType === "provider" ? "Prestataire" : "Organisation";
+                        const typeIcon = fType === "provider" ? "storefront" : fType === "project" ? "business" : "person";
                         return (
                           <div key={f.user_id} className="flex items-center justify-between py-3 gap-2">
                             <button onClick={() => router.push(path)} className="flex items-center gap-3 flex-1 min-w-0 hover:opacity-80 text-left">
-                              <div className="w-10 h-10 rounded-xl bg-slate-100 overflow-hidden flex items-center justify-center shrink-0">{f.photo ? <img src={f.photo} alt={f.full_name} className="w-full h-full object-cover" /> : <span className="material-symbols-outlined text-slate-400">person</span>}</div>
+                              <div className="w-10 h-10 rounded-xl bg-slate-100 overflow-hidden flex items-center justify-center shrink-0">{f.photo ? <img src={f.photo} alt={f.full_name} className="w-full h-full object-cover" /> : <span className="material-symbols-outlined text-slate-400">{typeIcon}</span>}</div>
                               <div className="min-w-0">
                                 <p className="font-extrabold text-slate-800 text-sm truncate">{f.full_name}</p>
-                                <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-slate-100 text-slate-500">{typeLabel}</span>
+                                <div className="flex items-center gap-1.5 mt-0.5">
+                                  <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-slate-100 text-slate-500">{typeLabel}</span>
+                                  {(f as any).sub && <span className="text-[10px] text-slate-400 font-medium truncate">{(f as any).sub}</span>}
+                                </div>
                               </div>
                             </button>
                             <div className="flex items-center gap-1.5 shrink-0">

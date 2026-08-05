@@ -155,6 +155,11 @@ export class CreateOfferDto {
   @IsOptional()
   @IsString()
   status?: string;
+
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  tags?: string[];
 }
 
 export class OfferSustainabilityDto {
@@ -300,4 +305,9 @@ export class UpdateOfferDto {
 
   @IsOptional()
   details?: Record<string, unknown>;
+
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  tags?: string[];
 }

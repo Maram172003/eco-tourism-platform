@@ -9,6 +9,7 @@ import { DOMAINES } from "@/lib/guideOfferConfig";
 import { OfferAvailPicker, EMPTY_OFFER_AVAIL, type OfferAvailSlot } from "@/components/offer/OfferAvailPicker";
 import EtapeCollabPickerModal from "@/components/guide/offer/EtapeCollabPickerModal";
 import DynamicFields from "@/components/guide/offer/DynamicFields";
+import TaxonomyTagPicker from "@/components/common/TaxonomyTagPicker";
 
 const MapPicker = dynamic(() => import("@/components/map/MapPicker"), { ssr: false });
 const CircuitRouteMap = dynamic(() => import("@/components/map/CircuitRouteMap"), {
@@ -91,6 +92,7 @@ export default function GuideCircuitModal({ open, token, editingCircuit, onClose
   const [etapes, setEtapes]               = useState<CircuitEtape[]>([]);
   const [pendingKicks, setPendingKicks]   = useState<PendingKick[]>([]);
   const [etapeStatusMap, setEtapeStatusMap] = useState<Map<string, { status: string; collab_id: string }>>(new Map());
+  const [circTags, setCircTags]           = useState<string[]>([]);
 
   // Étape form (inline, par jour)
   const [etapeFormOpen, setEtapeFormOpen]     = useState(false);
@@ -144,6 +146,7 @@ export default function GuideCircuitModal({ open, token, editingCircuit, onClose
       setHebergSubtypes((hb.etape?.subtypes ?? []) as string[]);
       setHebergCollab(hb.etape?.collaborator_id ? { user_id: hb.etape.collaborator_id, name: hb.etape.collaborator_name ?? "", type: "provider" } : null);
       setEtapes((editingCircuit.etapes ?? []) as CircuitEtape[]);
+      setCircTags(editingCircuit.tags ?? []);
       setFormError(""); setEtapeConflict(null); setPendingKicks([]);
       if (editingCircuit.id) {
         apiFetch<any[]>(`/circuits/${editingCircuit.id}/collaborations`, { headers: { Authorization: `Bearer ${token}` } })
@@ -173,7 +176,7 @@ export default function GuideCircuitModal({ open, token, editingCircuit, onClose
     setCircCoverImg(null); setCircCoverExisting(null);
     setCircAvail(EMPTY_OFFER_AVAIL);
     setHebergInclus(false); setHebergType("same"); setHebergSubtypes([]); setHebergCollab(null);
-    setEtapes([]); setPendingKicks([]); setEtapeStatusMap(new Map());
+    setEtapes([]); setPendingKicks([]); setEtapeStatusMap(new Map()); setCircTags([]);
     resetEtapeForm();
   }
 
@@ -329,7 +332,7 @@ export default function GuideCircuitModal({ open, token, editingCircuit, onClose
         } : null,
       } : { inclus: false };
 
-      const body = { title: circTitle.trim(), description: circDesc.trim() || null, nb_jours: circNbJours, cover_image: coverUrl, etapes, availability: circAvail, hebergement: hebergBody };
+      const body = { title: circTitle.trim(), description: circDesc.trim() || null, nb_jours: circNbJours, cover_image: coverUrl, etapes, availability: circAvail, hebergement: hebergBody, ...(circTags.length ? { tags: circTags } : {}) };
 
       let circuit: any;
       if (editingCircuit?.id) {
@@ -1226,6 +1229,29 @@ export default function GuideCircuitModal({ open, token, editingCircuit, onClose
               </div>
             );
           })()}
+
+          {/* Tags thématiques */}
+          <div className="space-y-3 border border-slate-100 rounded-2xl p-5 bg-white">
+            <div>
+              <p className="text-xs font-black tracking-widest text-slate-400 uppercase mb-0.5">Tags thématiques</p>
+              <p className="text-xs text-slate-500">Facultatif — aide à classer et retrouver ce circuit.</p>
+            </div>
+            <TaxonomyTagPicker
+              value={circTags}
+              onChange={setCircTags}
+              onSuggest={async () => {
+                const res = await fetch('/api/offers/suggest-tags', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ titre: circTitle, description: circDesc }),
+                });
+                if (!res.ok) throw new Error('fetch failed');
+                const data = await res.json() as { tags?: unknown };
+                if (!Array.isArray(data.tags)) throw new Error('invalid response');
+                return data.tags as string[];
+              }}
+            />
+          </div>
 
           {/* Erreur globale */}
           {formError && (

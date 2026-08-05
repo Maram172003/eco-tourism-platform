@@ -41,6 +41,9 @@ export class Circuit {
   @Column({ type: 'varchar', default: 'provider' })
   owner_type!: string;
 
+  @Column({ type: 'jsonb', nullable: true })
+  tags!: string[] | null;
+
   @CreateDateColumn()
   created_at!: Date;
 

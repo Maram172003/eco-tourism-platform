@@ -10,7 +10,7 @@ export class TravelerPreferences {
   user_id!: string;
 
   @Prop({ type: [String], default: [] })
-  interests!: string[]; // ['nature', 'culture', 'randonnée']
+  interests!: string[]; // slugs taxonomie ex: ['randonnee_pedestre', 'poterie_ceramique']
 
   @Prop({ type: [String], default: [] })
   landscapes!: string[]; // ['montagne', 'forêt', 'désert']

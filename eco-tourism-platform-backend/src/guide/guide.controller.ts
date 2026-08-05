@@ -132,6 +132,12 @@ export class GuideController {
     return this.service.findMyCollaborations(req.user.sub);
   }
 
+  @Roles(Role.ECO_TRAVELER, Role.GUIDE, Role.PROJECT, Role.PROVIDER, Role.ADMIN)
+  @Get('collaborations/public/:userId')
+  findPublicCollaborations(@Param('userId') userId: string) {
+    return this.service.findPublicCollaborations(userId);
+  }
+
   @Roles(Role.GUIDE, Role.PROVIDER)
   @Get('collaborations/:collabId/status')
   getCollaborationStatus(@Req() req: any, @Param('collabId') collabId: string) {
@@ -152,6 +158,12 @@ export class GuideController {
     @Body('status') status: 'accepted' | 'declined',
   ) {
     return this.service.respondToCollaboration(req.user.sub, collabId, status);
+  }
+
+  @Roles(Role.ECO_TRAVELER, Role.GUIDE, Role.PROVIDER, Role.ADMIN)
+  @Get('offers/:offerId/public-detail')
+  findPublicOfferDetail(@Param('offerId') offerId: string) {
+    return this.service.findPublicOfferDetail(offerId);
   }
 
   @Roles(Role.GUIDE, Role.PROVIDER)

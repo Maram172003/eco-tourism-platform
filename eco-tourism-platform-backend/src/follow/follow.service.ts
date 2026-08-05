@@ -5,6 +5,7 @@ import { Follow } from './entities/follow.entity';
 import { Provider } from '../provider/entities/provider.entity';
 import { EcoTraveler } from '../eco-traveler/entities/eco-traveler.entity';
 import { Guide } from '../guide/entities/guide.entity';
+import { Organization } from '../organization/entities/organization.entity';
 
 // Combinaisons autorisées : follower_type → following_type
 const ALLOWED: Array<[string, string]> = [
@@ -27,20 +28,30 @@ export class FollowService {
     private readonly ecoRepo: Repository<EcoTraveler>,
     @InjectRepository(Guide)
     private readonly guideRepo: Repository<Guide>,
+    @InjectRepository(Organization)
+    private readonly orgRepo: Repository<Organization>,
   ) {}
 
   // ── Récupère le profil enrichi d'un utilisateur selon son rôle ──────────────
   private async getProfile(userId: string, role: string) {
     if (role === 'eco_traveler') {
       const t = await this.ecoRepo.findOne({ where: { user_id: userId } });
-      return { user_id: userId, full_name: t?.full_name ?? null, photo: t?.photo ?? null, role };
+      return { user_id: userId, full_name: t?.full_name ?? null, photo: t?.photo ?? null, role, _type: 'eco_traveler' };
     }
     if (role === 'guide') {
       const g = await this.guideRepo.findOne({ where: { user_id: userId } });
-      return { user_id: userId, full_name: g?.full_name ?? null, photo: g?.photo ?? null, role };
+      return { user_id: userId, full_name: g?.full_name ?? null, photo: g?.photo ?? null, role, _type: 'guide' };
     }
     const p = await this.providerRepo.findOne({ where: { user_id: userId } });
-    return { user_id: userId, full_name: p?.full_name ?? null, photo: p?.photo ?? null, role };
+    const org = p ? await this.orgRepo.findOne({ where: { provider_id: userId } }) : null;
+    return {
+      user_id: userId,
+      full_name: org?.name ?? p?.organization ?? p?.full_name ?? null,
+      sub: p?.organization ? (p?.full_name ?? null) : null,
+      photo: org?.logo ?? null,
+      role,
+      _type: 'provider',
+    };
   }
 
   // ── Envoyer une demande de suivi ─────────────────────────────────────────────
@@ -144,6 +155,11 @@ export class FollowService {
   async getFollowersOfUserWithProfiles(targetId: string) {
     const rows = await this.repo.find({ where: { following_id: targetId, status: 'accepted' }, order: { created_at: 'DESC' } });
     return Promise.all(rows.map((r) => this.getProfile(r.follower_id, r.follower_type)));
+  }
+
+  async getFollowingOfUserWithProfiles(userId: string) {
+    const rows = await this.repo.find({ where: { follower_id: userId, status: 'accepted' }, order: { created_at: 'DESC' } });
+    return Promise.all(rows.map((r) => this.getProfile(r.following_id, r.following_type)));
   }
 
   // ── Statut de la relation entre moi et un utilisateur ───────────────────────

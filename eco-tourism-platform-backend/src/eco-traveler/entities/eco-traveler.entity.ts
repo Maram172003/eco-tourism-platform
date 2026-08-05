@@ -46,7 +46,7 @@ export class EcoTraveler {
   sustainability_values!: string[] | null;
 
   @Column({ type: 'jsonb', nullable: true })
-  interests!: { name: string; level: string }[] | null;
+  interests!: string[] | null;
 
   @Column({ type: 'simple-array', nullable: true })
   landscapes!: string[] | null;

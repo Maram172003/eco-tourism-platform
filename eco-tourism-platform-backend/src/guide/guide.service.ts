@@ -316,6 +316,7 @@ export class GuideService {
       images: dto.photos,
       inclusions: dto.inclus_resume.join('||'),
       status: 'approved' as const,
+      tags: dto.tags ?? null,
       details: {
         description_longue: dto.description_longue,
         type_prestation: dto.type_prestation,
@@ -506,6 +507,7 @@ export class GuideService {
       images: dto.photos,
       inclusions: dto.inclus_resume.join('||'),
       details: newDetails,
+      tags: dto.tags ?? null,
       ...(newStatus ? { status: newStatus } : {}),
     });
     const savedOffer = await this.offerRepo.save(offer);
@@ -1126,6 +1128,24 @@ export class GuideService {
     return saved;
   }
 
+  async findPublicOfferDetail(offerId: string): Promise<any> {
+    const offer = await this.offerRepo.findOne({ where: { id: offerId } });
+    if (!offer) throw new NotFoundException('Offre introuvable');
+    const allCollabs = await this.collabRepo.find({ where: { offer_id: offerId } });
+    const activeCollabs = allCollabs.filter((c) => !((c as any).status === 'declined' && (c as any).contribution_data?.kicked === true));
+    if (activeCollabs.length > 0) {
+      const collaborators = activeCollabs.map((c) => ({
+        id: (c as any).invited_user_id,
+        name: (c as any).invited_user_name ?? (c as any).invited_user_id,
+        section: (c as any).section,
+        status: (c as any).status,
+      }));
+      const existing = ((offer as any).details ?? {}) as Record<string, any>;
+      (offer as any).details = { ...existing, collaborators };
+    }
+    return offer;
+  }
+
   async getOfferForCollaborator(userId: string, offerId: string): Promise<Offer> {
     const offer = await this.offerRepo.findOne({ where: { id: offerId } });
     if (!offer) throw new NotFoundException('Offre introuvable');
@@ -1489,6 +1509,11 @@ export class GuideService {
     const details: Record<string, any> = { ...((offer as any).details ?? {}) };
     details.collaborators = collaborators;
     await this.offerRepo.update({ id: offerId }, { status: 'approved', details } as any);
+  }
+
+  async findPublicCollaborations(userId: string) {
+    const all = await this.findMyCollaborations(userId);
+    return all.filter((c: any) => c.status === 'accepted' || c.status === 'completed');
   }
 
   async findMyCollaborations(userId: string) {

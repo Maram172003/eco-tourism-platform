@@ -1,42 +1,19 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import {
   ArrowLeft, MapPin, Globe, Star, UserPlus, UserMinus,
-  Clock, Leaf, MoreVertical, Flag, X, Check, ChevronLeft, ChevronRight, Users, ShieldCheck, ShieldBan, Send, ArrowRight, Sparkles,
+  Clock, Leaf, MoreVertical, Flag, X, Check, Users, ShieldCheck, ShieldBan, Send, ArrowRight, Sparkles, Info, BookOpen,
+  LayoutGrid, Tag, Calendar, Route,
 } from "lucide-react";
 import dynamic from "next/dynamic";
+import { PROVIDER_SCHEMA } from "@/lib/provider-schema";
+import CircuitViewContent from "@/components/circuit/CircuitViewContent";
+import OfferDetailView, { type OfferFull } from "@/components/offer/OfferDetailView";
 
 const MapView = dynamic(() => import("@/components/map/MapView"), { ssr: false, loading: () => <div className="h-[200px] rounded-xl bg-slate-100 animate-pulse" /> });
 
-function OfferMap({ lat, lng, fallbackLat, fallbackLng, address }: { lat: number | null; lng: number | null; fallbackLat?: number|null; fallbackLng?: number|null; address: string }) {
-  const initLat = lat ?? fallbackLat ?? null;
-  const initLng = lng ?? fallbackLng ?? null;
-  const [coords, setCoords] = useState<{ lat: number; lng: number } | null>(
-    initLat && initLng ? { lat: Number(initLat), lng: Number(initLng) } : null
-  );
-  const [loading, setLoading] = useState(false);
-  useEffect(() => {
-    if (coords || !address.trim()) return;
-    setLoading(true);
-    fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(address)}&format=json&limit=1&accept-language=fr`)
-      .then((r) => r.json()).then((d) => { if (d.length) setCoords({ lat: parseFloat(d[0].lat), lng: parseFloat(d[0].lon) }); })
-      .catch(() => {}).finally(() => setLoading(false));
-  }, [address]);
-  if (loading) return <div className="h-[220px] rounded-2xl bg-slate-100 animate-pulse" />;
-  if (!coords) return null;
-  return (
-    <div>
-      <MapView lat={coords.lat} lng={coords.lng} />
-      <a href={`https://www.openstreetmap.org/?mlat=${coords.lat}&mlon=${coords.lng}#map=14/${coords.lat}/${coords.lng}`}
-        target="_blank" rel="noopener noreferrer"
-        className="mt-1.5 flex justify-end text-[10px] font-black text-primary uppercase tracking-wider hover:underline">
-        Ouvrir dans la carte ↗
-      </a>
-    </div>
-  );
-}
 
 function LieuxMap({ lieux }: { lieux: string[] }) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -102,6 +79,27 @@ import PubInteractions from "@/components/PubInteractions";
 import { DOMAIN_CASCADE_CONFIG } from "@/lib/domainCascadeConfig";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
+
+type PubCollab = {
+  id: string;
+  source_type?: "offer" | "circuit";
+  offer_id?: string | null;
+  offer_title?: string | null;
+  offer_description?: string | null;
+  offer_cover?: string | null;
+  offer_status?: string | null;
+  circuit_id?: string | null;
+  circuit_title?: string | null;
+  circuit_cover?: string | null;
+  circuit_description?: string | null;
+  circuit_nb_jours?: number | null;
+  circuit_nb_etapes?: number | null;
+  circuit_status?: string | null;
+  section: string;
+  status: string;
+  message?: string | null;
+  created_at: string;
+};
 
 type GuideProfile = {
   user_id: string;
@@ -299,6 +297,34 @@ function OfferCard({ offer, onClick }: { offer: Offer; onClick: () => void }) {
   );
 }
 
+// ─── Botanical SVG Cover ──────────────────────────────────────────────────────
+
+function BotanicalCover() {
+  return (
+    <div className="relative h-48 md:h-64 lg:h-72 w-full bg-gradient-to-br from-teal-100 via-emerald-50 to-slate-100 overflow-hidden">
+      <svg className="absolute inset-0 w-full h-full opacity-25" viewBox="0 0 1200 300"
+        xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="xMidYMid slice">
+        <g stroke="#2d6a4f" strokeWidth="1.5" fill="none">
+          <path d="M1050,10 Q1150,60 1100,130 Q1050,200 980,160 Q1050,120 1050,10Z" />
+          <path d="M1050,10 Q1000,90 980,160" />
+          <path d="M1100,20 Q1180,80 1140,150 Q1100,200 1050,170 Q1110,130 1100,20Z" />
+          <path d="M1100,20 Q1080,100 1050,170" />
+          <path d="M950,40 Q1010,80 990,130 Q960,150 940,120 Q970,100 950,40Z" />
+          <path d="M950,40 Q945,90 940,120" />
+          <path d="M1200,0 Q1120,80 1000,120 Q900,150 850,200" strokeWidth="1" opacity="0.6" />
+          <path d="M1200,50 Q1130,110 1060,140 Q990,170 960,220" strokeWidth="1" opacity="0.5" />
+          <path d="M0,200 Q80,160 120,100 Q160,40 200,80" strokeWidth="1" opacity="0.4" />
+          <path d="M1080,200 Q1160,240 1150,290 Q1100,300 1050,270 Q1090,250 1080,200Z" />
+          <path d="M1080,200 Q1060,250 1050,270" />
+          <path d="M800,30 Q860,60 840,110 Q810,130 790,100 Q820,80 800,30Z" opacity="0.5" />
+          <path d="M800,30 Q795,75 790,100" opacity="0.5" />
+        </g>
+        <path d="M0,260 Q300,230 600,250 Q900,270 1200,240" stroke="#2d6a4f" strokeWidth="1" fill="none" opacity="0.15" />
+      </svg>
+    </div>
+  );
+}
+
 // ─── Main ─────────────────────────────────────────────────────────────────────
 
 export default function PublicGuideProfile() {
@@ -313,8 +339,7 @@ export default function PublicGuideProfile() {
   const [token, setToken] = useState("");
   const [userRole, setUserRole] = useState("");
 
-  const [selectedOffer, setSelectedOffer] = useState<Offer | null>(null);
-  const [sliderIdx, setSliderIdx] = useState(0);
+
   const [following, setFollowing] = useState(false);
   const [followPending, setFollowPending] = useState(false);
   const [followId, setFollowId] = useState<string | null>(null);
@@ -332,6 +357,36 @@ export default function PublicGuideProfile() {
   const [myConnectionIds, setMyConnectionIds] = useState<Set<string>>(new Set());
   const [viewerId, setViewerId] = useState("");
   const [showFollowersModal, setShowFollowersModal] = useState(false);
+  const [theirFollowing, setTheirFollowing] = useState<SocialUser[]>([]);
+  const [theirCollabs, setTheirCollabs] = useState<PubCollab[]>([]);
+  const [theirCircuits, setTheirCircuits] = useState<any[]>([]);
+  const [viewingCircuit, setViewingCircuit] = useState<any>(null);
+  const [viewingCircuitLoading, setViewingCircuitLoading] = useState(false);
+  const [viewingOffer, setViewingOffer] = useState<OfferFull | null>(null);
+  const [viewingOfferLoading, setViewingOfferLoading] = useState(false);
+  const [activeTab, setActiveTab] = useState<"tout" | "offres" | "circuits" | "collaborations" | "reseau" | "apropos">("tout");
+
+  async function openOfferDetail(offerId: string) {
+    setViewingOfferLoading(true);
+    try {
+      const tkn = localStorage.getItem("access_token") || "";
+      const data = await apiFetch<OfferFull>(`/guide/offers/${offerId}/public-detail`, { headers: { Authorization: `Bearer ${tkn}` } });
+      setViewingOffer(data);
+    } catch { /* silently ignore */ } finally {
+      setViewingOfferLoading(false);
+    }
+  }
+
+  async function openCircuitDetail(circuitId: string) {
+    setViewingCircuitLoading(true);
+    try {
+      const tkn = localStorage.getItem("access_token") || "";
+      const data = await apiFetch<any>(`/circuits/${circuitId}/public-detail`, { headers: { Authorization: `Bearer ${tkn}` } });
+      setViewingCircuit(data);
+    } catch { /* silently ignore */ } finally {
+      setViewingCircuitLoading(false);
+    }
+  }
 
   useEffect(() => {
     const tkn = localStorage.getItem("access_token") || "";
@@ -357,6 +412,12 @@ export default function PublicGuideProfile() {
     // Load their followers + my connections for mutual detection
     apiFetch<SocialUser[]>(`/follows/followers/public/${userId}`, { headers: { Authorization: `Bearer ${tkn}` } })
       .then(setTheirFollowers).catch(() => {});
+    apiFetch<SocialUser[]>(`/follows/following/public/${userId}`, { headers: { Authorization: `Bearer ${tkn}` } })
+      .then(setTheirFollowing).catch(() => {});
+    apiFetch<PubCollab[]>(`/guide/collaborations/public/${userId}`, { headers: { Authorization: `Bearer ${tkn}` } })
+      .then(setTheirCollabs).catch(() => {});
+    apiFetch<any[]>(`/circuits/public/${userId}`, { headers: { Authorization: `Bearer ${tkn}` } })
+      .then(setTheirCircuits).catch(() => {});
     if (role === "eco_traveler") {
       apiFetch<SocialUser[]>("/eco-traveler/friends", { headers: { Authorization: `Bearer ${tkn}` } })
         .then((list) => setMyConnectionIds(new Set(list.map((f) => f.user_id)))).catch(() => {});
@@ -431,112 +492,206 @@ export default function PublicGuideProfile() {
   );
 
   const sc = profile.sustainability_score !== null ? scoreColor(profile.sustainability_score) : null;
+  const GUIDE_TYPE_LABEL = profile.guide_type ? (GUIDE_TYPE_LABELS[profile.guide_type] ?? profile.guide_type) : scoreLabel(profile.sustainability_score);
 
   return (
     <>
-    <div className="min-h-screen bg-slate-100 pb-16">
+    <div className="min-h-screen bg-slate-50/70 pb-20">
 
-      {/* Nav */}
-      <div className="sticky top-0 z-40 bg-white/90 backdrop-blur-md border-b border-slate-200/80 px-6 py-3.5 flex items-center justify-between">
-        <button onClick={() => router.back()} className="w-9 h-9 rounded-xl bg-slate-100 hover:bg-slate-200 flex items-center justify-center transition-colors">
-          <ArrowLeft size={18} className="text-slate-600" />
-        </button>
-        <span className="font-extrabold text-slate-900 text-base">{profile.full_name}</span>
-        <div className="w-9 h-9" />
+      {/* ══ TOP NAV ══ */}
+      <div className="sticky top-0 z-40 bg-white/80 backdrop-blur-md border-b border-slate-200 px-6 py-3">
+        <div className="max-w-6xl mx-auto flex items-center justify-between">
+          <button onClick={() => router.back()}
+            className="flex items-center gap-2 rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100 transition-all">
+            <ArrowLeft size={16} />Retour
+          </button>
+          <div className="flex items-center gap-2 text-slate-900">
+            <Leaf className="text-primary w-6 h-6" />
+            <span className="text-base font-extrabold tracking-tight">Éco-Voyage</span>
+          </div>
+        </div>
       </div>
 
-      {/* Cover */}
-      <div className="relative h-56 md:h-72 bg-gradient-to-br from-teal-200 via-emerald-100 to-slate-200 overflow-hidden">
-        {profile.cover_photo && <div className="absolute inset-0 bg-cover bg-center" style={{ backgroundImage: `url('${profile.cover_photo}')` }} />}
-        <div className="absolute inset-0 bg-gradient-to-t from-black/40 via-black/10 to-transparent" />
-      </div>
+      {/* ══ MAIN CONTENT ══ */}
+      <div className="w-full max-w-6xl mx-auto px-4 sm:px-6 pt-6">
 
-      <div className="max-w-5xl mx-auto px-4 md:px-8 -mt-20 relative z-10">
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-
-          {/* Left */}
-          <div className="lg:col-span-1 space-y-4">
-            <div className="bg-white rounded-3xl shadow-sm border border-slate-100">
-              <div className="flex flex-col items-center px-6 pb-6 pt-2">
-                <div className="w-28 h-28 rounded-2xl border-4 border-white shadow-xl overflow-hidden bg-gradient-to-br from-teal-100 to-emerald-50 flex items-center justify-center mb-4">
-                  {profile.photo ? <img src={profile.photo} alt={profile.full_name} className="w-full h-full object-cover" /> : <span className="material-symbols-outlined text-teal-600" style={{ fontSize: 56 }}>person</span>}
-                </div>
-
-                <h1 className="text-xl font-black text-slate-900 text-center">{profile.full_name}</h1>
-                <p className="text-sm font-semibold text-primary mt-0.5 text-center">
-                  {profile.guide_type ? (GUIDE_TYPE_LABELS[profile.guide_type] ?? profile.guide_type) : scoreLabel(profile.sustainability_score)}
-                </p>
-
-                {profile.bio && <p className="text-sm text-slate-500 leading-relaxed mt-3 text-center">{profile.bio}</p>}
-
-                <div className="flex flex-wrap justify-center gap-3 mt-4">
-                  {profile.country && <span className="flex items-center gap-1.5 text-xs font-semibold text-slate-500"><Globe size={13} className="text-primary" />{COUNTRY_LABELS[profile.country] ?? profile.country}</span>}
-                  {profile.zone && <span className="flex items-center gap-1.5 text-xs font-semibold text-slate-500"><MapPin size={13} className="text-primary" />{profile.zone}</span>}
-                  {profile.years_experience && <span className="flex items-center gap-1.5 text-xs font-semibold text-slate-500"><Star size={13} className="text-primary" />{profile.years_experience} ans d'exp.</span>}
-                </div>
-
-                {(profile.specialties?.length ?? 0) > 0 && (
-                  <div className="flex flex-wrap justify-center gap-1.5 mt-3">
-                    {profile.specialties!.map((s) => <span key={s} className="px-2.5 py-1 bg-teal-50 text-teal-700 text-[11px] font-bold rounded-full">{s}</span>)}
+        {/* ── PROFILE HEADER CARD ── */}
+        <div className="relative w-full overflow-hidden bg-white shadow-sm rounded-3xl border border-slate-100/80 mb-6">
+          {profile.cover_photo
+            ? <div className="relative h-48 md:h-64 lg:h-72 w-full overflow-hidden"><img src={profile.cover_photo} alt="" className="w-full h-full object-cover" /></div>
+            : <BotanicalCover />
+          }
+          <div className="relative px-6 pb-6 pt-3 md:pt-0">
+          <div className="flex flex-col md:flex-row md:items-end md:justify-between -mt-16 md:-mt-20">
+            <div className="flex flex-col sm:flex-row items-center sm:items-end space-y-4 sm:space-y-0 sm:space-x-6">
+              <div className="flex flex-col items-center gap-2">
+                <div className="relative">
+                  <div className="absolute inset-0 bg-emerald-400/20 rounded-full blur-md" />
+                  <div className="relative w-32 h-32 md:w-36 md:h-36 rounded-full border-4 border-white bg-slate-200 overflow-hidden shadow-lg flex items-center justify-center">
+                    {profile.photo ? <img src={profile.photo} alt={profile.full_name} className="w-full h-full object-cover" /> : <span className="material-symbols-outlined text-slate-400" style={{ fontSize: 56 }}>person</span>}
                   </div>
-                )}
-
-                {(profile.languages_spoken?.length ?? 0) > 0 && (
-                  <div className="flex flex-wrap justify-center gap-1.5 mt-2">
-                    {profile.languages_spoken!.map((l) => <span key={l} className="px-2.5 py-1 bg-slate-100 text-slate-600 text-[11px] font-bold rounded-full">{l}</span>)}
-                  </div>
-                )}
-
-                {/* Follow button + menu */}
-                {canFollow && (
-                  <div className="mt-5 w-full flex items-center gap-2">
-                    <button onClick={toggleFollow} disabled={followLoading}
-                      className={`flex-1 flex items-center justify-center gap-2 py-3 font-extrabold rounded-2xl text-sm transition-all disabled:opacity-60
-                        ${following ? "border-2 border-slate-200 text-slate-600 hover:border-red-300 hover:text-red-500"
-                          : followPending ? "border-2 border-primary/40 text-primary hover:border-red-300 hover:text-red-500"
-                          : "bg-primary text-slate-900 hover:bg-primary/90 active:scale-95 shadow-sm"}`}>
-                      {following ? <><UserMinus size={15} /> Abonné</>
-                        : followPending ? <><span className="w-3 h-3 rounded-full border-2 border-primary border-t-transparent animate-spin inline-block" /> En attente</>
-                        : <><UserPlus size={15} /> Suivre</>}
-                    </button>
-                    <div className="relative" ref={menuRef}>
-                      <button onClick={() => setMenuOpen((v) => !v)}
-                        className="w-11 h-11 rounded-2xl border-2 border-slate-200 hover:bg-slate-50 flex items-center justify-center text-slate-500 transition-colors">
-                        <MoreVertical size={17} />
-                      </button>
-                      {menuOpen && (
-                        <div className="absolute right-0 top-13 w-48 bg-white rounded-2xl shadow-2xl border border-slate-100 overflow-hidden z-50 py-1" style={{ top: "3rem" }}>
-                          {following && (
-                            <button onClick={() => { setMenuOpen(false); toggleFollow(); }}
-                              className="w-full flex items-center gap-3 px-4 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50 transition-colors">
-                              <UserMinus size={15} className="text-slate-400" /> Se désabonner
-                            </button>
-                          )}
-                          <button onClick={blockUser}
-                            className="w-full flex items-center gap-3 px-4 py-3 text-sm font-semibold text-orange-600 hover:bg-orange-50 transition-colors">
-                            <ShieldBan size={15} /> Bloquer
-                          </button>
-                          <div className="border-t border-slate-100 my-0.5" />
-                          <button onClick={() => { setMenuOpen(false); setReportOpen(true); }}
-                            className="w-full flex items-center gap-3 px-4 py-3 text-sm font-semibold text-red-600 hover:bg-red-50 transition-colors">
-                            <Flag size={15} /> Signaler
-                          </button>
-                        </div>
+                </div>
+                <div className="bg-primary text-white text-[10px] font-extrabold px-3 py-1 rounded-full flex items-center gap-1 shadow-md uppercase tracking-wider border border-white">
+                  <span className="material-symbols-outlined text-yellow-300" style={{ fontSize: 11 }}>star</span>
+                  {scoreLabel(profile.sustainability_score)}
+                </div>
+              </div>
+              <div className="text-center sm:text-left pt-3 sm:pt-0 pb-1">
+                <div className="flex items-center justify-center sm:justify-start gap-2">
+                  <h1 className="text-2xl md:text-3xl font-extrabold tracking-tight text-slate-800">{profile.full_name}</h1>
+                  <ShieldCheck size={20} className="text-emerald-500 fill-emerald-100 hidden sm:block" />
+                </div>
+                <div className="flex items-center justify-center sm:justify-start gap-1.5 mt-1 text-primary font-semibold text-sm">
+                  <span>{GUIDE_TYPE_LABEL}</span>
+                  <span className="relative flex h-2 w-2">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75" />
+                    <span className="relative inline-flex rounded-full h-2 w-2 bg-primary" />
+                  </span>
+                </div>
+              </div>
+            </div>
+            {canFollow && (
+              <div className="flex items-center gap-3 shrink-0 mt-6 md:mt-0 self-center md:self-end">
+                <button onClick={toggleFollow} disabled={followLoading}
+                  className={`flex items-center justify-center gap-2.5 py-3.5 px-7 font-extrabold rounded-2xl text-base transition-all disabled:opacity-60
+                    ${following ? "border-2 border-slate-200 text-slate-600 hover:border-red-300 hover:text-red-500"
+                      : followPending ? "border-2 border-primary/40 text-primary hover:border-red-300 hover:text-red-500"
+                      : "bg-primary text-slate-900 hover:bg-primary/90 active:scale-95 shadow-md"}`}>
+                  {following ? <><UserMinus size={18} /> Abonné</>
+                    : followPending ? <><span className="w-4 h-4 rounded-full border-2 border-primary border-t-transparent animate-spin inline-block" /> En attente</>
+                    : <><UserPlus size={18} /> Suivre</>}
+                </button>
+                <div className="relative" ref={menuRef}>
+                  <button onClick={() => setMenuOpen((v) => !v)}
+                    className="w-14 h-14 rounded-2xl border-2 border-slate-200 hover:bg-slate-50 flex items-center justify-center text-slate-500 transition-colors">
+                    <MoreVertical size={22} />
+                  </button>
+                  {menuOpen && (
+                    <div className="absolute right-0 w-48 bg-white rounded-2xl shadow-2xl border border-slate-100 overflow-hidden z-50 py-1" style={{ top: "3rem" }}>
+                      {following && (
+                        <button onClick={() => { setMenuOpen(false); toggleFollow(); }}
+                          className="w-full flex items-center gap-3 px-4 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50 transition-colors">
+                          <UserMinus size={15} className="text-slate-400" /> Se désabonner
+                        </button>
                       )}
+                      <button onClick={blockUser}
+                        className="w-full flex items-center gap-3 px-4 py-3 text-sm font-semibold text-orange-600 hover:bg-orange-50 transition-colors">
+                        <ShieldBan size={15} /> Bloquer
+                      </button>
+                      <div className="border-t border-slate-100 my-0.5" />
+                      <button onClick={() => { setMenuOpen(false); setReportOpen(true); }}
+                        className="w-full flex items-center gap-3 px-4 py-3 text-sm font-semibold text-red-600 hover:bg-red-50 transition-colors">
+                        <Flag size={15} /> Signaler
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+          </div>
+        </div>
+
+        {/* ── DASHBOARD COLUMNS ── */}
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+
+          {/* ── LEFT SIDEBAR ── */}
+          <div className="lg:col-span-4 lg:sticky lg:top-6 space-y-6">
+
+            {/* Informations */}
+            <div className="bg-white p-6 rounded-3xl border border-slate-100/80 shadow-sm">
+              <div className="flex items-center gap-2.5 mb-5">
+                <div className="w-8 h-8 rounded-full bg-emerald-100 flex items-center justify-center text-primary">
+                  <Info size={18} strokeWidth={2.5} />
+                </div>
+                <h2 className="text-base font-extrabold text-slate-800">Informations</h2>
+              </div>
+              <div className="space-y-4">
+                {/* Présentation */}
+                {profile.bio && (
+                  <div>
+                    <p className="text-[10px] font-extrabold text-slate-400 tracking-wider uppercase mb-1.5">Présentation</p>
+                    <p className="text-sm text-slate-600 leading-relaxed">{profile.bio}</p>
+                    <div className="mt-3 border-t border-slate-100" />
+                  </div>
+                )}
+                {profile.country && (
+                  <div className="flex items-start gap-3">
+                    <div className="mt-0.5 p-1.5 rounded-lg bg-slate-50 text-slate-400"><MapPin size={16} /></div>
+                    <div>
+                      <p className="text-[10px] font-extrabold text-slate-400 tracking-wider uppercase">Localisation</p>
+                      <p className="text-sm font-semibold text-slate-700 mt-0.5">{COUNTRY_LABELS[profile.country] ?? profile.country}</p>
                     </div>
                   </div>
                 )}
-                {/* Contacter — éco-voyageurs et project-owners peuvent contacter un guide */}
-                {(userRole === "eco_traveler" || userRole === "project") && (
-                  <button onClick={handleContact} 
-                    className="mt-3 w-full flex items-center justify-center gap-2 py-3 bg-primary text-slate-900 font-extrabold rounded-2xl text-sm hover:bg-primary/90 active:scale-95 transition-all shadow-sm disabled:opacity-60">
-                    <Send size={15} /> Contacter
-                  </button>
+                {profile.zone && (
+                  <div className="flex items-start gap-3">
+                    <div className="mt-0.5 p-1.5 rounded-lg bg-slate-50 text-slate-400"><Globe size={16} /></div>
+                    <div>
+                      <p className="text-[10px] font-extrabold text-slate-400 tracking-wider uppercase">Zone d&apos;activité</p>
+                      <p className="text-sm font-semibold text-slate-700 mt-0.5">{profile.zone}</p>
+                    </div>
+                  </div>
+                )}
+                {profile.guide_type && (
+                  <div className="flex items-start gap-3">
+                    <div className="mt-0.5 p-1.5 rounded-lg bg-slate-50 text-slate-400"><BookOpen size={16} /></div>
+                    <div>
+                      <p className="text-[10px] font-extrabold text-slate-400 tracking-wider uppercase">Type de guide</p>
+                      <p className="text-sm font-semibold text-slate-700 mt-0.5">{GUIDE_TYPE_LABELS[profile.guide_type] ?? profile.guide_type}</p>
+                    </div>
+                  </div>
+                )}
+                {(profile.years_experience !== null && profile.years_experience !== undefined) && (
+                  <div className="flex items-start gap-3">
+                    <div className="mt-0.5 p-1.5 rounded-lg bg-slate-50 text-slate-400"><Star size={16} /></div>
+                    <div>
+                      <p className="text-[10px] font-extrabold text-slate-400 tracking-wider uppercase">Années d&apos;expérience</p>
+                      <p className="text-sm font-semibold text-slate-700 mt-0.5">{profile.years_experience} ans</p>
+                    </div>
+                  </div>
+                )}
+                {/* Domaines d'expertises */}
+                {profile.domaines && profile.domaines.length > 0 && (
+                  <div>
+                    <p className="text-[10px] font-extrabold text-slate-400 tracking-wider uppercase mb-2">Domaines d&apos;expertise</p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {profile.domaines.map((d) => {
+                        const m = DOMAINES_META[d];
+                        return (
+                          <span key={d} className="flex items-center gap-1 bg-primary/10 text-primary border border-primary/20 rounded-xl px-2.5 py-1 text-[11px] font-bold">
+                            <span className="material-symbols-outlined text-xs">{m?.icon ?? "label"}</span>{m?.label ?? d}
+                          </span>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+                {/* Expertises */}
+                {profile.expertises && profile.expertises.length > 0 && (
+                  <div>
+                    <p className="text-[10px] font-extrabold text-slate-400 tracking-wider uppercase mb-2">Expertises</p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {profile.expertises.map((e) => (
+                        <span key={e} className="bg-emerald-50 text-emerald-700 border border-emerald-100 rounded-xl px-2.5 py-1 text-[11px] font-bold">{e}</span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {/* Pourquoi choisir */}
+                {profile.pourquoi_moi && (
+                  <div>
+                    <p className="text-[10px] font-extrabold text-slate-400 tracking-wider uppercase mb-1.5">Pourquoi choisir ce guide ?</p>
+                    <p className="text-sm text-slate-600 leading-relaxed">{profile.pourquoi_moi}</p>
+                  </div>
+                )}
+                {!profile.country && !profile.zone && !profile.guide_type && !profile.bio && !profile.domaines?.length && !profile.expertises?.length && (
+                  <p className="text-xs text-slate-400 italic">Aucune information renseignée.</p>
                 )}
               </div>
             </div>
 
-            {/* Score */}
+            {/* Score durabilité */}
             {profile.sustainability_score !== null && sc && (
               <div className="bg-white rounded-3xl shadow-sm border border-slate-100 p-5">
                 <p className="text-[11px] font-black text-slate-400 uppercase tracking-widest mb-3">🌿 Score de durabilité</p>
@@ -551,72 +706,590 @@ export default function PublicGuideProfile() {
               </div>
             )}
 
-            {/* Followers + en commun */}
-            {theirFollowers.length > 0 && (
-              <div className="bg-white rounded-3xl shadow-sm border border-slate-100 p-5">
-                <div className="flex items-center justify-between mb-3">
-                  <p className="text-[11px] font-black text-slate-400 uppercase tracking-widest">
-                    👥 Followers de {profile.full_name.split(" ")[0]}
-                  </p>
-                  <span className="text-[11px] font-black text-slate-400">{theirFollowers.length}</span>
+            {/* Followers */}
+            <div className="bg-white p-6 rounded-3xl border border-slate-100/80 shadow-sm">
+                <div className="flex items-center justify-between mb-4">
+                  <span className="font-extrabold text-base text-slate-800">Followers</span>
+                  <span className="bg-primary/10 text-primary text-xs font-black px-2 py-0.5 rounded-full">{theirFollowers.length}</span>
                 </div>
-                <div className="space-y-2.5">
-                  {theirFollowers.slice(0, 3).map((f) => {
-                    const isCommon = myConnectionIds.has(f.user_id) && f.user_id !== viewerId;
+                <div className="flex items-center gap-1.5 flex-wrap mb-3">
+                  {theirFollowers.slice(0, 5).map((f) => {
                     const ownPath = f._type === "guide" ? "/profile/guide" : f._type === "project" ? "/profile/project-owner" : "/profile/ecovoyageur";
                     const pubPath = f._type === "guide" ? `/profile/guide/${f.user_id}` : f._type === "project" ? `/profile/project-owner/${f.user_id}` : `/profile/ecovoyageur/${f.user_id}`;
                     const path = f.user_id === viewerId ? ownPath : pubPath;
                     return (
                       <button key={f.user_id} onClick={() => router.push(path)}
-                        className="w-full flex items-center gap-3 hover:bg-slate-50 rounded-xl px-2 py-1.5 transition-colors text-left">
-                        <div className="w-9 h-9 rounded-xl bg-slate-100 overflow-hidden flex items-center justify-center shrink-0">
-                          {f.photo ? <img src={f.photo} alt={f.full_name ?? ""} className="w-full h-full object-cover" /> : <span className="material-symbols-outlined text-slate-400 text-base">person</span>}
-                        </div>
-                        <p className="text-sm font-extrabold text-slate-800 truncate flex-1">{f.full_name ?? "—"}</p>
-                        {isCommon && (
-                          <span className="shrink-0 text-[10px] font-black px-2 py-0.5 rounded-full bg-primary/10 text-primary whitespace-nowrap">En commun</span>
-                        )}
+                        className="w-10 h-10 rounded-xl bg-slate-100 border-2 border-white shadow-sm overflow-hidden flex items-center justify-center hover:scale-105 transition-transform"
+                        title={f.full_name ?? ""}>
+                        {f.photo ? <img src={f.photo} alt={f.full_name ?? ""} className="w-full h-full object-cover" /> : <span className="material-symbols-outlined text-slate-400 text-lg">person</span>}
                       </button>
                     );
                   })}
+                  {theirFollowers.length > 5 && (
+                    <button onClick={() => setShowFollowersModal(true)} className="w-10 h-10 rounded-xl bg-emerald-50 text-primary text-[11px] font-black border border-emerald-100/60 shadow-sm flex items-center justify-center">+{theirFollowers.length - 5}</button>
+                  )}
                 </div>
-                {theirFollowers.length > 3 && (
-                  <button onClick={() => setShowFollowersModal(true)}
-                    className="mt-3 w-full text-xs font-bold text-primary hover:underline text-center">
-                    Voir tout ({theirFollowers.length})
-                  </button>
+                {theirFollowers.length > 5 && (
+                  <button onClick={() => setShowFollowersModal(true)} className="text-xs font-bold text-primary hover:underline">Voir tous les followers</button>
+                )}
+                {theirFollowers.length === 0 && (
+                  <p className="text-xs text-slate-400 italic">Aucun follower pour l&apos;instant.</p>
+                )}
+              </div>
+          </div>
+
+          {/* ── RIGHT COLUMN ── */}
+          <div className="lg:col-span-8 space-y-6">
+
+            {/* Tab bar — IDENTIQUE au profil propre */}
+            <div className="bg-slate-100 p-1.5 rounded-2xl flex flex-wrap gap-1 border border-slate-200/50">
+              {([
+                { key: "tout",           label: "Tout",           Icon: LayoutGrid },
+                { key: "offres",         label: "Offres",         Icon: Tag },
+                { key: "reseau",         label: "Réseau",         Icon: Users },
+                { key: "collaborations", label: "Collaborations", Icon: Users },
+                { key: "circuits",       label: "Circuits",       Icon: Route },
+                { key: "apropos",        label: "À propos",       Icon: Info },
+              ] as { key: "tout" | "offres" | "circuits" | "collaborations" | "reseau" | "apropos"; label: string; Icon: React.ComponentType<any> }[]).map(({ key, label, Icon }) => (
+                <button key={key} onClick={() => setActiveTab(key)}
+                  className={`flex-1 min-w-[60px] py-3 px-3 rounded-xl text-xs font-black tracking-tight flex items-center justify-center gap-1.5 transition-all cursor-pointer ${activeTab === key ? "bg-white text-slate-800 shadow-sm" : "text-slate-500 hover:text-slate-700 hover:bg-slate-50/50"}`}>
+                  <Icon size={14} strokeWidth={2.5} /><span>{label}</span>
+                </button>
+              ))}
+            </div>
+
+            {/* Tab: Tout */}
+            {activeTab === "tout" && (() => {
+              const nonCircuitOffers = profile.offers;
+              const isEmpty = nonCircuitOffers.length === 0 && theirCircuits.length === 0 && theirCollabs.length === 0;
+              return (
+                <div className="space-y-8">
+                  {isEmpty && (
+                    <div className="bg-white rounded-3xl border border-slate-100/90 shadow-sm p-14 text-center">
+                      <span className="material-symbols-outlined text-5xl text-slate-300 block mb-3">public</span>
+                      <p className="font-extrabold text-slate-700 text-base mb-1">Aucune publication</p>
+                      <p className="text-slate-400 text-sm">Les offres, circuits et collaborations de ce guide apparaîtront ici.</p>
+                    </div>
+                  )}
+                  {nonCircuitOffers.length > 0 && (
+                    <div className="space-y-4">
+                      <h3 className="text-xs font-black uppercase text-slate-400 tracking-widest flex items-center gap-1.5">
+                        <Tag size={12} className="text-primary" /><span>Offres publiées</span>
+                      </h3>
+                      {nonCircuitOffers.slice(0, 3).map((o) => (
+                        <div key={o.id} ref={(el) => { offerRefs.current[o.id] = el; }}
+                          className={`bg-white rounded-3xl border shadow-sm overflow-hidden hover:shadow-md transition-shadow ${highlightedOfferId === o.id ? "border-primary ring-2 ring-primary ring-offset-2" : "border-slate-100"}`}>
+                          <OfferCard offer={o} onClick={() => openOfferDetail(o.id)} />
+                          <PubInteractions pubId={o.id} token={token} viewerId={viewerId}
+                            shareUrl={`${typeof window !== "undefined" ? window.location.origin : ""}/profile/guide/${userId}?offer=${o.id}`}
+                            pubTitle={o.title} itemApiBase="/interactions/offer" commentApiBase="/interactions" />
+                        </div>
+                      ))}
+                      {nonCircuitOffers.length > 3 && <button onClick={() => setActiveTab("offres")} className="text-primary text-xs font-extrabold hover:underline flex items-center gap-1">Voir toutes les offres <ArrowRight size={13} /></button>}
+                    </div>
+                  )}
+                  {theirCircuits.length > 0 && (
+                    <div className="space-y-4">
+                      <h3 className="text-xs font-black uppercase text-slate-400 tracking-widest flex items-center gap-1.5">
+                        <Route size={12} className="text-primary" /><span>Circuits publiés</span>
+                      </h3>
+                      <div className="grid grid-cols-1 gap-4">
+                        {theirCircuits.slice(0, 3).map((circuit) => {
+                          const etapes: any[] = circuit.etapes ?? [];
+                          return (
+                            <div key={circuit.id} className="bg-white rounded-3xl border border-slate-100/80 shadow-sm overflow-hidden hover:shadow-md transition-all">
+                              <div className="flex gap-0">
+                                <div className="relative w-40 shrink-0 bg-gradient-to-br from-primary/20 to-emerald-100 flex items-center justify-center">
+                                  {circuit.cover_image
+                                    ? <img src={circuit.cover_image} alt="" className="w-full h-full object-cover absolute inset-0" />
+                                    : <Route size={32} className="text-primary/40" />}
+                                  <span className="absolute top-2 left-2 text-[9px] font-black tracking-widest uppercase px-2 py-0.5 rounded-lg bg-emerald-500 text-white">Publié</span>
+                                </div>
+                                <div className="flex-1 p-5">
+                                  <h4 className="text-base font-extrabold text-slate-800 leading-tight">{circuit.title}</h4>
+                                  {circuit.description && <p className="text-xs text-slate-500 mt-1 line-clamp-2">{circuit.description}</p>}
+                                  <div className="flex flex-wrap gap-2 mt-3">
+                                    <span className="flex items-center gap-1 text-[10px] font-black tracking-widest uppercase text-primary bg-primary/10 px-2.5 py-1 rounded-xl">
+                                      <Calendar size={10} />{circuit.nb_jours} jour{circuit.nb_jours > 1 ? "s" : ""}
+                                    </span>
+                                    <span className="flex items-center gap-1 text-[10px] font-black tracking-widest uppercase text-slate-500 bg-slate-100 px-2.5 py-1 rounded-xl">
+                                      <MapPin size={10} />{etapes.length} étape{etapes.length !== 1 ? "s" : ""}
+                                    </span>
+                                  </div>
+                                  {etapes.length > 0 && (
+                                    <div className="mt-3 space-y-1">
+                                      {etapes.slice(0, 3).map((etape: any) => {
+                                        const eCat = PROVIDER_SCHEMA.find((c) => c.value === etape.categorie);
+                                        const catLabel = eCat?.label ?? DOMAINES_META[etape.categorie]?.label ?? etape.categorie ?? "";
+                                        const displayName = etape.titre || etape.destination || catLabel || "Étape";
+                                        const stLabels = ((etape.subtypes as string[]) ?? []).slice(0, 2).map((sv: string) => eCat?.subtypes?.find((s) => s.value === sv)?.label ?? sv);
+                                        const expertiseLabels = ((etape.fields as any)?.expertises as string[] | undefined ?? []).slice(0, 2);
+                                        const secondaryLabel = stLabels.length > 0 ? stLabels.join(", ") : expertiseLabels.join(", ");
+                                        return (
+                                          <div key={etape.id ?? etape.jour} className="flex items-center gap-2 text-xs">
+                                            <span className="w-5 h-5 rounded-full bg-primary/10 text-primary font-black flex items-center justify-center text-[10px] shrink-0">{etape.jour}</span>
+                                            <span className="font-semibold text-slate-700 truncate">{displayName}</span>
+                                            {secondaryLabel && <><span className="text-slate-300 shrink-0">·</span><span className="text-slate-400 truncate text-[11px]">{secondaryLabel}</span></>}
+                                            {etape.heure_debut && <><span className="text-slate-300 shrink-0">·</span><span className="text-slate-400 text-[10px] shrink-0">{etape.heure_debut}{etape.heure_fin ? ` → ${etape.heure_fin}` : ""}</span></>}
+                                          </div>
+                                        );
+                                      })}
+                                      {etapes.length > 3 && <p className="text-[10px] text-slate-400 font-semibold">+{etapes.length - 3} étape{etapes.length - 3 > 1 ? "s" : ""}…</p>}
+                                    </div>
+                                  )}
+                                  <button onClick={() => openCircuitDetail(circuit.id)} className="mt-3 flex items-center gap-1.5 text-[11px] font-extrabold text-primary hover:text-primary/80 transition-colors cursor-pointer">
+                                    <Info size={12} />Voir les détails
+                                  </button>
+                                </div>
+                              </div>
+                              <PubInteractions pubId={circuit.id} token={token} viewerId={viewerId}
+                                shareUrl={`${typeof window !== "undefined" ? window.location.origin : ""}/profile/guide/${userId}?tab=circuits&circuit=${circuit.id}`}
+                                pubTitle={circuit.title} itemApiBase="/interactions/circuit" commentApiBase="/interactions" />
+                            </div>
+                          );
+                        })}
+                      </div>
+                      {theirCircuits.length > 3 && <button onClick={() => setActiveTab("circuits")} className="text-primary text-xs font-extrabold hover:underline flex items-center gap-1">Voir tous les circuits <ArrowRight size={13} /></button>}
+                    </div>
+                  )}
+                  {theirCollabs.length > 0 && (
+                    <div className="space-y-4">
+                      <h3 className="text-xs font-black uppercase text-slate-400 tracking-widest flex items-center gap-1.5">
+                        <Users size={12} className="text-primary" /><span>Collaborations publiées</span>
+                      </h3>
+                      {theirCollabs.slice(0, 3).map((c) => {
+                        const isCircuit = c.source_type === "circuit";
+                        const displayTitle = isCircuit ? (c.circuit_title ?? "Circuit") : (c.offer_title ?? "Offre");
+                        const displayCover = isCircuit ? c.circuit_cover : c.offer_cover;
+                        const stCls = c.status === "completed"
+                          ? "bg-emerald-100 text-emerald-700 border-emerald-200"
+                          : "bg-teal-100 text-teal-700 border-teal-200";
+                        const stLabel = c.status === "completed" ? "Complétée" : "Acceptée";
+                        const stIcon = c.status === "completed" ? "task_alt" : "check_circle";
+                        const sectionLabel = c.section ? c.section.charAt(0).toUpperCase() + c.section.slice(1).replace(/_/g, " ") : "";
+                        return (
+                          <div key={c.id} className="relative bg-white rounded-3xl border border-slate-100/90 shadow-sm overflow-hidden hover:shadow-md transition-all duration-300">
+                            {isCircuit ? (
+                              <div className="flex gap-0">
+                                <div className="relative w-40 shrink-0 bg-gradient-to-br from-primary/20 to-emerald-100 flex items-center justify-center overflow-hidden">
+                                  {displayCover ? <img src={displayCover} alt={displayTitle} className="absolute inset-0 w-full h-full object-cover" /> : <Users size={32} className="text-primary/30" />}
+                                  <span className={`absolute top-2 left-2 text-[9px] font-black tracking-widest uppercase px-2 py-0.5 rounded-lg border ${stCls}`}>{stLabel}</span>
+                                </div>
+                                <div className="flex-1 p-5">
+                                  <h4 className="text-base font-extrabold text-slate-800 leading-tight">{displayTitle}</h4>
+                                  {c.circuit_description && <p className="text-xs text-slate-500 mt-1 line-clamp-2">{c.circuit_description}</p>}
+                                  <div className="flex flex-wrap gap-2 mt-3">
+                                    {c.circuit_nb_jours && <span className="flex items-center gap-1 text-[10px] font-black tracking-widest uppercase text-primary bg-primary/10 px-2.5 py-1 rounded-xl"><Calendar size={10} />{c.circuit_nb_jours} jour{c.circuit_nb_jours > 1 ? "s" : ""}</span>}
+                                    {c.circuit_nb_etapes != null && c.circuit_nb_etapes > 0 && <span className="flex items-center gap-1 text-[10px] font-black tracking-widest uppercase text-slate-500 bg-slate-100 px-2.5 py-1 rounded-xl"><MapPin size={10} />{c.circuit_nb_etapes} étape{c.circuit_nb_etapes > 1 ? "s" : ""}</span>}
+                                  </div>
+                                  {c.message && <p className="mt-2 text-slate-400 text-xs leading-relaxed line-clamp-1 italic border-l-2 border-slate-200 pl-2">&ldquo;{c.message}&rdquo;</p>}
+                                  {c.circuit_id && (
+                                    <button onClick={() => c.circuit_id && openCircuitDetail(c.circuit_id)} className="mt-3 flex items-center gap-1.5 text-[11px] font-extrabold text-primary hover:text-primary/80 transition-colors cursor-pointer">
+                                      <Info size={12} />Voir les détails
+                                    </button>
+                                  )}
+                                </div>
+                              </div>
+                            ) : (
+                              <div className="flex flex-col sm:flex-row">
+                                <div className="relative bg-slate-50 flex items-center justify-center overflow-hidden border-b sm:border-b-0 sm:border-r border-slate-100 sm:w-2/5 min-h-[180px]">
+                                  {displayCover ? <img src={displayCover} alt={displayTitle} className="absolute inset-0 w-full h-full object-cover" /> : (<><div className="absolute inset-0 bg-gradient-to-br from-primary/20 to-emerald-100 opacity-90" /><Users size={60} className="text-white/30 relative z-10" /></>)}
+                                  <div className={`absolute top-2 left-2 text-[10px] font-black tracking-widest uppercase px-2.5 py-1 rounded-xl shadow border flex items-center gap-1 ${stCls}`}><span className="material-symbols-outlined text-xs">{stIcon}</span>{stLabel}</div>
+                                </div>
+                                <div className="flex-1 flex flex-col justify-between p-6">
+                                  <div>
+                                    <h3 className="text-lg font-extrabold text-slate-800 tracking-tight leading-tight mb-2">{displayTitle}</h3>
+                                    {c.offer_description && <p className="text-slate-500 text-sm leading-relaxed mb-3 line-clamp-2">{c.offer_description}</p>}
+                                    {c.message && <p className="text-slate-400 text-xs leading-relaxed mb-3 line-clamp-2 italic border-l-2 border-slate-200 pl-3">&ldquo;{c.message}&rdquo;</p>}
+                                    {sectionLabel && <div className="flex flex-wrap gap-2 mb-4"><span className="flex items-center gap-1.5 text-[11px] font-extrabold tracking-wider px-3 py-1 rounded-xl text-white bg-gradient-to-r from-emerald-600 to-green-500 uppercase">{sectionLabel}</span></div>}
+                                  </div>
+                                  <div className="flex items-center justify-between border-t border-slate-50 pt-4 mt-3">
+                                    <p className="text-[11px] font-bold text-slate-400">{new Date(c.created_at).toLocaleDateString("fr-FR", { day: "numeric", month: "long", year: "numeric" })}</p>
+                                    {c.offer_id && <button onClick={() => openOfferDetail(c.offer_id!)} className="text-primary hover:text-primary/80 font-extrabold text-xs inline-flex items-center gap-1 hover:translate-x-1 transition-transform duration-200"><span>Voir les détails</span><ArrowRight size={14} strokeWidth={2.5} /></button>}
+                                  </div>
+                                </div>
+                              </div>
+                            )}
+                            {!isCircuit && c.offer_status === "approved" && c.offer_id && (
+                              <PubInteractions pubId={c.offer_id} token={token} viewerId={viewerId}
+                                shareUrl={`${typeof window !== "undefined" ? window.location.origin : ""}/profile/guide/${userId}?offer=${c.offer_id}`}
+                                pubTitle={c.offer_title ?? undefined} itemApiBase="/interactions/offer" commentApiBase="/interactions" />
+                            )}
+                            {isCircuit && c.circuit_status === "approved" && c.circuit_id && (
+                              <PubInteractions pubId={c.circuit_id} token={token} viewerId={viewerId}
+                                shareUrl={`${typeof window !== "undefined" ? window.location.origin : ""}/profile/guide/${userId}?tab=circuits&circuit=${c.circuit_id}`}
+                                pubTitle={c.circuit_title ?? undefined} itemApiBase="/interactions/circuit" commentApiBase="/interactions" />
+                            )}
+                          </div>
+                        );
+                      })}
+                      {theirCollabs.length > 3 && <button onClick={() => setActiveTab("collaborations")} className="text-primary text-xs font-extrabold hover:underline flex items-center gap-1">Voir toutes les collaborations <ArrowRight size={13} /></button>}
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
+
+            {/* Tab: Offres */}
+            {activeTab === "offres" && (
+              <div className="bg-white rounded-3xl shadow-sm border border-slate-100 overflow-hidden">
+                <div className="px-6 py-5 border-b border-slate-100">
+                  <h2 className="text-base font-extrabold text-slate-800">Offres</h2>
+                  <p className="text-xs text-slate-400 font-medium mt-0.5">{profile.offers.length === 0 ? "Aucune offre" : `${profile.offers.length} offre${profile.offers.length > 1 ? "s" : ""}`}</p>
+                </div>
+                {profile.offers.length === 0 ? (
+                  <div className="py-16 text-center"><Leaf size={40} className="text-slate-200 mx-auto mb-3" /><p className="text-slate-400 font-semibold text-sm">Aucune offre pour l&apos;instant.</p></div>
+                ) : (
+                  <div className="p-4 space-y-4">
+                    {profile.offers.map((o) => (
+                      <div key={o.id} ref={(el) => { offerRefs.current[o.id] = el; }}
+                        className={`bg-white rounded-3xl border shadow-sm overflow-hidden hover:shadow-md transition-shadow ${highlightedOfferId === o.id ? "border-primary ring-2 ring-primary ring-offset-2" : "border-slate-100"}`}>
+                        <OfferCard offer={o} onClick={() => openOfferDetail(o.id)} />
+                        <PubInteractions pubId={o.id} token={token} viewerId={viewerId}
+                          shareUrl={`${typeof window !== "undefined" ? window.location.origin : ""}/profile/guide/${userId}?offer=${o.id}`}
+                          pubTitle={o.title} itemApiBase="/interactions/offer" commentApiBase="/interactions" />
+                      </div>
+                    ))}
+                  </div>
                 )}
               </div>
             )}
-          </div>
 
-          {/* Right: à propos + offers */}
-          <div className="lg:col-span-2 space-y-4">
+            {/* Tab: Circuits */}
+            {activeTab === "circuits" && (
+              <div className="bg-white rounded-3xl shadow-sm border border-slate-100 overflow-hidden">
+                <div className="px-6 py-5 border-b border-slate-100">
+                  <h2 className="text-base font-extrabold text-slate-800">Circuits</h2>
+                  <p className="text-xs text-slate-400 font-medium mt-0.5">{theirCircuits.length === 0 ? "Aucun circuit" : `${theirCircuits.length} circuit${theirCircuits.length > 1 ? "s" : ""}`}</p>
+                </div>
+                {theirCircuits.length === 0 ? (
+                  <div className="py-16 text-center">
+                    <Route size={40} className="text-slate-200 mx-auto mb-3" />
+                    <p className="text-slate-400 font-semibold text-sm">Aucun circuit pour l&apos;instant.</p>
+                  </div>
+                ) : (
+                  <div className="p-4 space-y-4">
+                    {theirCircuits.map((circuit) => {
+                      const etapes: any[] = circuit.etapes ?? [];
+                      return (
+                        <div key={circuit.id} className="bg-white rounded-3xl border border-slate-100/80 shadow-sm overflow-hidden hover:shadow-md transition-all">
+                          <div className="flex gap-0">
+                            <div className="relative w-40 shrink-0 bg-gradient-to-br from-primary/20 to-emerald-100 flex items-center justify-center">
+                              {circuit.cover_image
+                                ? <img src={circuit.cover_image} alt="" className="w-full h-full object-cover absolute inset-0" />
+                                : <Route size={32} className="text-primary/40" />}
+                              <span className="absolute top-2 left-2 text-[9px] font-black tracking-widest uppercase px-2 py-0.5 rounded-lg bg-emerald-500 text-white">Publié</span>
+                            </div>
+                            <div className="flex-1 p-5">
+                              <h4 className="text-base font-extrabold text-slate-800 leading-tight">{circuit.title}</h4>
+                              {circuit.description && <p className="text-xs text-slate-500 mt-1 line-clamp-2">{circuit.description}</p>}
+                              <div className="flex flex-wrap gap-2 mt-3">
+                                <span className="flex items-center gap-1 text-[10px] font-black tracking-widest uppercase text-primary bg-primary/10 px-2.5 py-1 rounded-xl">
+                                  <Calendar size={10} />{circuit.nb_jours} jour{circuit.nb_jours > 1 ? "s" : ""}
+                                </span>
+                                <span className="flex items-center gap-1 text-[10px] font-black tracking-widest uppercase text-slate-500 bg-slate-100 px-2.5 py-1 rounded-xl">
+                                  <MapPin size={10} />{etapes.length} étape{etapes.length !== 1 ? "s" : ""}
+                                </span>
+                              </div>
+                              {etapes.length > 0 && (
+                                <div className="mt-3 space-y-1">
+                                  {etapes.slice(0, 3).map((etape: any) => {
+                                    const eCat = PROVIDER_SCHEMA.find((c) => c.value === etape.categorie);
+                                    const catLabel = eCat?.label ?? DOMAINES_META[etape.categorie]?.label ?? etape.categorie ?? "";
+                                    const displayName = etape.titre || etape.destination || catLabel || "Étape";
+                                    const stLabels = ((etape.subtypes as string[]) ?? []).slice(0, 2).map((sv: string) => eCat?.subtypes?.find((s) => s.value === sv)?.label ?? sv);
+                                    const expertiseLabels = ((etape.fields as any)?.expertises as string[] | undefined ?? []).slice(0, 2);
+                                    const secondaryLabel = stLabels.length > 0 ? stLabels.join(", ") : expertiseLabels.join(", ");
+                                    return (
+                                      <div key={etape.id ?? etape.jour} className="flex items-center gap-2 text-xs">
+                                        <span className="w-5 h-5 rounded-full bg-primary/10 text-primary font-black flex items-center justify-center text-[10px] shrink-0">{etape.jour}</span>
+                                        <span className="font-semibold text-slate-700 truncate">{displayName}</span>
+                                        {secondaryLabel && <><span className="text-slate-300 shrink-0">·</span><span className="text-slate-400 truncate text-[11px]">{secondaryLabel}</span></>}
+                                        {etape.heure_debut && <><span className="text-slate-300 shrink-0">·</span><span className="text-slate-400 text-[10px] shrink-0">{etape.heure_debut}{etape.heure_fin ? ` → ${etape.heure_fin}` : ""}</span></>}
+                                      </div>
+                                    );
+                                  })}
+                                  {etapes.length > 3 && <p className="text-[10px] text-slate-400 font-semibold">+{etapes.length - 3} étape{etapes.length - 3 > 1 ? "s" : ""}…</p>}
+                                </div>
+                              )}
+                              <button onClick={() => setViewingCircuit(circuit)} className="mt-3 flex items-center gap-1.5 text-[11px] font-extrabold text-primary hover:text-primary/80 transition-colors cursor-pointer">
+                                <Info size={12} />Voir les détails
+                              </button>
+                            </div>
+                          </div>
+                          <PubInteractions pubId={circuit.id} token={token} viewerId={viewerId}
+                            shareUrl={`${typeof window !== "undefined" ? window.location.origin : ""}/profile/guide/${userId}?tab=circuits&circuit=${circuit.id}`}
+                            pubTitle={circuit.title} itemApiBase="/interactions/circuit" commentApiBase="/interactions" />
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
 
-            {/* Domaines + Expertises */}
-            {((profile.domaines?.length ?? 0) > 0 || (profile.expertises?.length ?? 0) > 0) && (
-              <div className="bg-white rounded-3xl shadow-sm border border-slate-100 p-6 space-y-4">
-                {profile.domaines && profile.domaines.length > 0 && (
-                  <div>
-                    <p className="text-[10px] font-black text-slate-400 tracking-widest uppercase mb-3">Domaines d'expertise</p>
-                    <div className="flex flex-wrap gap-2">
-                      {profile.domaines.map((d) => {
-                        const m = DOMAINES_META[d];
+            {/* Tab: Collaborations */}
+            {activeTab === "collaborations" && (
+              <div className="bg-white rounded-3xl shadow-sm border border-slate-100 overflow-hidden">
+                <div className="px-6 py-5 border-b border-slate-100">
+                  <h2 className="text-base font-extrabold text-slate-800">Collaborations</h2>
+                  <p className="text-xs text-slate-400 font-medium mt-0.5">{theirCollabs.length === 0 ? "Aucune collaboration" : `${theirCollabs.length} collaboration${theirCollabs.length > 1 ? "s" : ""}`}</p>
+                </div>
+                {theirCollabs.length === 0 ? (
+                  <div className="py-16 text-center">
+                    <Users size={40} className="text-slate-200 mx-auto mb-3" />
+                    <p className="text-slate-400 font-semibold text-sm">Aucune collaboration pour l&apos;instant.</p>
+                  </div>
+                ) : (
+                  <div className="p-4 space-y-4">
+                    {theirCollabs.map((c) => {
+                      const isCircuit = c.source_type === "circuit";
+                      const displayTitle = isCircuit ? (c.circuit_title ?? "Circuit") : (c.offer_title ?? "Offre");
+                      const displayCover = isCircuit ? c.circuit_cover : c.offer_cover;
+                      const stCls = c.status === "completed"
+                        ? "bg-emerald-100 text-emerald-700 border-emerald-200"
+                        : "bg-teal-100 text-teal-700 border-teal-200";
+                      const stLabel = c.status === "completed" ? "Complétée" : "Acceptée";
+                      const stIcon = c.status === "completed" ? "task_alt" : "check_circle";
+                      const sectionLabel = c.section ? c.section.charAt(0).toUpperCase() + c.section.slice(1).replace(/_/g, " ") : "";
+                      return (
+                        <div key={c.id} className="relative bg-white rounded-3xl border border-slate-100/90 shadow-sm overflow-hidden hover:shadow-md transition-all duration-300">
+                          {isCircuit ? (
+                            <div className="flex gap-0">
+                              <div className="relative w-40 shrink-0 bg-gradient-to-br from-primary/20 to-emerald-100 flex items-center justify-center overflow-hidden">
+                                {displayCover ? <img src={displayCover} alt={displayTitle} className="absolute inset-0 w-full h-full object-cover" /> : <Users size={32} className="text-primary/30" />}
+                                <span className={`absolute top-2 left-2 text-[9px] font-black tracking-widest uppercase px-2 py-0.5 rounded-lg border ${stCls}`}>{stLabel}</span>
+                              </div>
+                              <div className="flex-1 p-5">
+                                <h4 className="text-base font-extrabold text-slate-800 leading-tight">{displayTitle}</h4>
+                                {c.circuit_description && <p className="text-xs text-slate-500 mt-1 line-clamp-2">{c.circuit_description}</p>}
+                                <div className="flex flex-wrap gap-2 mt-3">
+                                  {c.circuit_nb_jours && <span className="flex items-center gap-1 text-[10px] font-black tracking-widest uppercase text-primary bg-primary/10 px-2.5 py-1 rounded-xl"><Calendar size={10} />{c.circuit_nb_jours} jour{c.circuit_nb_jours > 1 ? "s" : ""}</span>}
+                                  {c.circuit_nb_etapes != null && c.circuit_nb_etapes > 0 && <span className="flex items-center gap-1 text-[10px] font-black tracking-widest uppercase text-slate-500 bg-slate-100 px-2.5 py-1 rounded-xl"><MapPin size={10} />{c.circuit_nb_etapes} étape{c.circuit_nb_etapes > 1 ? "s" : ""}</span>}
+                                </div>
+                                {c.message && <p className="mt-2 text-slate-400 text-xs leading-relaxed line-clamp-1 italic border-l-2 border-slate-200 pl-2">&ldquo;{c.message}&rdquo;</p>}
+                                {c.circuit_id && (
+                                  <button onClick={() => c.circuit_id && openCircuitDetail(c.circuit_id)} className="mt-3 flex items-center gap-1.5 text-[11px] font-extrabold text-primary hover:text-primary/80 transition-colors cursor-pointer">
+                                    <Info size={12} />Voir les détails
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="flex flex-col sm:flex-row">
+                              <div className="relative bg-slate-50 flex items-center justify-center overflow-hidden border-b sm:border-b-0 sm:border-r border-slate-100 sm:w-2/5 min-h-[180px]">
+                                {displayCover ? <img src={displayCover} alt={displayTitle} className="absolute inset-0 w-full h-full object-cover" /> : (<><div className="absolute inset-0 bg-gradient-to-br from-primary/20 to-emerald-100 opacity-90" /><Users size={60} className="text-white/30 relative z-10" /></>)}
+                                <div className={`absolute top-2 left-2 text-[10px] font-black tracking-widest uppercase px-2.5 py-1 rounded-xl shadow border flex items-center gap-1 ${stCls}`}><span className="material-symbols-outlined text-xs">{stIcon}</span>{stLabel}</div>
+                              </div>
+                              <div className="flex-1 flex flex-col justify-between p-6">
+                                <div>
+                                  <h3 className="text-lg font-extrabold text-slate-800 tracking-tight leading-tight mb-2">{displayTitle}</h3>
+                                  {c.offer_description && <p className="text-slate-500 text-sm leading-relaxed mb-3 line-clamp-2">{c.offer_description}</p>}
+                                  {c.message && <p className="text-slate-400 text-xs leading-relaxed mb-3 line-clamp-2 italic border-l-2 border-slate-200 pl-3">&ldquo;{c.message}&rdquo;</p>}
+                                  {sectionLabel && <div className="flex flex-wrap gap-2 mb-4"><span className="flex items-center gap-1.5 text-[11px] font-extrabold tracking-wider px-3 py-1 rounded-xl text-white bg-gradient-to-r from-emerald-600 to-green-500 uppercase">{sectionLabel}</span></div>}
+                                </div>
+                                <div className="flex items-center justify-between border-t border-slate-50 pt-4 mt-3">
+                                  <p className="text-[11px] font-bold text-slate-400">{new Date(c.created_at).toLocaleDateString("fr-FR", { day: "numeric", month: "long", year: "numeric" })}</p>
+                                  {c.offer_id && <button onClick={() => openOfferDetail(c.offer_id!)} className="text-primary hover:text-primary/80 font-extrabold text-xs inline-flex items-center gap-1 hover:translate-x-1 transition-transform duration-200"><span>Voir les détails</span><ArrowRight size={14} strokeWidth={2.5} /></button>}
+                                </div>
+                              </div>
+                            </div>
+                          )}
+                          {!isCircuit && c.offer_status === "approved" && c.offer_id && (
+                            <PubInteractions pubId={c.offer_id} token={token} viewerId={viewerId}
+                              shareUrl={`${typeof window !== "undefined" ? window.location.origin : ""}/profile/guide/${userId}?offer=${c.offer_id}`}
+                              pubTitle={c.offer_title ?? undefined} itemApiBase="/interactions/offer" commentApiBase="/interactions" />
+                          )}
+                          {isCircuit && c.circuit_status === "approved" && c.circuit_id && (
+                            <PubInteractions pubId={c.circuit_id} token={token} viewerId={viewerId}
+                              shareUrl={`${typeof window !== "undefined" ? window.location.origin : ""}/profile/guide/${userId}?tab=circuits&circuit=${c.circuit_id}`}
+                              pubTitle={c.circuit_title ?? undefined} itemApiBase="/interactions/circuit" commentApiBase="/interactions" />
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Tab: Réseau */}
+            {activeTab === "reseau" && (
+              <div className="space-y-4">
+                {/* Suivi(e)s */}
+                <div className="bg-white rounded-3xl shadow-sm border border-slate-100 p-6">
+                  <div className="flex items-center gap-2 mb-5">
+                    <span className="material-symbols-outlined text-primary text-lg">person_add</span>
+                    <h2 className="text-base font-extrabold text-slate-800">Suivi(e)s</h2>
+                    <span className="ml-auto bg-primary/10 text-primary text-xs font-black px-2 py-0.5 rounded-full">{theirFollowing.length}</span>
+                  </div>
+                  {theirFollowing.length === 0 ? (
+                    <p className="text-xs text-slate-400 italic text-center py-6">Ne suit personne pour l&apos;instant.</p>
+                  ) : (
+                    <div className="space-y-2">
+                      {theirFollowing.map((f) => {
+                        const isCommon = myConnectionIds.has(f.user_id) && f.user_id !== viewerId;
+                        const ownPath = f._type === "guide" ? "/profile/guide" : f._type === "provider" ? "/profile/provider" : "/profile/ecovoyageur";
+                        const pubPath = f._type === "guide" ? `/profile/guide/${f.user_id}` : f._type === "provider" ? `/profile/provider/${f.user_id}` : `/profile/ecovoyageur/${f.user_id}`;
+                        const path = f.user_id === viewerId ? ownPath : pubPath;
                         return (
-                          <span key={d} className="flex items-center gap-1.5 bg-primary/10 text-primary border border-primary/20 rounded-xl px-3 py-1.5 text-xs font-bold">
-                            <span className="material-symbols-outlined text-sm">{m?.icon ?? "label"}</span>{m?.label ?? d}
-                          </span>
+                          <button key={f.user_id} onClick={() => router.push(path)}
+                            className="w-full flex items-center gap-3 hover:bg-slate-50 rounded-2xl px-3 py-2.5 transition-colors text-left">
+                            <div className="w-10 h-10 rounded-xl bg-slate-100 overflow-hidden flex items-center justify-center shrink-0">
+                              {f.photo ? <img src={f.photo} alt={f.full_name ?? ""} className="w-full h-full object-cover" /> : <span className="material-symbols-outlined text-slate-400 text-base">person</span>}
+                            </div>
+                            <p className="text-sm font-extrabold text-slate-800 truncate flex-1">{f.full_name ?? "—"}</p>
+                            {isCommon && <span className="shrink-0 text-[10px] font-black px-2 py-0.5 rounded-full bg-primary/10 text-primary whitespace-nowrap">En commun</span>}
+                          </button>
                         );
+                      })}
+                    </div>
+                  )}
+                </div>
+                {/* Followers */}
+                <div className="bg-white rounded-3xl shadow-sm border border-slate-100 p-6">
+                  <div className="flex items-center gap-2 mb-5">
+                    <span className="material-symbols-outlined text-primary text-lg">group</span>
+                    <h2 className="text-base font-extrabold text-slate-800">Mes abonnés</h2>
+                    <span className="ml-auto bg-primary/10 text-primary text-xs font-black px-2 py-0.5 rounded-full">{theirFollowers.length}</span>
+                  </div>
+                  {theirFollowers.length === 0 ? (
+                    <p className="text-xs text-slate-400 italic text-center py-6">Aucun abonné pour l&apos;instant.</p>
+                  ) : (
+                    <div className="space-y-2">
+                      {theirFollowers.map((f) => {
+                        const isCommon = myConnectionIds.has(f.user_id) && f.user_id !== viewerId;
+                        const ownPath = f._type === "guide" ? "/profile/guide" : f._type === "project" ? "/profile/project-owner" : "/profile/ecovoyageur";
+                        const pubPath = f._type === "guide" ? `/profile/guide/${f.user_id}` : f._type === "project" ? `/profile/project-owner/${f.user_id}` : `/profile/ecovoyageur/${f.user_id}`;
+                        const path = f.user_id === viewerId ? ownPath : pubPath;
+                        return (
+                          <button key={f.user_id} onClick={() => router.push(path)}
+                            className="w-full flex items-center gap-3 hover:bg-slate-50 rounded-2xl px-3 py-2.5 transition-colors text-left">
+                            <div className="w-10 h-10 rounded-xl bg-slate-100 overflow-hidden flex items-center justify-center shrink-0">
+                              {f.photo ? <img src={f.photo} alt={f.full_name ?? ""} className="w-full h-full object-cover" /> : <span className="material-symbols-outlined text-slate-400 text-base">person</span>}
+                            </div>
+                            <p className="text-sm font-extrabold text-slate-800 truncate flex-1">{f.full_name ?? "—"}</p>
+                            {isCommon && <span className="shrink-0 text-[10px] font-black px-2 py-0.5 rounded-full bg-primary/10 text-primary whitespace-nowrap">En commun</span>}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Tab: À propos */}
+            {activeTab === "apropos" && (
+              <div className="space-y-4">
+                {/* Bio + infos clés */}
+                {(profile.bio || (profile.years_experience !== null && profile.years_experience !== undefined) || (profile.domaines?.length ?? 0) > 0 || (profile.expertises?.length ?? 0) > 0 || profile.pourquoi_moi) && (
+                  <div className="bg-white rounded-3xl shadow-sm border border-slate-100 p-6 space-y-4">
+                    {profile.bio && (
+                      <div>
+                        <p className="text-[10px] font-black text-slate-400 tracking-widest uppercase mb-2">Présentation</p>
+                        <p className="text-sm text-slate-600 leading-relaxed">{profile.bio}</p>
+                      </div>
+                    )}
+                    {(profile.years_experience !== null && profile.years_experience !== undefined) && (
+                      <div className="flex items-start gap-3">
+                        <div className="mt-0.5 p-1.5 rounded-lg bg-slate-50 text-slate-400"><Star size={15} /></div>
+                        <div>
+                          <p className="text-[10px] font-extrabold text-slate-400 tracking-wider uppercase">Années d&apos;expérience</p>
+                          <p className="text-sm font-semibold text-slate-700 mt-0.5">{profile.years_experience} ans</p>
+                        </div>
+                      </div>
+                    )}
+                    {profile.domaines && profile.domaines.length > 0 && (
+                      <div>
+                        <p className="text-[10px] font-black text-slate-400 tracking-widest uppercase mb-2">Domaines d&apos;expertise</p>
+                        <div className="flex flex-wrap gap-2">
+                          {profile.domaines.map((d) => {
+                            const m = DOMAINES_META[d];
+                            return (
+                              <span key={d} className="flex items-center gap-1.5 bg-primary/10 text-primary border border-primary/20 rounded-xl px-3 py-1.5 text-xs font-bold">
+                                <span className="material-symbols-outlined text-sm">{m?.icon ?? "label"}</span>{m?.label ?? d}
+                              </span>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+                    {profile.expertises && profile.expertises.length > 0 && (
+                      <div>
+                        <p className="text-[10px] font-black text-slate-400 tracking-widest uppercase mb-2">Expertises</p>
+                        <div className="flex flex-wrap gap-2">
+                          {profile.expertises.map((e) => (
+                            <span key={e} className="bg-emerald-50 text-emerald-700 border border-emerald-100 rounded-xl px-3 py-1.5 text-xs font-bold">{e}</span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    {profile.pourquoi_moi && (
+                      <div>
+                        <p className="text-[10px] font-black text-slate-400 tracking-widest uppercase mb-2">Pourquoi choisir ce guide ?</p>
+                        <p className="text-sm text-slate-600 leading-relaxed whitespace-pre-line">{profile.pourquoi_moi}</p>
+                      </div>
+                    )}
+                  </div>
+                )}
+                {((profile.zones_couvertes?.length ?? 0) > 0 || (profile.villes_couvertes?.length ?? 0) > 0 || (profile.sites_maitrises?.length ?? 0) > 0) && (
+                  <div className="bg-white rounded-3xl shadow-sm border border-slate-100 p-6 space-y-4">
+                    <p className="text-[10px] font-black text-slate-400 tracking-widest uppercase">Zone d&apos;activité</p>
+                    {profile.zones_couvertes && profile.zones_couvertes.length > 0 && (
+                      <div>
+                        <p className="text-xs font-black text-slate-500 mb-2 flex items-center gap-1.5"><span className="material-symbols-outlined text-sm text-slate-400">map</span>Régions</p>
+                        <div className="flex flex-wrap gap-2">{profile.zones_couvertes.map((z) => <span key={z} className="bg-secondary/10 text-secondary border border-secondary/20 rounded-xl px-3 py-1.5 text-xs font-bold">{ZONES_META[z] ?? z}</span>)}</div>
+                      </div>
+                    )}
+                    {profile.villes_couvertes && profile.villes_couvertes.length > 0 && (
+                      <div>
+                        <p className="text-xs font-black text-slate-500 mb-2 flex items-center gap-1.5"><span className="material-symbols-outlined text-sm text-slate-400">location_on</span>Villes &amp; lieux</p>
+                        <div className="flex flex-wrap gap-2">{profile.villes_couvertes.map((v) => <span key={v} className="flex items-center gap-1 bg-slate-50 text-slate-700 border border-slate-200 rounded-xl px-3 py-1.5 text-xs font-bold"><span className="material-symbols-outlined text-xs text-slate-400">place</span>{v}</span>)}</div>
+                      </div>
+                    )}
+                    {profile.sites_maitrises && profile.sites_maitrises.length > 0 && (
+                      <div>
+                        <p className="text-xs font-black text-slate-500 mb-2 flex items-center gap-1.5"><span className="material-symbols-outlined text-sm text-slate-400">landscape</span>Sites maîtrisés</p>
+                        <div className="flex flex-wrap gap-2 mb-3">{profile.sites_maitrises.map((s) => <span key={s} className="flex items-center gap-1 bg-secondary/10 text-secondary border border-secondary/20 rounded-xl px-3 py-1.5 text-xs font-bold"><span className="material-symbols-outlined text-xs text-secondary/60">landscape</span>{s}</span>)}</div>
+                        <LieuxMap lieux={profile.sites_maitrises} />
+                      </div>
+                    )}
+                  </div>
+                )}
+                {profile.publics_accueillis && profile.publics_accueillis.length > 0 && (
+                  <div className="bg-white rounded-3xl shadow-sm border border-slate-100 p-6">
+                    <p className="text-[10px] font-black text-slate-400 tracking-widest uppercase mb-3">Publics accueillis</p>
+                    <div className="flex flex-wrap gap-2">
+                      {profile.publics_accueillis.map((p) => {
+                        const m = PUBLICS_META[p];
+                        return <span key={p} className="flex items-center gap-1.5 bg-orange-50 text-orange-700 border border-orange-100 rounded-xl px-3 py-1.5 text-xs font-bold"><span className="material-symbols-outlined text-sm">{m?.icon ?? "group"}</span>{m?.label ?? p}</span>;
                       })}
                     </div>
                   </div>
                 )}
-                {profile.expertises && profile.expertises.length > 0 && (
-                  <div>
-                    <p className="text-[10px] font-black text-slate-400 tracking-widest uppercase mb-3">Expertises</p>
+                {(profile.experience_pro || profile.centres_interet) && (
+                  <div className="bg-white rounded-3xl shadow-sm border border-slate-100 p-6 space-y-4">
+                    {profile.experience_pro && (
+                      <div>
+                        <p className="text-[10px] font-black text-slate-400 tracking-widest uppercase mb-2">Expérience professionnelle</p>
+                        <p className="text-sm text-slate-600 leading-relaxed whitespace-pre-line">{profile.experience_pro}</p>
+                      </div>
+                    )}
+                    {profile.centres_interet && (
+                      <div>
+                        <p className="text-[10px] font-black text-slate-400 tracking-widest uppercase mb-2">Centres d&apos;intérêt</p>
+                        <p className="text-sm text-slate-600 leading-relaxed whitespace-pre-line">{profile.centres_interet}</p>
+                      </div>
+                    )}
+                  </div>
+                )}
+                {profile.languages_spoken && profile.languages_spoken.length > 0 && (
+                  <div className="bg-white rounded-3xl shadow-sm border border-slate-100 p-6">
+                    <p className="text-[10px] font-black text-slate-400 tracking-widest uppercase mb-3">Langues parlées</p>
                     <div className="flex flex-wrap gap-2">
-                      {profile.expertises.map((e) => (
-                        <span key={e} className="bg-emerald-50 text-emerald-700 border border-emerald-100 rounded-xl px-3 py-1.5 text-xs font-bold">{e}</span>
+                      {profile.languages_spoken.map((l) => (
+                        <span key={l} className="bg-sky-50 text-sky-700 border border-sky-100 rounded-xl px-3 py-1.5 text-xs font-bold">{LANG_LABELS[l] ?? l}</span>
                       ))}
                     </div>
                   </div>
@@ -624,146 +1297,10 @@ export default function PublicGuideProfile() {
               </div>
             )}
 
-            {/* Zone d'activité */}
-            {((profile.zones_couvertes?.length ?? 0) > 0 || (profile.villes_couvertes?.length ?? 0) > 0 || (profile.sites_maitrises?.length ?? 0) > 0) && (
-              <div className="bg-white rounded-3xl shadow-sm border border-slate-100 p-6 space-y-4">
-                <p className="text-[10px] font-black text-slate-400 tracking-widest uppercase">Zone d'activité</p>
-                {profile.zones_couvertes && profile.zones_couvertes.length > 0 && (
-                  <div>
-                    <p className="text-xs font-black text-slate-500 mb-2 flex items-center gap-1.5">
-                      <span className="material-symbols-outlined text-sm text-slate-400">map</span>Régions
-                    </p>
-                    <div className="flex flex-wrap gap-2">
-                      {profile.zones_couvertes.map((z) => (
-                        <span key={z} className="bg-secondary/10 text-secondary border border-secondary/20 rounded-xl px-3 py-1.5 text-xs font-bold">{ZONES_META[z] ?? z}</span>
-                      ))}
-                    </div>
-                  </div>
-                )}
-                {profile.villes_couvertes && profile.villes_couvertes.length > 0 && (
-                  <div>
-                    <p className="text-xs font-black text-slate-500 mb-2 flex items-center gap-1.5">
-                      <span className="material-symbols-outlined text-sm text-slate-400">location_on</span>Villes & lieux
-                    </p>
-                    <div className="flex flex-wrap gap-2">
-                      {profile.villes_couvertes.map((v) => (
-                        <span key={v} className="flex items-center gap-1 bg-slate-50 text-slate-700 border border-slate-200 rounded-xl px-3 py-1.5 text-xs font-bold">
-                          <span className="material-symbols-outlined text-xs text-slate-400">place</span>{v}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                )}
-                {profile.sites_maitrises && profile.sites_maitrises.length > 0 && (
-                  <div>
-                    <p className="text-xs font-black text-slate-500 mb-2 flex items-center gap-1.5">
-                      <span className="material-symbols-outlined text-sm text-slate-400">landscape</span>Sites maîtrisés
-                    </p>
-                    <div className="flex flex-wrap gap-2 mb-3">
-                      {profile.sites_maitrises.map((s) => (
-                        <span key={s} className="flex items-center gap-1 bg-secondary/10 text-secondary border border-secondary/20 rounded-xl px-3 py-1.5 text-xs font-bold">
-                          <span className="material-symbols-outlined text-xs text-secondary/60">landscape</span>{s}
-                        </span>
-                      ))}
-                    </div>
-                    <LieuxMap lieux={profile.sites_maitrises} />
-                  </div>
-                )}
-                {profile.deplacement_possible !== null && (
-                  <p className="text-xs font-semibold text-slate-500 flex items-center gap-1.5">
-                    <span className="material-symbols-outlined text-sm text-teal-500">directions_car</span>
-                    Déplacement hors zone : <span className="font-bold text-slate-700 ml-1">{profile.deplacement_possible ? "Possible" : "Non disponible"}</span>
-                  </p>
-                )}
-              </div>
-            )}
-
-            {/* Publics */}
-            {profile.publics_accueillis && profile.publics_accueillis.length > 0 && (
-              <div className="bg-white rounded-3xl shadow-sm border border-slate-100 p-6">
-                <p className="text-[10px] font-black text-slate-400 tracking-widest uppercase mb-3">Publics accueillis</p>
-                <div className="flex flex-wrap gap-2">
-                  {profile.publics_accueillis.map((p) => {
-                    const m = PUBLICS_META[p];
-                    return (
-                      <span key={p} className="flex items-center gap-1.5 bg-orange-50 text-orange-700 border border-orange-100 rounded-xl px-3 py-1.5 text-xs font-bold">
-                        <span className="material-symbols-outlined text-sm">{m?.icon ?? "group"}</span>{m?.label ?? p}
-                      </span>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
-
-            {/* Textes de présentation complémentaires */}
-            {(profile.experience_pro || profile.centres_interet || profile.pourquoi_moi) && (
-              <div className="bg-white rounded-3xl shadow-sm border border-slate-100 p-6 space-y-4">
-                {profile.experience_pro && (
-                  <div>
-                    <p className="text-[10px] font-black text-slate-400 tracking-widest uppercase mb-2">Expérience professionnelle</p>
-                    <p className="text-sm text-slate-600 leading-relaxed whitespace-pre-line">{profile.experience_pro}</p>
-                  </div>
-                )}
-                {profile.centres_interet && (
-                  <div>
-                    <p className="text-[10px] font-black text-slate-400 tracking-widest uppercase mb-2">Centres d'intérêt</p>
-                    <p className="text-sm text-slate-600 leading-relaxed whitespace-pre-line">{profile.centres_interet}</p>
-                  </div>
-                )}
-                {profile.pourquoi_moi && (
-                  <div>
-                    <p className="text-[10px] font-black text-slate-400 tracking-widest uppercase mb-2">Pourquoi choisir ce guide ?</p>
-                    <p className="text-sm text-slate-600 leading-relaxed whitespace-pre-line">{profile.pourquoi_moi}</p>
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* Langues */}
-            {profile.languages_spoken && profile.languages_spoken.length > 0 && (
-              <div className="bg-white rounded-3xl shadow-sm border border-slate-100 p-6">
-                <p className="text-[10px] font-black text-slate-400 tracking-widest uppercase mb-3">Langues parlées</p>
-                <div className="flex flex-wrap gap-2">
-                  {profile.languages_spoken.map((l) => (
-                    <span key={l} className="bg-sky-50 text-sky-700 border border-sky-100 rounded-xl px-3 py-1.5 text-xs font-bold">{LANG_LABELS[l] ?? l}</span>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            <div className="bg-white rounded-3xl shadow-sm border border-slate-100 overflow-hidden">
-              <div className="px-6 py-5 border-b border-slate-100">
-                <h2 className="text-base font-extrabold text-slate-800">Offres</h2>
-                <p className="text-xs text-slate-400 font-medium mt-0.5">
-                  {profile.offers.length === 0 ? "Aucune offre publiée" : `${profile.offers.length} offre${profile.offers.length > 1 ? "s" : ""}`}
-                </p>
-              </div>
-              {profile.offers.length === 0 ? (
-                <div className="py-16 text-center"><Leaf size={40} className="text-slate-200 mx-auto mb-3" /><p className="text-slate-400 font-semibold text-sm">Aucune offre pour l'instant.</p></div>
-              ) : (
-                <div className="p-4 space-y-4">
-                  {profile.offers.map((o) => (
-                    <div key={o.id} ref={(el) => { offerRefs.current[o.id] = el; }}
-                      className={`bg-white rounded-3xl border shadow-sm overflow-hidden hover:shadow-md transition-shadow ${highlightedOfferId === o.id ? "border-primary ring-2 ring-primary ring-offset-2" : "border-slate-100"}`}>
-                      <OfferCard offer={o} onClick={() => { setSelectedOffer(o); setSliderIdx(0); }} />
-                      <PubInteractions
-                        pubId={o.id}
-                        token={token}
-                        viewerId={viewerId}
-                        shareUrl={`${typeof window !== "undefined" ? window.location.origin : ""}/profile/guide/${userId}?offer=${o.id}`}
-                        pubTitle={o.title}
-                        itemApiBase="/interactions/offer"
-                        commentApiBase="/interactions"
-                      />
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
           </div>
-
         </div>
       </div>
+    </div>
 
       {/* Report modal */}
       {reportOpen && (
@@ -795,701 +1332,6 @@ export default function PublicGuideProfile() {
         </div>
       )}
 
-      {/* ══ OFFER DETAIL MODAL — organisé par étapes ══ */}
-      {selectedOffer && (() => {
-        const o = selectedOffer;
-        const d = (o.details ?? {}) as Record<string, any>;
-        const imgs = o.images?.filter((s) => s?.startsWith("http") || s?.startsWith("data:")) ?? [];
-
-        const GUIDAGE: Record<string,string> = { guidage_seul:"Guidage seul", avec_transport:"+ Transport", transport_repas:"+ Transport & Repas", immersion:"Immersion complète", sur_mesure:"Sur mesure" };
-        const PRESTATION: Record<string,string> = { visite_guidee:"Visite guidée", randonnee:"Randonnée", excursion:"Excursion", atelier:"Atelier", transfert:"Transfert", sur_mesure:"Sur mesure" };
-        const ANNUL: Record<string,string> = { flexible:"Flexible", moderate:"Modérée", stricte:"Stricte", non_remboursable:"Non remboursable" };
-        const CONF: Record<string,string> = { instant:"Instantanée", manual:"Manuelle", conditional:"Sous conditions" };
-        const PUBLIC_ICONS: Record<string,string> = { familles:"family_restroom", adultes:"person", seniors:"elderly", enfants:"child_care", groupes:"groups", photographes:"photo_camera", tous_publics:"diversity_3" };
-        const PUBLIC_LABELS: Record<string,string> = { familles:"Familles", adultes:"Adultes", seniors:"Seniors", enfants:"Enfants", groupes:"Groupes", photographes:"Photographes", tous_publics:"Tous publics" };
-
-        const langs: string[] = Array.isArray(d.langue_guidage) ? d.langue_guidage : [];
-        const inclus: string[] = Array.isArray(d.inclus_resume) ? d.inclus_resume : (o.inclusions ? o.inclusions.split("||") : []);
-        const pointsForts: string[] = Array.isArray(d.points_forts) ? d.points_forts : [];
-        const lieux: string[] = Array.isArray(d.lieux_visites) ? d.lieux_visites : [];
-        const expertises: string[] = Array.isArray(d.expertises_offre) ? d.expertises_offre : [];
-        const publicRec: string[] = Array.isArray(d.public_recommande) ? d.public_recommande : [];
-        const domDetails = d.domaine_details as Record<string,any> | null | undefined;
-
-        // ── composants locaux ──
-        const SH = ({ icon, title: t }: { icon: string; title: string }) => (
-          <div className="flex items-center gap-2.5 mb-4">
-            <div className="w-7 h-7 rounded-xl bg-primary/10 flex items-center justify-center shrink-0">
-              <span className="material-symbols-outlined text-primary text-[18px]">{icon}</span>
-            </div>
-            <h3 className="text-sm font-extrabold text-slate-700 tracking-wide">{t}</h3>
-            <div className="flex-1 h-px bg-slate-100"/>
-          </div>
-        );
-
-        return (
-          <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-3" onClick={() => setSelectedOffer(null)}>
-            <div className="bg-white rounded-3xl w-full max-w-2xl max-h-[92vh] flex flex-col shadow-2xl overflow-hidden" onClick={(e) => e.stopPropagation()}>
-
-              {/* ── HERO ── */}
-              <div className="relative shrink-0">
-                {imgs.length > 0 ? (
-                  <div className="h-52 overflow-hidden">
-                    <div className="absolute inset-0 bg-cover bg-center transition-all duration-500" style={{ backgroundImage: `url('${imgs[sliderIdx]}')` }} />
-                    {imgs.length>1 && <>
-                      <button onClick={(e)=>{e.stopPropagation();setSliderIdx(i=>(i-1+imgs.length)%imgs.length);}} className="absolute left-3 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-black/50 text-white flex items-center justify-center z-10"><ChevronLeft size={16}/></button>
-                      <button onClick={(e)=>{e.stopPropagation();setSliderIdx(i=>(i+1)%imgs.length);}} className="absolute right-3 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-black/50 text-white flex items-center justify-center z-10"><ChevronRight size={16}/></button>
-                    </>}
-                  </div>
-                ) : (
-                  <div className="h-44 bg-gradient-to-br from-emerald-500 to-teal-400 flex items-center justify-center">
-                    <span className="material-symbols-outlined text-white/30" style={{fontSize:80}}>hiking</span>
-                  </div>
-                )}
-                <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent"/>
-                <div className="absolute bottom-0 left-0 right-0 px-5 pb-4">
-                  <div className="flex flex-wrap gap-1.5 mb-2">
-                    {d.type_guidage_offre && <span className="text-[10px] font-black uppercase tracking-widest bg-primary text-slate-900 px-2.5 py-0.5 rounded-lg">{GUIDAGE[d.type_guidage_offre]??d.type_guidage_offre}</span>}
-                    {d.type_prestation && <span className="text-[10px] font-bold bg-white/20 text-white px-2 py-0.5 rounded-lg backdrop-blur-sm">{PRESTATION[d.type_prestation]??d.type_prestation}</span>}
-                  </div>
-                  <h2 className="text-lg font-extrabold text-white leading-tight drop-shadow">{o.title}</h2>
-                  <div className="flex items-center gap-3 mt-1 flex-wrap">
-                    {o.price!=null && <span className="text-sm font-black text-primary">{o.price} DT</span>}
-                    {o.duration && <span className="text-[11px] font-bold text-white/90 flex items-center gap-1"><Clock size={10}/>{o.duration}</span>}
-                    {o.region && <span className="text-[11px] font-bold text-white/90 flex items-center gap-1"><MapPin size={10}/>{o.region}</span>}
-                  </div>
-                </div>
-                <button onClick={()=>setSelectedOffer(null)} className="absolute top-3 right-3 w-8 h-8 rounded-full bg-black/40 hover:bg-black/60 text-white flex items-center justify-center z-10"><X size={15}/></button>
-              </div>
-
-              {/* ── BODY ── */}
-              <div className="flex-1 overflow-y-auto p-5 space-y-6">
-
-                {/* Photo strip */}
-                {imgs.length>1 && (
-                  <div className="flex gap-2 overflow-x-auto pb-0.5">
-                    {imgs.map((src,i)=>(
-                      <button key={i} onClick={()=>setSliderIdx(i)} className={`shrink-0 w-14 h-14 rounded-xl overflow-hidden border-2 transition-all ${i===sliderIdx?"border-primary":"border-transparent opacity-60"}`}>
-                        <img src={src} alt="" className="w-full h-full object-cover"/>
-                      </button>
-                    ))}
-                  </div>
-                )}
-
-                {/* Présentation */}
-                <section>
-                  <SH icon="description" title="Présentation de l'offre"/>
-                  {/* Type de guidage + Type de prestation */}
-                  <div className="flex flex-wrap gap-2 mb-4">
-                    {d.type_guidage_offre && (
-                      <div className="flex items-center gap-2 bg-primary/5 border border-primary/20 rounded-2xl px-4 py-2.5">
-                        <span className="material-symbols-outlined text-primary text-lg">hiking</span>
-                        <div>
-                          <p className="text-[8px] font-black tracking-widest text-primary/60 uppercase">Type de guidage</p>
-                          <p className="text-xs font-extrabold text-primary leading-tight">{GUIDAGE[d.type_guidage_offre]??d.type_guidage_offre}</p>
-                        </div>
-                      </div>
-                    )}
-                    {d.type_prestation && (
-                      <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-2xl px-4 py-2.5">
-                        <span className="material-symbols-outlined text-slate-500 text-lg">category</span>
-                        <div>
-                          <p className="text-[8px] font-black tracking-widest text-slate-400 uppercase">Type de prestation</p>
-                          <p className="text-xs font-extrabold text-slate-700 leading-tight">{PRESTATION[d.type_prestation]??d.type_prestation}</p>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                  {o.description && <p className="text-sm text-slate-600 leading-relaxed mb-2">{o.description}</p>}
-                  {d.description_longue && <p className="text-sm text-slate-500 leading-relaxed whitespace-pre-line mb-4">{String(d.description_longue)}</p>}
-                  {d.difficulte_physique && (
-                    <div className="flex items-center gap-2 mb-4 bg-slate-50 border border-slate-100 rounded-xl px-3 py-2 w-fit">
-                      <span className="material-symbols-outlined text-primary text-sm">fitness_center</span>
-                      <span className="text-xs font-bold text-slate-600">Niveau d'expérience : <span className="text-slate-800">{d.difficulte_physique}</span></span>
-                    </div>
-                  )}
-                  {/* Points forts — grille 2 colonnes */}
-                  {pointsForts.length>0 && (
-                    <div className="mb-4">
-                      <p className="text-[9px] font-black tracking-widest text-slate-400 uppercase mb-2 flex items-center gap-1.5">
-                        <span className="material-symbols-outlined text-amber-400 text-sm">star</span>Points forts
-                      </p>
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                        {pointsForts.map((pf,i)=>(
-                          <div key={i} className="flex items-center gap-2.5 bg-amber-50 border border-amber-100 rounded-2xl p-3">
-                            <div className="w-6 h-6 rounded-full bg-amber-200/60 flex items-center justify-center shrink-0">
-                              <span className="material-symbols-outlined text-amber-500 text-sm">star</span>
-                            </div>
-                            <span className="text-xs font-bold text-amber-800 leading-tight">{pf}</span>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                  {/* Public recommandé — badges avec icônes */}
-                  {publicRec.length>0 && (
-                    <div>
-                      <p className="text-[9px] font-black tracking-widest text-slate-400 uppercase mb-2 flex items-center gap-1.5">
-                        <span className="material-symbols-outlined text-secondary/60 text-sm">groups</span>Public recommandé
-                      </p>
-                      <div className="flex flex-wrap gap-2">
-                        {publicRec.map(p=>(
-                          <div key={p} className="flex items-center gap-1.5 bg-secondary/10 border border-secondary/20 rounded-2xl px-3 py-2">
-                            <span className="material-symbols-outlined text-secondary text-base">{PUBLIC_ICONS[p]??'person'}</span>
-                            <span className="text-xs font-bold text-secondary">{PUBLIC_LABELS[p]??p}</span>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </section>
-
-                {/* Expertises & cascade */}
-                {(expertises.length>0||domDetails) && (() => {
-                  const domaineKey = (d.domaine_offre as string|undefined) ?? profile.domaines?.[0] ?? undefined;
-                  const cascadeCfg = domaineKey ? (DOMAIN_CASCADE_CONFIG[domaineKey] ?? null) : null;
-                  const cascade = d.domaine_details as { types_visite?: string[]; experiences?: string[]; mediation?: string[] } | null | undefined;
-                  const selTypes: string[] = cascade?.types_visite ?? [];
-                  const selExp: string[] = cascade?.experiences ?? [];
-                  const selMed: string[] = cascade?.mediation ?? [];
-                  const hasAnyCascade = selTypes.length>0||selExp.length>0||selMed.length>0;
-                  if (!expertises.length && !hasAnyCascade && !domDetails) return null;
-                  const CL_STYLES = {
-                    expertises:   { border:"border-secondary/70",  text:"text-secondary",  icon:"eco"            },
-                    types:        { border:"border-secondary/70",  text:"text-secondary",  icon:"landscape"      },
-                    experiences:  { border:"border-secondary/70",  text:"text-secondary",  icon:"explore"        },
-                    supports:     { border:"border-secondary/70",  text:"text-secondary",  icon:"backpack"       },
-                  } as const;
-                  const CL = ({ label, tone }: { label: string; tone: keyof typeof CL_STYLES }) => {
-                    const s = CL_STYLES[tone];
-                    return (
-                      <div className={`flex items-center gap-2 border-l-[3px] ${s.border} pl-3 py-1 mb-3`}>
-                        <span className={`material-symbols-outlined text-[17px] ${s.text}`}>{s.icon}</span>
-                        <span className={`text-[11px] font-extrabold tracking-wide ${s.text}`}>{label}</span>
-                      </div>
-                    );
-                  };
-                  return (
-                    <section>
-                      <SH icon="psychology" title="Expertises & Détails"/>
-
-                      {/* Niveau 1 — Expertises */}
-                      {expertises.length>0 && (
-                        <div className="mb-4">
-                          <CL label="Expertises" tone="expertises"/>
-                          <div className="flex flex-wrap gap-2">
-                            {expertises.map((e,i)=>(
-                              <span key={i} className="flex items-center gap-1.5 bg-secondary/10 border border-secondary/20 text-secondary text-xs font-bold px-3 py-2 rounded-2xl">
-                                <span className="material-symbols-outlined text-sm">psychology</span>{e}
-                              </span>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Niveau 2 — Types (groupés par expertise si plusieurs) */}
-                      {selTypes.length>0 && (
-                        <div className="mb-4">
-                          <CL label={cascadeCfg?.labelType ?? "Types sélectionnés"} tone="types"/>
-                          {cascadeCfg && expertises.length>0 ? (
-                            <div className="space-y-2">
-                              {expertises.map(exp=>{
-                                const expTypes = (cascadeCfg.typesByExpertise[exp] ?? cascadeCfg.typesByExpertise["_default"] ?? []).filter(t=>selTypes.includes(t));
-                                if (!expTypes.length) return null;
-                                return (
-                                  <div key={exp}>
-                                    {expertises.length>1 && <p className="text-[10px] font-bold text-slate-400 mb-1 pl-0.5">{exp}</p>}
-                                    <div className="flex flex-wrap gap-1.5">
-                                      {expTypes.map(t=><span key={t} className="bg-secondary/10 text-secondary text-xs font-bold px-3 py-1.5 rounded-xl">{t}</span>)}
-                                    </div>
-                                  </div>
-                                );
-                              })}
-                            </div>
-                          ) : (
-                            <div className="flex flex-wrap gap-1.5">
-                              {selTypes.map(t=><span key={t} className="bg-secondary/10 text-secondary text-xs font-bold px-3 py-1.5 rounded-xl">{t}</span>)}
-                            </div>
-                          )}
-                        </div>
-                      )}
-
-                      {/* Niveau 3 — Expériences incluses (groupées par type si plusieurs) */}
-                      {selExp.length>0 && (
-                        <div className="mb-4">
-                          <CL label={cascadeCfg?.labelExperiences ?? "Activités & expériences incluses"} tone="experiences"/>
-                          {cascadeCfg && selTypes.length>0 ? (
-                            <div className="space-y-3">
-                              {selTypes.map(t=>{
-                                const tExps = (cascadeCfg.experiencesByType[t] ?? cascadeCfg.experiencesByType["_default"] ?? []).filter(e=>selExp.includes(e));
-                                if (!tExps.length) return null;
-                                return (
-                                  <div key={t}>
-                                    {selTypes.length>1 && <p className="text-[10px] font-bold text-secondary/60 mb-1.5 pl-0.5">{t}</p>}
-                                    <div className="space-y-1">
-                                      {tExps.map(e=>(
-                                        <div key={e} className="flex items-start gap-2 text-sm text-slate-700">
-                                          <span className="w-1.5 h-1.5 rounded-full bg-secondary/50 shrink-0 mt-1.5"/>
-                                          {e}
-                                        </div>
-                                      ))}
-                                    </div>
-                                  </div>
-                                );
-                              })}
-                            </div>
-                          ) : (
-                            <div className="space-y-1">
-                              {selExp.map(e=>(
-                                <div key={e} className="flex items-start gap-2 text-sm text-slate-700">
-                                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0 mt-1.5"/>{e}
-                                </div>
-                              ))}
-                            </div>
-                          )}
-                        </div>
-                      )}
-
-                      {/* Niveau 4 — Matériel & Supports (groupés par type si plusieurs) */}
-                      {selMed.length>0 && (
-                        <div>
-                          <CL label={cascadeCfg?.labelMediation ?? "Matériel & supports fournis"} tone="supports"/>
-                          {cascadeCfg && selTypes.length>0 ? (
-                            <div className="space-y-3">
-                              {selTypes.map(t=>{
-                                const tMed = (cascadeCfg.mediationByType[t] ?? cascadeCfg.mediationByType["_default"] ?? []).filter(m=>selMed.includes(m));
-                                if (!tMed.length) return null;
-                                return (
-                                  <div key={t}>
-                                    {selTypes.length>1 && <p className="text-[10px] font-bold text-slate-400 mb-1.5 pl-0.5">{t}</p>}
-                                    <div className="flex flex-wrap gap-1.5">
-                                      {tMed.map(m=><span key={m} className="bg-secondary/10 border border-secondary/20 text-secondary text-[11px] font-bold px-2.5 py-1.5 rounded-xl">{m}</span>)}
-                                    </div>
-                                  </div>
-                                );
-                              })}
-                            </div>
-                          ) : (
-                            <div className="flex flex-wrap gap-1.5">
-                              {selMed.map(m=><span key={m} className="bg-secondary/10 border border-secondary/20 text-secondary text-[11px] font-bold px-2.5 py-1.5 rounded-xl">{m}</span>)}
-                            </div>
-                          )}
-                        </div>
-                      )}
-
-                      {/* Champs domaine non-cascade */}
-                      {!cascadeCfg && domDetails && (
-                        <div className="grid grid-cols-2 gap-x-4 gap-y-2 bg-slate-50 border border-slate-100 rounded-2xl p-4 mt-3">
-                          {Object.entries(domDetails).filter(([,v])=>v!=null&&v!==''&&!(Array.isArray(v)&&!v.length)).map(([k,v])=>(
-                            <div key={k}>
-                              <p className="text-[8px] font-black tracking-widest text-slate-400 uppercase">{k.replace(/_/g,' ')}</p>
-                              <p className="text-[11px] font-bold text-slate-700">{Array.isArray(v)?(v as string[]).join(', '):String(v)}</p>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </section>
-                  );
-                })()}
-
-                {/* Localisation */}
-                <section>
-                  <SH icon="map" title="Localisation"/>
-                  {o.meeting_point && (
-                    <>
-                      <div className="rounded-2xl overflow-hidden border border-slate-200 shadow-sm mb-3">
-                        <OfferMap lat={o.meeting_lat} lng={o.meeting_lng} fallbackLat={d.lieu_lat as number|null} fallbackLng={d.lieu_lng as number|null} address={o.meeting_point ?? ""}/>
-                      </div>
-                      <div className="flex items-start gap-3 mb-3">
-                        <div className="w-8 h-8 rounded-xl bg-emerald-50 border border-emerald-100 flex items-center justify-center shrink-0">
-                          <span className="material-symbols-outlined text-emerald-600 text-sm">location_on</span>
-                        </div>
-                        <div>
-                          <p className="text-[9px] font-black tracking-widest text-slate-400 uppercase mb-0.5">Point de départ / Point de rendez-vous</p>
-                          <p className="text-sm font-bold text-slate-800 leading-tight">{o.meeting_point}</p>
-                          {d.lieu_precis && d.lieu_precis!==o.meeting_point && <p className="text-xs text-slate-500 mt-1">{d.lieu_precis}</p>}
-                        </div>
-                      </div>
-                    </>
-                  )}
-                  <div className="flex flex-wrap gap-2 mb-3">
-                    {o.duration && (
-                      <div className="flex items-center gap-2 bg-slate-50 border border-slate-100 rounded-xl px-3 py-2">
-                        <Clock size={13} className="text-primary"/>
-                        <div><p className="text-[8px] font-black tracking-widest text-slate-400 uppercase">Durée</p><p className="text-xs font-bold text-slate-700">{o.duration}</p></div>
-                      </div>
-                    )}
-                    {d.heure_depart && d.heure_depart!=="00:00" && (
-                      <div className="flex items-center gap-2 bg-slate-50 border border-slate-100 rounded-xl px-3 py-2">
-                        <span className="material-symbols-outlined text-primary text-sm">alarm</span>
-                        <div><p className="text-[8px] font-black tracking-widest text-slate-400 uppercase">Heure de départ</p><p className="text-xs font-bold text-slate-700">{d.heure_depart}</p></div>
-                      </div>
-                    )}
-                  </div>
-                  {/* Sites / Lieux visités */}
-                  {lieux.length>0 && (
-                    <div>
-                      <p className="text-[9px] font-black tracking-widest text-slate-400 uppercase mb-3 flex items-center gap-1.5">
-                        <span className="material-symbols-outlined text-primary text-sm">route</span>Sites / Lieux visités
-                      </p>
-                      <div className="rounded-2xl overflow-hidden border border-slate-200 shadow-sm mb-3">
-                        <LieuxMap lieux={lieux}/>
-                      </div>
-                      <div className="space-y-1.5">
-                        {lieux.map((l,i)=>(
-                          <div key={i} className="flex items-center gap-3 bg-slate-50 border border-slate-100 rounded-xl px-3 py-2.5">
-                            <div className="w-5 h-5 rounded-full bg-primary text-slate-900 flex items-center justify-center text-[10px] font-black shrink-0">{i+1}</div>
-                            <span className="text-sm font-semibold text-slate-700">{l}</span>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </section>
-
-                {/* Groupe & Conditions */}
-                <section>
-                  <SH icon="groups" title="Groupe & Conditions"/>
-                  <div className="grid grid-cols-2 gap-2.5 mb-4">
-                    {([
-                      { icon:"person", label:"Nb min. participants", val: d.nb_participants_min!=null ? String(d.nb_participants_min) : null },
-                      { icon:"groups", label:"Nb max. participants", val: (d.nb_participants_max!=null||o.max_group_size) ? String(d.nb_participants_max??o.max_group_size) : null },
-                      { icon:"child_care", label:"Âge minimum", val: (d.age_minimum!=null||o.min_age) ? `${d.age_minimum??o.min_age} ans` : null },
-                      { icon:"elderly", label:"Âge maximum", val: d.age_maximum!=null ? `${d.age_maximum} ans` : null },
-                    ] as {icon:string;label:string;val:string|null}[]).filter(it=>it.val!=null).map(({icon,label,val})=>(
-                      <div key={label} className="bg-slate-50 border border-slate-100 rounded-2xl p-3.5 flex items-center gap-3">
-                        <div className="w-9 h-9 rounded-xl bg-primary/10 flex items-center justify-center shrink-0">
-                          <span className="material-symbols-outlined text-primary text-xl">{icon}</span>
-                        </div>
-                        <div>
-                          <p className="text-[8px] font-black tracking-widest text-slate-400 uppercase leading-tight mb-0.5">{label}</p>
-                          <p className="text-xl font-extrabold text-slate-800 leading-none">{val}</p>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                  {langs.length>0 && (
-                    <div className="mb-3">
-                      <p className="text-[9px] font-black tracking-widest text-slate-400 uppercase mb-2 flex items-center gap-1.5">
-                        <span className="material-symbols-outlined text-primary text-sm">translate</span>Langue(s) de guidage
-                      </p>
-                      <div className="flex flex-wrap gap-2">
-                        {langs.map(l=><span key={l} className="flex items-center gap-1.5 bg-primary/5 border border-primary/20 text-primary text-xs font-bold px-3 py-1.5 rounded-xl"><Globe size={12}/>{LANG_LABELS[l] ?? l}</span>)}
-                      </div>
-                    </div>
-                  )}
-                  {d.restrictions_medicales && (
-                    <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 mb-2">
-                      <div className="flex items-center gap-2 mb-1.5">
-                        <span className="material-symbols-outlined text-amber-500 text-base">warning</span>
-                        <p className="text-xs font-extrabold text-amber-700">Restrictions médicales / contre-indications</p>
-                      </div>
-                      <p className="text-sm text-slate-700 leading-relaxed">{d.restrictions_medicales}</p>
-                    </div>
-                  )}
-                  {d.conditions_particulieres && (
-                    <div className="bg-secondary/5 border border-secondary/20 rounded-2xl p-4">
-                      <div className="flex items-center gap-2 mb-1.5">
-                        <span className="material-symbols-outlined text-secondary text-base">info</span>
-                        <p className="text-xs font-extrabold text-secondary">Conditions particulières</p>
-                      </div>
-                      <p className="text-sm text-slate-600 leading-relaxed">{d.conditions_particulieres}</p>
-                    </div>
-                  )}
-                </section>
-
-                {/* Disponibilités */}
-                {d.disponibilite?.type && (() => {
-                  const DISPO_LABELS: Record<string,{label:string;icon:string}> = {
-                    specific:  { label:"Date unique / Dates spécifiques", icon:"calendar_today" },
-                    range:     { label:"Période continue",                icon:"date_range" },
-                    recurring: { label:"Récurrent",                      icon:"event_repeat" },
-                    season:    { label:"Saison",                         icon:"wb_sunny" },
-                  };
-                  const dispType = d.disponibilite.type as string;
-                  const dispMeta = DISPO_LABELS[dispType] ?? { label: dispType, icon: "event" };
-
-                  const rawTs = d.disponibilite.time_slots as Record<string,Array<{start:string;end:string}>> | null | undefined;
-                  const timeWindows: Array<{start:string;end:string}> = rawTs && typeof rawTs === "object" && !Array.isArray(rawTs)
-                    ? Array.from(new Map(Object.values(rawTs).flat().map(w=>[`${w.start}-${w.end}`,w])).values())
-                    : [];
-
-                  const FR_DAYS_DISPLAY = ["Lundi","Mardi","Mercredi","Jeudi","Vendredi","Samedi","Dimanche"];
-                  const days_of_week: string[] = Array.isArray(d.disponibilite.days_of_week) ? d.disponibilite.days_of_week as string[] : [];
-
-                  return (
-                    <section>
-                      <SH icon="calendar_month" title="Disponibilités"/>
-                      <div className="bg-slate-50 rounded-2xl border border-slate-100 overflow-hidden">
-                        <div className="bg-primary/5 border-b border-primary/10 px-4 py-3 flex items-center gap-2">
-                          <span className="material-symbols-outlined text-primary text-base">{dispMeta.icon}</span>
-                          <span className="text-sm font-extrabold text-slate-700">{dispMeta.label}</span>
-                        </div>
-                        <div className="p-4 space-y-4">
-                          {/* Période (range / season) */}
-                          {d.disponibilite.start_date && (
-                            <div className="flex items-center gap-3 bg-white rounded-xl border border-slate-100 px-4 py-3">
-                              <span className="material-symbols-outlined text-primary text-lg">date_range</span>
-                              <div>
-                                <p className="text-[9px] font-black tracking-widest text-slate-400 uppercase mb-0.5">Période</p>
-                                <p className="text-sm font-bold text-slate-700">
-                                  {new Date(d.disponibilite.start_date).toLocaleDateString("fr-FR",{day:"numeric",month:"long",year:"numeric"})}
-                                  {d.disponibilite.end_date && <> → {new Date(d.disponibilite.end_date).toLocaleDateString("fr-FR",{day:"numeric",month:"long",year:"numeric"})}</>}
-                                </p>
-                              </div>
-                            </div>
-                          )}
-                          {/* Jours récurrents */}
-                          {days_of_week.length>0 && (
-                            <div>
-                              <p className="text-[9px] font-black tracking-widest text-slate-400 uppercase mb-2 flex items-center gap-1.5">
-                                <span className="material-symbols-outlined text-primary text-sm">view_week</span>Jours disponibles
-                              </p>
-                              <div className="flex flex-wrap gap-1.5">
-                                {days_of_week.map(d=>{
-                                  const label = FR_DAYS_DISPLAY[parseInt(d)] ?? d;
-                                  return <span key={d} className="bg-secondary/10 text-secondary text-xs font-black px-3 py-1.5 rounded-xl">{label}</span>;
-                                })}
-                              </div>
-                            </div>
-                          )}
-                          {/* Dates spécifiques */}
-                          {Array.isArray(d.disponibilite.dates)&&d.disponibilite.dates.length>0 && (
-                            <div>
-                              <p className="text-[9px] font-black tracking-widest text-slate-400 uppercase mb-2 flex items-center gap-1.5">
-                                <span className="material-symbols-outlined text-primary text-sm">calendar_today</span>
-                                {d.disponibilite.dates.length===1 ? "Date unique" : `${d.disponibilite.dates.length} dates`}
-                              </p>
-                              <div className="flex flex-wrap gap-1.5 max-h-32 overflow-y-auto pr-1">
-                                {(d.disponibilite.dates as string[]).map(dt=>(
-                                  <span key={dt} className="bg-white border border-primary/20 text-primary text-[11px] font-bold px-3 py-1.5 rounded-xl">
-                                    {new Date(dt).toLocaleDateString("fr-FR",{weekday:"short",day:"numeric",month:"short"})}
-                                  </span>
-                                ))}
-                              </div>
-                            </div>
-                          )}
-                          {/* Créneaux horaires */}
-                          {timeWindows.length>0 && (
-                            <div>
-                              <p className="text-[9px] font-black tracking-widest text-slate-400 uppercase mb-2 flex items-center gap-1.5">
-                                <span className="material-symbols-outlined text-primary text-sm">schedule</span>Horaires
-                              </p>
-                              <div className="flex flex-wrap gap-2">
-                                {timeWindows.map((tw,i)=>(
-                                  <div key={i} className="flex items-center gap-2 bg-white border border-slate-200 rounded-xl px-3 py-2">
-                                    <span className="material-symbols-outlined text-primary text-sm">schedule</span>
-                                    <span className="text-sm font-extrabold text-slate-700">{tw.start}</span>
-                                    <span className="text-slate-400 text-sm">→</span>
-                                    <span className="text-sm font-extrabold text-slate-700">{tw.end}</span>
-                                  </div>
-                                ))}
-                              </div>
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    </section>
-                  );
-                })()}
-
-                {/* Ce que vous fournissez */}
-                <section>
-                  <SH icon="room_service" title="Ce que vous fournissez"/>
-                  <div className="space-y-3">
-                    {d.transport_inclus===true && (
-                      <div className="border border-secondary/20 rounded-2xl overflow-hidden">
-                        <div className="flex items-center gap-2 px-4 py-3 bg-secondary/5 border-b border-secondary/20">
-                          <span className="material-symbols-outlined text-secondary text-lg">directions_bus</span>
-                          <p className="text-xs font-extrabold text-secondary">Transport</p>
-                        </div>
-                        <div className="px-4 py-3 space-y-2">
-                          {Array.isArray(d.transport_types)&&d.transport_types.length>0 && (
-                            <div className="flex flex-wrap gap-1.5">{(d.transport_types as string[]).map(t=><span key={t} className="bg-secondary/10 text-secondary text-[11px] font-bold px-2.5 py-1 rounded-lg">{t}</span>)}</div>
-                          )}
-                          {d.transport_svcs && Object.entries(d.transport_svcs as Record<string,any>).map(([type,svc])=>(
-                            <div key={type}>
-                              <p className="text-[10px] font-black text-slate-500 uppercase mb-1">{type}</p>
-                              <div className="flex flex-wrap gap-x-4 gap-y-0.5">
-                                {Object.entries(svc as Record<string,any>).filter(([,v])=>v!=null&&v!==''&&v!==false&&!(Array.isArray(v)&&!v.length)).map(([k,v])=>(
-                                  <p key={k} className="text-[11px] text-slate-500">{k} : <span className="font-bold text-slate-700">{Array.isArray(v)?(v as string[]).join(', '):String(v)}</span></p>
-                                ))}
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-                    {d.repas_flag===true && (
-                      <div className="border border-orange-100 rounded-2xl overflow-hidden">
-                        <div className="flex items-center gap-2 px-4 py-3 bg-orange-50 border-b border-orange-100">
-                          <span className="material-symbols-outlined text-orange-600 text-lg">restaurant</span>
-                          <p className="text-xs font-extrabold text-orange-700">Restauration</p>
-                        </div>
-                        <div className="px-4 py-3 space-y-2">
-                          {Array.isArray(d.restauration_types)&&d.restauration_types.length>0 && (
-                            <div className="flex flex-wrap gap-1.5">{(d.restauration_types as string[]).map(t=><span key={t} className="bg-orange-50 text-orange-700 text-[11px] font-bold px-2.5 py-1 rounded-lg">{t}</span>)}</div>
-                          )}
-                          {d.restauration_svcs && Object.entries(d.restauration_svcs as Record<string,any>).map(([type,svc])=>svc&&(
-                            <div key={type}>
-                              <p className="text-[10px] font-black text-slate-500 uppercase mb-1">{type}</p>
-                              <div className="flex flex-wrap gap-x-4 gap-y-0.5">
-                                {Object.entries(svc as Record<string,any>).filter(([,v])=>v!=null&&v!==''&&v!==false&&!(Array.isArray(v)&&!v.length)).map(([k,v])=>(
-                                  <p key={k} className="text-[11px] text-slate-500">{k} : <span className="font-bold text-slate-700">{Array.isArray(v)?(v as string[]).join(', '):String(v)}</span></p>
-                                ))}
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-                    {d.hebergement_inclus===true && (
-                      <div className="border border-teal-100 rounded-2xl overflow-hidden">
-                        <div className="flex items-center gap-2 px-4 py-3 bg-teal-50 border-b border-teal-100">
-                          <span className="material-symbols-outlined text-teal-600 text-lg">hotel</span>
-                          <p className="text-xs font-extrabold text-teal-700">Hébergement</p>
-                        </div>
-                        <div className="px-4 py-3 space-y-2">
-                          {Array.isArray(d.hebergement_types)&&d.hebergement_types.length>0 && (
-                            <div className="flex flex-wrap gap-1.5">{(d.hebergement_types as string[]).map(t=><span key={t} className="bg-teal-50 text-teal-700 text-[11px] font-bold px-2.5 py-1 rounded-lg">{t}</span>)}</div>
-                          )}
-                          {d.hebergement_svcs && Object.entries(d.hebergement_svcs as Record<string,any>).map(([type,svc])=>svc&&(
-                            <div key={type}>
-                              <p className="text-[10px] font-black text-slate-500 uppercase mb-1">{type}</p>
-                              <div className="flex flex-wrap gap-x-4 gap-y-0.5">
-                                {Object.entries(svc as Record<string,any>).filter(([,v])=>v!=null&&v!==''&&v!==false&&!(Array.isArray(v)&&!v.length)).map(([k,v])=>(
-                                  <p key={k} className="text-[11px] text-slate-500">{k} : <span className="font-bold text-slate-700">{Array.isArray(v)?(v as string[]).join(', '):String(v)}</span></p>
-                                ))}
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-                    {inclus.length>0 && (
-                      <div className="bg-emerald-50 border border-emerald-100 rounded-2xl p-4">
-                        <p className="text-[9px] font-black tracking-widest text-emerald-700 uppercase mb-2.5 flex items-center gap-1.5">
-                          <span className="material-symbols-outlined text-sm">check_circle</span>Services inclus
-                        </p>
-                        <ul className="space-y-1.5">
-                          {inclus.map((item,i)=><li key={i} className="flex items-start gap-2 text-sm text-slate-700"><span className="material-symbols-outlined text-emerald-500 text-base shrink-0 mt-0.5">done</span>{item}</li>)}
-                        </ul>
-                      </div>
-                    )}
-                    {d.equipement_a_apporter && (
-                      <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4">
-                        <p className="text-[9px] font-black tracking-widest text-slate-500 uppercase mb-2 flex items-center gap-1.5">
-                          <span className="material-symbols-outlined text-slate-400 text-sm">backpack</span>À apporter par le participant
-                        </p>
-                        <p className="text-sm text-slate-600 leading-relaxed whitespace-pre-line">{d.equipement_a_apporter}</p>
-                      </div>
-                    )}
-                    {d.non_inclus && (
-                      <div className="bg-red-50 border border-red-100 rounded-2xl p-4">
-                        <p className="text-[9px] font-black tracking-widest text-red-500 uppercase mb-2 flex items-center gap-1.5">
-                          <span className="material-symbols-outlined text-red-400 text-sm">cancel</span>Non inclus (à prévoir par le participant)
-                        </p>
-                        <p className="text-sm text-slate-600 leading-relaxed whitespace-pre-line">{d.non_inclus}</p>
-                      </div>
-                    )}
-                  </div>
-                </section>
-
-                {/* Tarification */}
-                {d.tarification && (
-                  <section>
-                    <SH icon="payments" title="Tarification"/>
-                    <div className="bg-gradient-to-br from-emerald-50 to-teal-50 border border-emerald-100 rounded-3xl overflow-hidden">
-                      <div className="flex flex-wrap divide-x divide-emerald-100">
-                        {(d.tarification.prix_par_personne??d.tarification.price_per_person)!=null && (
-                          <div className="flex-1 p-5 text-center min-w-[120px]">
-                            <p className="text-[9px] font-black tracking-widest text-slate-400 uppercase mb-1">Par personne</p>
-                            <p className="text-2xl font-extrabold text-primary leading-none">{d.tarification.prix_par_personne??d.tarification.price_per_person}</p>
-                            <p className="text-xs font-bold text-slate-400 mt-0.5">DT</p>
-                          </div>
-                        )}
-                        {(d.tarification.prix_groupe??d.tarification.price_per_group)!=null && (
-                          <div className="flex-1 p-5 text-center min-w-[120px]">
-                            <p className="text-[9px] font-black tracking-widest text-slate-400 uppercase mb-1">Par groupe</p>
-                            <p className="text-2xl font-extrabold text-primary leading-none">{d.tarification.prix_groupe??d.tarification.price_per_group}</p>
-                            <p className="text-xs font-bold text-slate-400 mt-0.5">DT</p>
-                          </div>
-                        )}
-                        {d.tarification.base_price!=null && (
-                          <div className="flex-1 p-5 text-center min-w-[120px]">
-                            <p className="text-[9px] font-black tracking-widest text-slate-400 uppercase mb-1">Prix de base</p>
-                            <p className="text-2xl font-extrabold text-primary leading-none">{d.tarification.base_price}</p>
-                            <p className="text-xs font-bold text-slate-400 mt-0.5">DT</p>
-                          </div>
-                        )}
-                        {d.tarification.deposit_percent!=null && (
-                          <div className="flex-1 p-5 text-center min-w-[100px] bg-white/50">
-                            <p className="text-[9px] font-black tracking-widest text-slate-400 uppercase mb-1">Acompte</p>
-                            <p className="text-2xl font-extrabold text-slate-700 leading-none">{d.tarification.deposit_percent}<span className="text-lg">%</span></p>
-                            <p className="text-[10px] text-slate-400 font-semibold mt-0.5">du total</p>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  </section>
-                )}
-
-                {/* Confirmation & Annulation */}
-                <section>
-                  <SH icon="policy" title="Confirmation & Annulation"/>
-                  <div className="space-y-3">
-                    {d.type_confirmation && (
-                      <div className="flex items-center gap-3 bg-slate-50 border border-slate-100 rounded-2xl p-4">
-                        <div className="w-10 h-10 rounded-2xl bg-emerald-50 border border-emerald-100 flex items-center justify-center shrink-0">
-                          <span className="material-symbols-outlined text-emerald-600 text-xl">verified</span>
-                        </div>
-                        <div>
-                          <p className="text-[9px] font-black tracking-widest text-slate-400 uppercase mb-0.5">Type de confirmation</p>
-                          <p className="text-sm font-bold text-slate-700">{CONF[d.type_confirmation]??d.type_confirmation}</p>
-                        </div>
-                      </div>
-                    )}
-                    {(o.cancellation_policy||d.politique_annulation) && (
-                      <div className="bg-slate-50 border border-slate-100 rounded-2xl p-4">
-                        <p className="text-[9px] font-black tracking-widest text-slate-400 uppercase mb-2 flex items-center gap-1.5">
-                          <span className="material-symbols-outlined text-slate-400 text-sm">policy</span>Politique d'annulation
-                        </p>
-                        <p className="text-sm font-bold text-slate-700 mb-1">{ANNUL[o.cancellation_policy??d.politique_annulation??'']??(o.cancellation_policy??d.politique_annulation)}</p>
-                        {d.description_politique && <p className="text-xs text-slate-500 leading-relaxed">{d.description_politique}</p>}
-                      </div>
-                    )}
-                    {d.annulation_meteo!=null && (
-                      <div className={`flex items-center gap-3 rounded-2xl px-4 py-3 border ${d.annulation_meteo?"bg-secondary/5 border-secondary/20":"bg-slate-50 border-slate-100"}`}>
-                        <span className={`material-symbols-outlined text-lg ${d.annulation_meteo?"text-secondary":"text-slate-400"}`}>{d.annulation_meteo?"thunderstorm":"wb_sunny"}</span>
-                        <div>
-                          <p className="text-[9px] font-black tracking-widest text-slate-400 uppercase mb-0.5">Météo</p>
-                          <p className={`text-sm font-bold ${d.annulation_meteo?"text-secondary":"text-slate-500"}`}>
-                            {d.annulation_meteo?"Remboursement si météo dangereuse":"Pas de remboursement en cas de météo"}
-                          </p>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                </section>
-
-                {/* Score durabilité */}
-                {o.sustainability_score!=null && (
-                  <div className="bg-emerald-50 border border-emerald-100 rounded-2xl p-4">
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="text-[11px] font-black text-emerald-700 uppercase tracking-widest flex items-center gap-1.5"><Leaf size={13}/>Score de durabilité</span>
-                      <span className="text-sm font-black text-primary">{o.sustainability_score}/100</span>
-                    </div>
-                    <div className="w-full h-2 bg-emerald-100 rounded-full overflow-hidden"><div className="h-full bg-primary rounded-full" style={{width:`${o.sustainability_score}%`}}/></div>
-                  </div>
-                )}
-
-              </div>
-            </div>
-          </div>
-        );
-      })()}
-
-    </div>
 
       {/* Followers Modal */}
       {showFollowersModal && (
@@ -1524,6 +1366,67 @@ export default function PublicGuideProfile() {
                   </button>
                 );
               })}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Spinner chargement offre */}
+      {viewingOfferLoading && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/40 backdrop-blur-sm">
+          <div className="w-10 h-10 rounded-full border-4 border-white border-t-transparent animate-spin" />
+        </div>
+      )}
+
+      {/* Modal détail offre (lecture seule) */}
+      {viewingOffer && (
+        <div className="fixed inset-0 z-[200] flex items-end sm:items-center justify-center p-0 sm:p-4">
+          <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={() => setViewingOffer(null)} />
+          <div className="relative z-10 bg-white w-full sm:max-w-2xl sm:rounded-3xl rounded-t-3xl overflow-hidden shadow-2xl flex flex-col max-h-[90vh]">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100 shrink-0">
+              <h3 className="text-base font-extrabold text-slate-800 leading-tight truncate pr-3">{viewingOffer.title}</h3>
+              <button onClick={() => setViewingOffer(null)} className="w-8 h-8 rounded-xl bg-slate-100 hover:bg-slate-200 flex items-center justify-center shrink-0 transition-colors">
+                <X size={16} />
+              </button>
+            </div>
+            <div className="overflow-y-auto flex-1">
+              <OfferDetailView offer={viewingOffer} />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Spinner chargement circuit */}
+      {viewingCircuitLoading && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/40 backdrop-blur-sm">
+          <div className="w-10 h-10 rounded-full border-4 border-white border-t-transparent animate-spin" />
+        </div>
+      )}
+
+      {/* Modal détail circuit (lecture seule) */}
+      {viewingCircuit && (
+        <div className="fixed inset-0 z-[200] flex items-end sm:items-center justify-center p-0 sm:p-4">
+          <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={() => setViewingCircuit(null)} />
+          <div className="relative z-10 bg-white w-full sm:max-w-2xl sm:rounded-3xl rounded-t-3xl overflow-hidden shadow-2xl flex flex-col max-h-[90vh]">
+            {/* Header cover */}
+            <div className="relative shrink-0">
+              {viewingCircuit.cover_image
+                ? <img src={viewingCircuit.cover_image} alt="" className="w-full h-44 object-cover" />
+                : <div className="w-full h-44 bg-gradient-to-br from-primary/20 to-emerald-100 flex items-center justify-center"><Route size={56} className="text-primary/30" /></div>}
+              <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent" />
+              <button onClick={() => setViewingCircuit(null)} className="absolute top-3 right-3 w-9 h-9 rounded-xl bg-white/20 backdrop-blur-sm text-white flex items-center justify-center hover:bg-white/30 transition-colors">
+                <X size={18} />
+              </button>
+              <div className="absolute bottom-0 left-0 right-0 px-6 pb-4">
+                <h3 className="text-xl font-extrabold text-white leading-tight">{viewingCircuit.title}</h3>
+                <div className="flex items-center gap-3 mt-1">
+                  <span className="flex items-center gap-1 text-[11px] font-black text-white/90"><Calendar size={11} />{viewingCircuit.nb_jours} jour{viewingCircuit.nb_jours > 1 ? "s" : ""}</span>
+                  <span className="flex items-center gap-1 text-[11px] font-black text-white/90"><MapPin size={11} />{(viewingCircuit.etapes ?? []).length} étape{(viewingCircuit.etapes ?? []).length !== 1 ? "s" : ""}</span>
+                </div>
+              </div>
+            </div>
+            <div className="overflow-y-auto flex-1">
+              <CircuitViewContent circuit={viewingCircuit} ownerName={profile?.full_name ?? undefined} />
             </div>
           </div>
         </div>

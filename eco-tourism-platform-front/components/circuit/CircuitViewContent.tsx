@@ -30,9 +30,10 @@ function toOfferSlot(av: any) {
 interface Props {
   circuit: any;
   collabsMap?: Record<string, string>;
+  ownerName?: string;
 }
 
-export default function CircuitViewContent({ circuit, collabsMap = {} }: Props) {
+export default function CircuitViewContent({ circuit, collabsMap = {}, ownerName }: Props) {
   const etapes: any[] = circuit.etapes ?? [];
 
   return (
@@ -269,13 +270,21 @@ export default function CircuitViewContent({ circuit, collabsMap = {} }: Props) 
                         const coverPhoto = allPhotos[0] ?? etape.photos?.[0];
                         return (
                           <div key={etape.id} className="p-4 space-y-3">
-                            {/* Catégorie + collaborateur + horaires */}
+                            {/* Catégorie + collaborateur/self + horaires */}
                             <div className="flex items-center justify-between gap-2 flex-wrap">
                               <span className="text-[10px] font-black tracking-widest uppercase text-primary bg-primary/10 px-2 py-0.5 rounded-lg">
                                 {cat?.label ?? DOMAINES[etape.categorie as string]?.label ?? etape.categorie}
                               </span>
                               <div className="flex items-center gap-2">
-                                {etape.collaborator_id && etape.collaborator_name && (() => {
+                                {(etape.author_type as string) === "self" && (
+                                  <span className="flex items-center gap-1 text-[10px] font-bold px-2.5 py-1 rounded-full border bg-primary/5 border-primary/20 text-primary">
+                                    <span className="material-symbols-outlined text-[11px]">person</span>
+                                    {(etape.etape_mode as string) === "guidage"
+                                      ? `Guidé par ${ownerName ?? "le guide"}`
+                                      : `Assuré par ${ownerName ?? "le guide"}`}
+                                  </span>
+                                )}
+                                {etape.collaborator_name && (etape.author_type as string) !== "self" && (() => {
                                   const stKey = etape.collaborator_status ?? collabsMap[etape.id] ?? "pending";
                                   const cls = stKey === "declined" ? "bg-red-50 border-red-200 text-red-600"
                                     : stKey === "pending" ? "bg-amber-50 border-amber-200 text-amber-600"
@@ -310,6 +319,24 @@ export default function CircuitViewContent({ circuit, collabsMap = {} }: Props) 
                             </div>
                             {etape.description_courte && <p className="text-xs text-slate-600 leading-relaxed">{etape.description_courte}</p>}
                             {etape.description_longue && <p className="text-xs text-slate-500 leading-relaxed">{etape.description_longue}</p>}
+                            {/* Détails prestation guidage (self) */}
+                            {(etape.author_type as string) === "self" && (etape.etape_mode as string) === "guidage" && (() => {
+                              const df = (etape.fields as any)?.dynamic_fields as Record<string, any> | undefined;
+                              if (!df) return null;
+                              const entries = Object.entries(df).filter(([, v]) => Array.isArray(v) ? (v as any[]).length > 0 : (v && String(v).trim()));
+                              if (entries.length === 0) return null;
+                              return (
+                                <div className="p-3 bg-teal-50 border border-teal-100 rounded-xl space-y-1">
+                                  <p className="text-[9px] font-black text-teal-600 uppercase tracking-widest">Détails de la prestation</p>
+                                  {entries.map(([k, v]) => (
+                                    <div key={k} className="text-[11px]">
+                                      <span className="text-slate-400 capitalize">{k.replace(/_/g, " ")} : </span>
+                                      <span className="text-slate-700 font-semibold">{Array.isArray(v) ? (v as any[]).join(", ") : String(v)}</span>
+                                    </div>
+                                  ))}
+                                </div>
+                              );
+                            })()}
                             {/* Données de contribution du collaborateur */}
                             {etape.collab_contribution && (() => {
                               const cd = etape.collab_contribution as Record<string, any>;

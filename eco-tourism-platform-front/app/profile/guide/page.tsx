@@ -2059,7 +2059,8 @@ export default function GuideProfilePage() {
                 <>
                   <div className="flex items-center gap-1.5 flex-wrap mb-3">
                     {followers.slice(0, 5).map((f) => {
-                      const path = f._type === "eco_traveler" ? `/profile/ecovoyageur/${f.user_id}` : f._type === "project" ? `/profile/project-owner/${f.user_id}` : `/profile/guide/${f.user_id}`;
+                      const fType = (f as any)._type ?? (f as any).role;
+                      const path = fType === "eco_traveler" ? `/profile/ecovoyageur/${f.user_id}` : fType === "provider" ? `/profile/provider/${f.user_id}` : fType === "project" ? `/profile/project-owner/${f.user_id}` : `/profile/guide/${f.user_id}`;
                       return (
                         <button key={f.user_id} onClick={() => router.push(path)}
                           className="w-10 h-10 rounded-xl bg-slate-100 border-2 border-white shadow-sm overflow-hidden flex items-center justify-center hover:scale-105 transition-transform"
@@ -2364,14 +2365,23 @@ export default function GuideProfilePage() {
                   </h3>
                   {following.length === 0 ? <p className="text-sm text-slate-400">Vous ne suivez personne encore.</p> : (
                     <div className="divide-y divide-slate-50" onClick={() => setNetMenuId(null)}>
-                      {following.map((f) => (
+                      {following.map((f) => {
+                        const fRole = (f as any).role ?? f._type;
+                        const fPath = fRole === "provider" ? `/profile/provider/${f.user_id}` : `/profile/guide/${f.user_id}`;
+                        return (
                         <div key={f.user_id} className="flex items-center justify-between py-3 gap-2">
-                          <button onClick={() => router.push(`/profile/project-owner/${f.user_id}`)} className="flex items-center gap-3 flex-1 min-w-0 hover:opacity-80 text-left">
-                            <div className="w-10 h-10 rounded-xl bg-slate-100 overflow-hidden flex items-center justify-center shrink-0">{f.photo ? <img src={f.photo} alt={f.full_name} className="w-full h-full object-cover" /> : <span className="material-symbols-outlined text-slate-400">business</span>}</div>
-                            <div className="min-w-0"><p className="font-extrabold text-slate-800 text-sm truncate">{f.full_name}</p>{f.sub && <p className="text-xs text-slate-400">{f.sub}</p>}</div>
+                          <button onClick={() => router.push(fPath)} className="flex items-center gap-3 flex-1 min-w-0 hover:opacity-80 text-left">
+                            <div className="w-10 h-10 rounded-xl bg-slate-100 overflow-hidden flex items-center justify-center shrink-0">{f.photo ? <img src={f.photo} alt={f.full_name} className="w-full h-full object-cover" /> : <span className="material-symbols-outlined text-slate-400">{fRole === "provider" ? "storefront" : "person"}</span>}</div>
+                            <div className="min-w-0">
+                              <p className="font-extrabold text-slate-800 text-sm truncate">{f.full_name}</p>
+                              <div className="flex items-center gap-1.5 mt-0.5">
+                                <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-slate-100 text-slate-500">{fRole === "provider" ? "Prestataire" : "Guide"}</span>
+                                {f.sub && <span className="text-[10px] text-slate-400 font-medium truncate">{f.sub}</span>}
+                              </div>
+                            </div>
                           </button>
                           <div className="flex items-center gap-1.5 shrink-0">
-                            <button onClick={() => router.push(`/profile/project-owner/${f.user_id}`)} className="px-3 py-1.5 bg-primary/10 border border-primary/30 text-primary text-xs font-bold rounded-xl hover:bg-primary hover:text-slate-900 transition-all">Voir</button>
+                            <button onClick={() => router.push(fPath)} className="px-3 py-1.5 bg-primary/10 border border-primary/30 text-primary text-xs font-bold rounded-xl hover:bg-primary hover:text-slate-900 transition-all">Voir</button>
                             <div className="relative" onClick={(e) => e.stopPropagation()}>
                               <button onClick={() => setNetMenuId(netMenuId === `fw-${f.user_id}` ? null : `fw-${f.user_id}`)}
                                 className="w-8 h-8 rounded-lg hover:bg-slate-100 flex items-center justify-center text-slate-400 hover:text-slate-600 transition-colors">
@@ -2397,7 +2407,8 @@ export default function GuideProfilePage() {
                             </div>
                           </div>
                         </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   )}
                 </div>
@@ -2458,15 +2469,20 @@ export default function GuideProfilePage() {
                   {followers.length === 0 ? <p className="text-sm text-slate-400">Aucun abonné pour l'instant.</p> : (
                     <div className="divide-y divide-slate-50" onClick={() => setNetMenuId(null)}>
                       {followers.map((f) => {
-                        const path = f._type === "eco_traveler" ? `/profile/ecovoyageur/${f.user_id}` : f._type === "project" ? `/profile/project-owner/${f.user_id}` : `/profile/guide/${f.user_id}`;
-                        const typeLabel = f._type === "eco_traveler" ? "Éco-Voyageur" : f._type === "project" ? "Prestataire" : "Guide";
+                        const fRole = (f as any).role ?? f._type;
+                        const path = fRole === "eco_traveler" ? `/profile/ecovoyageur/${f.user_id}` : fRole === "provider" ? `/profile/provider/${f.user_id}` : `/profile/guide/${f.user_id}`;
+                        const typeLabel = fRole === "eco_traveler" ? "Éco-Voyageur" : fRole === "provider" ? "Prestataire" : "Guide";
+                        const typeIcon = fRole === "provider" ? "storefront" : "person";
                         return (
                           <div key={f.user_id} className="flex items-center justify-between py-3 gap-2">
                             <button onClick={() => router.push(path)} className="flex items-center gap-3 flex-1 min-w-0 hover:opacity-80 text-left">
-                              <div className="w-10 h-10 rounded-xl bg-slate-100 overflow-hidden flex items-center justify-center shrink-0">{f.photo ? <img src={f.photo} alt={f.full_name} className="w-full h-full object-cover" /> : <span className="material-symbols-outlined text-slate-400">person</span>}</div>
+                              <div className="w-10 h-10 rounded-xl bg-slate-100 overflow-hidden flex items-center justify-center shrink-0">{f.photo ? <img src={f.photo} alt={f.full_name} className="w-full h-full object-cover" /> : <span className="material-symbols-outlined text-slate-400">{typeIcon}</span>}</div>
                               <div className="min-w-0">
                                 <p className="font-extrabold text-slate-800 text-sm truncate">{f.full_name}</p>
-                                <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-slate-100 text-slate-500">{typeLabel}</span>
+                                <div className="flex items-center gap-1.5 mt-0.5">
+                                  <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-slate-100 text-slate-500">{typeLabel}</span>
+                                  {(f as any).sub && <span className="text-[10px] text-slate-400 font-medium truncate">{(f as any).sub}</span>}
+                                </div>
                               </div>
                             </button>
                             <div className="flex items-center gap-1.5 shrink-0">

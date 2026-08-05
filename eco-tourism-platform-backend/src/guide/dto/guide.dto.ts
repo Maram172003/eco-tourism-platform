@@ -303,4 +303,7 @@ export class CreateGuideOfferDto {
   // Flag interne — indique que l'offre est finalisée (mise à jour du statut)
   @IsOptional() @IsBoolean()
   _finalize?: boolean;
+
+  @IsOptional() @IsArray() @IsString({ each: true })
+  tags?: string[];
 }

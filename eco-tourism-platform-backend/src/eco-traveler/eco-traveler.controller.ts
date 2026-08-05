@@ -55,14 +55,14 @@ export class EcoTravelerController {
   }
 
   // ── Public profile (requires auth to compute friend status) ─────────────────
-  @Roles(Role.ECO_TRAVELER, Role.GUIDE, Role.PROJECT, Role.ADMIN)
+  @Roles(Role.ECO_TRAVELER, Role.GUIDE, Role.PROVIDER, Role.PROJECT, Role.ADMIN)
   @Get('profile/:userId')
   getPublicProfile(@Req() req: any, @Param('userId') userId: string) {
     return this.service.getPublicProfile(userId, req.user.sub);
   }
 
   // ── Public friends list of another eco-traveler ──────────────────────────────
-  @Roles(Role.ECO_TRAVELER, Role.GUIDE, Role.PROJECT, Role.ADMIN)
+  @Roles(Role.ECO_TRAVELER, Role.GUIDE, Role.PROVIDER, Role.PROJECT, Role.ADMIN)
   @Get('friends/public/:userId')
   getPublicFriends(@Param('userId') userId: string) {
     return this.service.getPublicFriends(userId);
@@ -94,13 +94,13 @@ export class EcoTravelerController {
     return this.service.removeFriendship(req.user.sub, id);
   }
 
-  @Roles(Role.ECO_TRAVELER, Role.GUIDE, Role.PROJECT, Role.ADMIN)
+  @Roles(Role.ECO_TRAVELER, Role.GUIDE, Role.PROVIDER, Role.PROJECT, Role.ADMIN)
   @Post('block/:targetId')
   blockUser(@Req() req: any, @Param('targetId') targetId: string) {
     return this.service.blockUser(req.user.sub, targetId);
   }
 
-  @Roles(Role.ECO_TRAVELER, Role.GUIDE, Role.PROJECT, Role.ADMIN)
+  @Roles(Role.ECO_TRAVELER, Role.GUIDE, Role.PROVIDER, Role.PROJECT, Role.ADMIN)
   @Post('report/:targetId')
   reportUser(@Req() req: any, @Param('targetId') targetId: string, @Body() body: { reason: string }) {
     return this.service.reportUser(req.user.sub, targetId, body.reason ?? '');

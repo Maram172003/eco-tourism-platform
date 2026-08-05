@@ -2,6 +2,7 @@ import { Body, Controller, Delete, Get, Param, Patch, Post, Req } from '@nestjs/
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { Roles } from '../common/decorators/roles.decorator';
 import { Role } from '../common/enums/roles.enum';
+import { Public } from '../common/decorators/public.decorator';
 import { CircuitService } from './circuit.service';
 import { CreateCircuitDto, UpdateCircuitDto } from './dto/circuit.dto';
 
@@ -11,6 +12,12 @@ export class CircuitController {
   constructor(private readonly service: CircuitService) {}
 
   // ── CRUD ──────────────────────────────────────────────────────────────────
+
+  @Public()
+  @Get('all-public')
+  findAllPublic() {
+    return this.service.findAllPublic();
+  }
 
   @ApiBearerAuth('bearer')
   @Roles(Role.PROVIDER, Role.GUIDE)
@@ -25,6 +32,20 @@ export class CircuitController {
   @Get('mine')
   findMine(@Req() req: any) {
     return this.service.findByProvider(req.user.sub);
+  }
+
+  @ApiBearerAuth('bearer')
+  @Roles(Role.ECO_TRAVELER, Role.GUIDE, Role.PROVIDER, Role.ADMIN)
+  @Get('public/:userId')
+  findPublishedByUser(@Param('userId') userId: string) {
+    return this.service.findPublishedByUser(userId);
+  }
+
+  @ApiBearerAuth('bearer')
+  @Roles(Role.ECO_TRAVELER, Role.GUIDE, Role.PROVIDER, Role.ADMIN)
+  @Get(':id/public-detail')
+  findPublicDetail(@Param('id') id: string) {
+    return this.service.findPublicDetail(id);
   }
 
   @ApiBearerAuth('bearer')

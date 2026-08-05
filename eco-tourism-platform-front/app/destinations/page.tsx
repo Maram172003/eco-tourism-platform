@@ -20,7 +20,6 @@ import {
   ChevronLeft,
   ChevronRight,
   Calendar,
-  ShieldCheck,
   Tag,
   Star,
 } from "lucide-react";
@@ -28,6 +27,10 @@ import dynamic from "next/dynamic";
 import Navbar from "@/components/home/Navbar";
 import Footer from "@/components/home/Footer";
 import { apiFetch } from "@/lib/api";
+import OfferDetailView from "@/components/offer/OfferDetailView";
+import CircuitViewContent from "@/components/circuit/CircuitViewContent";
+import { DOMAINES } from "@/lib/guideOfferConfig";
+import { PROVIDER_SCHEMA } from "@/lib/provider-schema";
 
 const MapView = dynamic(() => import("@/components/map/MapView"),
   { ssr: false, loading: () => <div className="h-[200px] rounded-xl bg-slate-100 animate-pulse" /> }
@@ -79,8 +82,13 @@ type Offer = {
   price: number | null;
   duration: string | null;
   offer_type: string | null;
+  offer_subtypes: string[] | null;
   region: string | null;
   author_type: "guide" | "project_owner";
+  author_name: string | null;
+  author_photo: string | null;
+  org_name: string | null;
+  org_logo: string | null;
   images: string[] | null;
   inclusions: string | null;
   meeting_point: string | null;
@@ -91,6 +99,7 @@ type Offer = {
   min_age: number | null;
   cancellation_policy: string | null;
   sustainability_score: number | null;
+  details: Record<string, any> | null;
   created_at: string;
 };
 
@@ -129,22 +138,25 @@ type Experience = {
   created_at: string;
 };
 
+type Circuit = {
+  id: string;
+  provider_id: string;
+  title: string;
+  description: string | null;
+  nb_jours: number;
+  cover_image: string | null;
+  etapes: any[];
+  hebergement: any | null;
+  owner_type: string;
+  author_name: string | null;
+  author_photo: string | null;
+  created_at: string;
+};
+
 type SortKey = "recent" | "price_asc" | "price_desc";
 
 // ─── Constants ─────────────────────────────────────────────────────────────────
 
-const ALL_OFFER_TYPES = [
-  { value: "eco_tour", label: "Éco-Tour" },
-  { value: "activity", label: "Activité" },
-  { value: "workshop", label: "Atelier" },
-  { value: "transfer", label: "Transfert" },
-  { value: "sejour", label: "Séjour" },
-  { value: "circuit", label: "Circuit" },
-  { value: "activite", label: "Activité (projet)" },
-  { value: "restauration", label: "Restauration" },
-  { value: "hebergement", label: "Hébergement" },
-  { value: "autre", label: "Autre" },
-];
 
 const SORT_OPTIONS: { value: SortKey; label: string }[] = [
   { value: "recent", label: "Plus récent" },
@@ -182,7 +194,7 @@ function seedFromId(id: string, mod: number): number {
 
 function getTypeLabel(type: string | null): string {
   if (!type) return "Offre";
-  return ALL_OFFER_TYPES.find((t) => t.value === type)?.label ?? type;
+  return PROVIDER_SCHEMA.find((c) => c.value === type)?.label ?? type;
 }
 
 function formatDate(dateStr: string) {
@@ -234,7 +246,6 @@ function ImageGallery({ images, fallback }: { images: string[]; fallback: string
 // ─── Offer Detail Modal ────────────────────────────────────────────────────────
 
 function OfferModal({ offer, onClose }: { offer: Offer; onClose: () => void }) {
-  const fallback = OFFER_PLACEHOLDERS[seedFromId(offer.id, OFFER_PLACEHOLDERS.length)];
   const isGuide = offer.author_type === "guide";
   const router = useRouter();
 
@@ -260,9 +271,6 @@ function OfferModal({ offer, onClose }: { offer: Offer; onClose: () => void }) {
         className="relative bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto"
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Gallery */}
-        <ImageGallery images={offer.images ?? []} fallback={fallback} />
-
         {/* Close */}
         <button
           onClick={onClose}
@@ -271,117 +279,65 @@ function OfferModal({ offer, onClose }: { offer: Offer; onClose: () => void }) {
           <X className="w-4 h-4" />
         </button>
 
-        {/* Content */}
-        <div className="p-6 md:p-8">
-          {/* Badges */}
-          <div className="flex flex-wrap gap-2 mb-4">
-            <span className="bg-slate-100 text-slate-700 text-xs font-extrabold px-3 py-1 rounded-full uppercase tracking-widest">
-              {getTypeLabel(offer.offer_type)}
-            </span>
-            <span className={`text-xs font-bold px-3 py-1 rounded-full ${isGuide ? "bg-emerald-100 text-emerald-700" : "bg-blue-100 text-blue-700"}`}>
-              {isGuide ? "Guide certifié" : "Projet éco"}
-            </span>
-          </div>
-
-          <h2 className="text-2xl font-black text-slate-900 mb-2">{offer.title}</h2>
-
-          {/* Quick info row */}
-          <div className="flex flex-wrap gap-3 mb-6">
-            {offer.region && (
-              <span className="flex items-center gap-1.5 text-sm font-semibold text-slate-500">
-                <MapPin className="w-4 h-4 text-primary" /> {offer.region}
-              </span>
-            )}
-            {offer.duration && (
-              <span className="flex items-center gap-1.5 text-sm font-semibold text-slate-500">
-                <Clock className="w-4 h-4 text-primary" /> {offer.duration}
-              </span>
-            )}
-            {(offer.min_group_size || offer.max_group_size) && (
-              <span className="flex items-center gap-1.5 text-sm font-semibold text-slate-500">
-                <Users className="w-4 h-4 text-primary" />
-                {offer.min_group_size && offer.max_group_size
-                  ? `${offer.min_group_size}–${offer.max_group_size} pers.`
-                  : offer.max_group_size ? `max ${offer.max_group_size} pers.` : `min ${offer.min_group_size} pers.`}
-              </span>
-            )}
-            {offer.min_age && (
-              <span className="flex items-center gap-1.5 text-sm font-semibold text-slate-500">
-                <Star className="w-4 h-4 text-primary" /> Dès {offer.min_age} ans
-              </span>
-            )}
-          </div>
-
-          {/* Description */}
-          {offer.description && (
-            <div className="mb-6">
-              <h3 className="text-sm font-extrabold text-slate-400 uppercase tracking-widest mb-2">Description</h3>
-              <p className="text-slate-700 leading-relaxed whitespace-pre-line">{offer.description}</p>
-            </div>
-          )}
-
-          {/* Inclusions */}
-          {offer.inclusions && (
-            <div className="mb-6">
-              <h3 className="text-sm font-extrabold text-slate-400 uppercase tracking-widest mb-2">Ce qui est inclus</h3>
-              <p className="text-slate-700 leading-relaxed whitespace-pre-line">{offer.inclusions}</p>
-            </div>
-          )}
-
-          {/* Meeting point */}
-          {offer.meeting_point && (
-            <div className="mb-4">
-              <div className="flex items-center gap-2 mb-2">
-                <MapPin className="w-4 h-4 text-slate-400 shrink-0" />
-                <p className="text-xs font-extrabold text-slate-400 uppercase tracking-widest">Localisation</p>
-              </div>
-              <p className="text-sm font-semibold text-slate-700 mb-2">{offer.meeting_point}</p>
-              <MeetingMap lat={offer.meeting_lat} lng={offer.meeting_lng} address={offer.meeting_point ?? ""} />
-            </div>
-          )}
-
-          {/* Cancellation */}
-          {offer.cancellation_policy && (
-            <div className="flex items-start gap-3 bg-slate-50 rounded-xl px-4 py-3 mb-6">
-              <ShieldCheck className="w-4 h-4 text-emerald-500 mt-0.5 shrink-0" />
-              <div>
-                <p className="text-xs font-extrabold text-slate-400 uppercase tracking-widest mb-0.5">Politique d'annulation</p>
-                <p className="text-sm font-semibold text-slate-700">{offer.cancellation_policy}</p>
-              </div>
-            </div>
-          )}
-
-          {/* Sustainability score */}
-          {offer.sustainability_score !== null && (() => {
-            const { label, color, bar } = sustainabilityLevel(offer.sustainability_score);
-            return (
-              <div className="mb-6 p-4 rounded-2xl bg-slate-50 border border-slate-100">
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-xs font-black text-slate-500 uppercase tracking-widest flex items-center gap-1.5">🌿 Score de durabilité</span>
-                  <span className={`text-sm font-black ${color}`}>{offer.sustainability_score}/100</span>
-                </div>
-                <div className="w-full h-2 bg-slate-200 rounded-full overflow-hidden mb-1.5">
-                  <div className={`h-full ${bar} rounded-full`} style={{ width: `${offer.sustainability_score}%` }} />
-                </div>
-                <span className={`text-xs font-bold ${color}`}>{label}</span>
-              </div>
-            );
-          })()}
-
-          {/* Price + CTA */}
-          <div className="flex items-center justify-between pt-6 border-t border-slate-100">
-            {offer.price !== null ? (
-              <div>
-                <p className="text-xs text-slate-400 font-medium">À partir de</p>
-                <p className="text-3xl font-black text-slate-900">{offer.price} <span className="text-lg font-bold text-slate-400">TND</span></p>
-              </div>
+        {/* Author bar */}
+        {offer.author_name && (
+          <div className="flex items-center gap-3 px-6 pt-6 pb-3 border-b border-slate-100">
+            {offer.author_photo ? (
+              <img src={offer.author_photo} alt="" className="w-10 h-10 rounded-full object-cover border border-slate-200 shrink-0" />
             ) : (
-              <p className="text-base font-semibold text-slate-400 italic">Prix sur demande</p>
+              <div className={`w-10 h-10 rounded-full flex items-center justify-center text-white font-black text-sm shrink-0 ${isGuide ? "bg-emerald-500" : "bg-blue-500"}`}>
+                {offer.author_name[0]}
+              </div>
             )}
-            <button onClick={handleReserve} className="h-12 px-8 rounded-xl bg-primary text-slate-900 font-extrabold hover:bg-primary/90 transition-colors text-sm">
-              Réserver cette offre
-            </button>
+            <div className="flex-1">
+              <p className="font-bold text-slate-800 text-sm">{offer.author_name}</p>
+              {offer.org_name && (
+                <div className="flex items-center gap-1.5 mt-0.5">
+                  {offer.org_logo && <img src={offer.org_logo} alt="" className="w-4 h-4 rounded object-cover" />}
+                  <p className="text-xs font-semibold text-slate-400">{offer.org_name}</p>
+                </div>
+              )}
+            </div>
+            <span className={`text-xs font-bold px-3 py-1 rounded-full ${isGuide ? "bg-emerald-100 text-emerald-700" : "bg-blue-100 text-blue-700"}`}>
+              {isGuide ? "Guide certifié" : "Prestataire"}
+            </span>
           </div>
+        )}
+
+        {/* Full offer detail view */}
+        <OfferDetailView offer={{
+          id: offer.id,
+          title: offer.title,
+          description: offer.description,
+          offer_type: offer.offer_type,
+          duration: offer.duration,
+          region: offer.region,
+          price: offer.price,
+          images: offer.images,
+          meeting_point: offer.meeting_point,
+          meeting_lat: offer.meeting_lat,
+          meeting_lng: offer.meeting_lng,
+          max_group_size: offer.max_group_size,
+          min_group_size: offer.min_group_size,
+          min_age: offer.min_age,
+          cancellation_policy: offer.cancellation_policy,
+          inclusions: offer.inclusions,
+          details: offer.details,
+        }} />
+
+        {/* CTA */}
+        <div className="flex items-center justify-between px-6 py-5 border-t border-slate-100">
+          {offer.price !== null ? (
+            <div>
+              <p className="text-xs text-slate-400 font-medium">À partir de</p>
+              <p className="text-3xl font-black text-slate-900">{offer.price} <span className="text-lg font-bold text-slate-400">TND</span></p>
+            </div>
+          ) : (
+            <p className="text-base font-semibold text-slate-400 italic">Prix sur demande</p>
+          )}
+          <button onClick={handleReserve} className="h-12 px-8 rounded-xl bg-primary text-slate-900 font-extrabold hover:bg-primary/90 transition-colors text-sm">
+            Réserver cette offre
+          </button>
         </div>
       </div>
     </div>
@@ -728,6 +684,21 @@ function OfferCard({ offer, onClick }: { offer: Offer; onClick: () => void }) {
 
         <SustainabilityBar score={offer.sustainability_score} />
 
+        {/* Author */}
+        {offer.author_name && (
+          <div className="flex items-center gap-2 mt-3 mb-2">
+            {offer.author_photo ? (
+              <img src={offer.author_photo} alt="" className="w-7 h-7 rounded-full object-cover shrink-0 border border-slate-100" />
+            ) : (
+              <div className={`w-7 h-7 rounded-full flex items-center justify-center text-white font-black text-[10px] shrink-0 ${isGuide ? "bg-emerald-500" : "bg-blue-500"}`}>
+                {offer.author_name[0]}
+              </div>
+            )}
+            <span className="text-xs font-bold text-slate-500 truncate">{offer.author_name}</span>
+            {offer.org_name && <span className="text-xs text-slate-400 truncate">· {offer.org_name}</span>}
+          </div>
+        )}
+
         <div className="flex items-center justify-between pt-4 border-t border-slate-100 mt-4">
           {offer.price !== null ? (
             <div>
@@ -859,17 +830,148 @@ function ExperienceCard({ exp, onClick }: { exp: Experience; onClick: () => void
   );
 }
 
+// ─── CircuitCard ───────────────────────────────────────────────────────────────
+
+function CircuitCard({ circuit, onClick }: { circuit: Circuit; onClick: () => void }) {
+  const image = circuit.cover_image ?? OFFER_PLACEHOLDERS[seedFromId(circuit.id, OFFER_PLACEHOLDERS.length)];
+  const nbEtapes = circuit.etapes?.length ?? 0;
+
+  return (
+    <div
+      className="flex flex-col rounded-2xl overflow-hidden bg-white border border-slate-100 shadow-md hover:shadow-xl hover:-translate-y-1 transition-all duration-300 group cursor-pointer"
+      onClick={onClick}
+    >
+      <div className="relative h-60 overflow-hidden">
+        <div className="absolute inset-0 bg-cover bg-center group-hover:scale-105 transition-transform duration-500"
+          style={{ backgroundImage: `url('${image}')` }} />
+        <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-black/10 to-transparent" />
+        <div className="absolute top-3 left-3 flex gap-2">
+          <span className="bg-white/95 backdrop-blur-sm px-3 py-1 rounded-full text-[11px] font-extrabold text-slate-700 uppercase tracking-widest shadow-sm">
+            Circuit
+          </span>
+          <span className="bg-emerald-500/90 backdrop-blur-sm text-white px-3 py-1 rounded-full text-[11px] font-bold shadow-sm">
+            {circuit.owner_type === "guide" ? "Guide" : "Prestataire"}
+          </span>
+        </div>
+        <div className="absolute bottom-3 left-3 right-3 flex items-end justify-between">
+          <span className="flex items-center gap-1 text-white text-xs font-semibold bg-black/40 backdrop-blur-sm px-2.5 py-1 rounded-full">
+            <Clock className="w-3 h-3 shrink-0" /> {circuit.nb_jours} jour{circuit.nb_jours > 1 ? "s" : ""}
+          </span>
+          {nbEtapes > 0 && (
+            <span className="flex items-center gap-1 text-white text-xs font-semibold bg-black/40 backdrop-blur-sm px-2.5 py-1 rounded-full">
+              <MapPin className="w-3 h-3 shrink-0" /> {nbEtapes} étape{nbEtapes > 1 ? "s" : ""}
+            </span>
+          )}
+        </div>
+      </div>
+      <div className="p-5 flex flex-col flex-1">
+        <h3 className="font-extrabold text-slate-900 text-base mb-2 line-clamp-2 group-hover:text-primary transition-colors">
+          {circuit.title}
+        </h3>
+        {circuit.description && (
+          <p className="text-slate-500 text-sm line-clamp-2 flex-1 leading-relaxed mb-3">{circuit.description}</p>
+        )}
+        {circuit.author_name && (
+          <div className="flex items-center gap-2 mt-2 mb-1">
+            {circuit.author_photo ? (
+              <img src={circuit.author_photo} alt="" className="w-6 h-6 rounded-full object-cover border border-slate-100 shrink-0" />
+            ) : (
+              <div className="w-6 h-6 rounded-full bg-emerald-500 flex items-center justify-center text-white font-black text-[9px] shrink-0">
+                {circuit.author_name[0]}
+              </div>
+            )}
+            <span className="text-xs font-bold text-slate-500 truncate">{circuit.author_name}</span>
+          </div>
+        )}
+        <div className="flex items-center justify-between mt-auto pt-3 border-t border-slate-100">
+          <div className="flex items-center gap-1.5">
+            <Calendar className="w-4 h-4 text-slate-400" />
+            <span className="text-xs font-semibold text-slate-400">{circuit.nb_jours}J / {nbEtapes} étape{nbEtapes > 1 ? "s" : ""}</span>
+          </div>
+          <button onClick={(e) => { e.stopPropagation(); onClick(); }}
+            className="h-8 px-3 rounded-lg bg-primary/10 border border-primary/30 text-primary font-bold hover:bg-primary hover:text-slate-900 hover:border-primary transition-all text-xs">
+            Voir le circuit
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── CircuitModal ──────────────────────────────────────────────────────────────
+
+function CircuitModal({ circuit, onClose }: { circuit: Circuit; onClose: () => void }) {
+  const fallback = OFFER_PLACEHOLDERS[seedFromId(circuit.id, OFFER_PLACEHOLDERS.length)];
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    document.addEventListener("keydown", onKey);
+    document.body.style.overflow = "hidden";
+    return () => { document.removeEventListener("keydown", onKey); document.body.style.overflow = ""; };
+  }, [onClose]);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" onClick={onClose}>
+      <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+        {/* Cover image */}
+        <ImageGallery images={circuit.cover_image ? [circuit.cover_image] : []} fallback={fallback} />
+
+        <button onClick={onClose}
+          className="absolute top-4 right-4 w-9 h-9 rounded-full bg-black/50 backdrop-blur-sm flex items-center justify-center text-white hover:bg-black/70 transition-colors z-10">
+          <X className="w-4 h-4" />
+        </button>
+
+        {/* Header */}
+        <div className="px-6 pt-5 pb-3 border-b border-slate-100">
+          <div className="flex flex-wrap gap-2 mb-2">
+            <span className="bg-slate-100 text-slate-700 text-xs font-extrabold px-3 py-1 rounded-full uppercase tracking-widest">Circuit</span>
+            <span className="bg-emerald-100 text-emerald-700 text-xs font-bold px-3 py-1 rounded-full">
+              {circuit.owner_type === "guide" ? "Guide certifié" : "Prestataire"}
+            </span>
+          </div>
+          <h2 className="text-xl font-black text-slate-900 mb-3">{circuit.title}</h2>
+
+          {/* Author */}
+          {circuit.author_name && (
+            <div className="flex items-center gap-3">
+              {circuit.author_photo ? (
+                <img src={circuit.author_photo} alt="" className="w-9 h-9 rounded-full object-cover border border-slate-200 shrink-0" />
+              ) : (
+                <div className="w-9 h-9 rounded-full bg-emerald-500 flex items-center justify-center text-white font-black text-sm shrink-0">
+                  {circuit.author_name[0]}
+                </div>
+              )}
+              <div>
+                <p className="font-bold text-slate-800 text-sm">{circuit.author_name}</p>
+                <p className="text-xs text-slate-400">{circuit.owner_type === "guide" ? "Guide certifié" : "Prestataire"}</p>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Full circuit detail view */}
+        <CircuitViewContent circuit={circuit} ownerName={circuit.author_name ?? undefined} />
+      </div>
+    </div>
+  );
+}
+
 // ─── Page ──────────────────────────────────────────────────────────────────────
 
 export default function DestinationsPage() {
   const [offers, setOffers] = useState<Offer[]>([]);
+  const [circuits, setCircuits] = useState<Circuit[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
   const [experiences, setExperiences] = useState<Experience[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
   const [search, setSearch] = useState("");
-  const [selectedTypes, setSelectedTypes] = useState<string[]>([]);
+  const [filterTab, setFilterTab] = useState<"domaine" | "categorie">("domaine");
+  const [selectedDomain, setSelectedDomain] = useState<string | null>(null);
+  const [selectedExpertise, setSelectedExpertise] = useState<string | null>(null);
+  const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
+  const [selectedSubtype, setSelectedSubtype] = useState<string | null>(null);
   const [minPrice, setMinPrice] = useState<number | "">("");
   const [maxPrice, setMaxPrice] = useState<number | "">("");
   const [regionSearch, setRegionSearch] = useState("");
@@ -878,16 +980,18 @@ export default function DestinationsPage() {
   const [showFilters, setShowFilters] = useState(false);
 
   const [selectedOffer, setSelectedOffer] = useState<Offer | null>(null);
+  const [selectedCircuit, setSelectedCircuit] = useState<Circuit | null>(null);
   const [selectedProject, setSelectedProject] = useState<Project | null>(null);
   const [selectedExperience, setSelectedExperience] = useState<Experience | null>(null);
 
   useEffect(() => {
     Promise.all([
       apiFetch<Offer[]>("/offers"),
+      apiFetch<Circuit[]>("/circuits/all-public"),
       apiFetch<Project[]>("/project-owner/projects/public"),
       apiFetch<Experience[]>("/publications/experiences"),
     ])
-      .then(([o, p, e]) => { setOffers(o); setProjects(p); setExperiences(e); })
+      .then(([o, c, p, e]) => { setOffers(o); setCircuits(c); setProjects(p); setExperiences(e); })
       .catch((e: Error) => setError(e.message))
       .finally(() => setLoading(false));
   }, []);
@@ -895,7 +999,13 @@ export default function DestinationsPage() {
   const filtered = useMemo(() => {
     const result = offers.filter((o) => {
       if (search && !o.title.toLowerCase().includes(search.toLowerCase()) && !(o.description ?? "").toLowerCase().includes(search.toLowerCase())) return false;
-      if (selectedTypes.length && !selectedTypes.includes(o.offer_type ?? "")) return false;
+      if (selectedDomain && o.details?.domaine_offre !== selectedDomain) return false;
+      if (selectedExpertise) {
+        const expertises = o.details?.expertises_offre as string[] | null;
+        if (!expertises?.includes(selectedExpertise)) return false;
+      }
+      if (selectedCategory && o.offer_type !== selectedCategory) return false;
+      if (selectedSubtype && !(o.offer_subtypes?.includes(selectedSubtype))) return false;
       if (regionSearch && !(o.region ?? "").toLowerCase().includes(regionSearch.toLowerCase())) return false;
       if (minPrice !== "" && o.price !== null && o.price < minPrice) return false;
       if (maxPrice !== "" && o.price !== null && o.price > maxPrice) return false;
@@ -907,15 +1017,19 @@ export default function DestinationsPage() {
       if (sortBy === "price_desc") { if (a.price === null) return 1; if (b.price === null) return -1; return b.price - a.price; }
       return 0;
     });
-  }, [offers, search, selectedTypes, regionSearch, minPrice, maxPrice, minSustainability, sortBy]);
+  }, [offers, search, selectedDomain, selectedExpertise, selectedCategory, selectedSubtype, regionSearch, minPrice, maxPrice, minSustainability, sortBy]);
 
-  function toggleType(value: string) {
-    setSelectedTypes((prev) => prev.includes(value) ? prev.filter((v) => v !== value) : [...prev, value]);
+  function resetFilters() {
+    setSelectedDomain(null); setSelectedExpertise(null);
+    setSelectedCategory(null); setSelectedSubtype(null);
+    setRegionSearch(""); setMinPrice(""); setMaxPrice(""); setMinSustainability(null);
   }
-  function resetFilters() { setSelectedTypes([]); setRegionSearch(""); setMinPrice(""); setMaxPrice(""); setMinSustainability(null); }
 
   const priceFilterActive = minPrice !== "" || maxPrice !== "";
-  const activeFilterCount = selectedTypes.length + (regionSearch ? 1 : 0) + (priceFilterActive ? 1 : 0) + (minSustainability !== null ? 1 : 0);
+  const activeFilterCount =
+    (selectedDomain ? 1 : 0) + (selectedExpertise ? 1 : 0) +
+    (selectedCategory ? 1 : 0) + (selectedSubtype ? 1 : 0) +
+    (regionSearch ? 1 : 0) + (priceFilterActive ? 1 : 0) + (minSustainability !== null ? 1 : 0);
 
   const filterContent = (
     <div className="space-y-6">
@@ -926,16 +1040,111 @@ export default function DestinationsPage() {
         )}
       </div>
 
+      {/* Thématique — Domaine / Catégorie */}
       <div>
-        <p className="text-xs font-extrabold uppercase tracking-widest text-slate-400 mb-3">Type d'offre</p>
-        <div className="space-y-2">
-          {ALL_OFFER_TYPES.map((t) => (
-            <label key={t.value} className="flex items-center gap-2.5 cursor-pointer group">
-              <input type="checkbox" checked={selectedTypes.includes(t.value)} onChange={() => toggleType(t.value)} className="w-4 h-4 rounded accent-primary cursor-pointer" />
-              <span className="text-sm font-semibold text-slate-700 group-hover:text-primary transition-colors">{t.label}</span>
-            </label>
-          ))}
+        <p className="text-xs font-extrabold uppercase tracking-widest text-slate-400 mb-3">Thématique</p>
+
+        {/* Onglets */}
+        <div className="flex rounded-xl border border-slate-200 overflow-hidden mb-3">
+          <button
+            onClick={() => { setFilterTab("domaine"); }}
+            className={`flex-1 py-2 text-xs font-extrabold transition-all ${filterTab === "domaine" ? "bg-primary text-slate-900" : "text-slate-500 hover:bg-slate-50"}`}
+          >
+            Domaine
+          </button>
+          <button
+            onClick={() => { setFilterTab("categorie"); }}
+            className={`flex-1 py-2 text-xs font-extrabold border-l border-slate-200 transition-all ${filterTab === "categorie" ? "bg-primary text-slate-900" : "text-slate-500 hover:bg-slate-50"}`}
+          >
+            Catégorie
+          </button>
         </div>
+
+        {/* Liste domaines */}
+        {filterTab === "domaine" && (
+          <div className="space-y-0.5">
+            {Object.entries(DOMAINES).map(([key, { label }]) => (
+              <button
+                key={key}
+                onClick={() => {
+                  if (selectedDomain === key) { setSelectedDomain(null); setSelectedExpertise(null); }
+                  else { setSelectedDomain(key); setSelectedExpertise(null); }
+                }}
+                className={`w-full text-left px-3 py-2 rounded-xl text-sm font-semibold transition-all flex items-center justify-between group ${
+                  selectedDomain === key
+                    ? "bg-primary/10 text-primary"
+                    : "text-slate-700 hover:bg-slate-50 hover:text-primary"
+                }`}
+              >
+                <span>{label}</span>
+                {selectedDomain === key && <span className="w-2 h-2 rounded-full bg-primary shrink-0" />}
+              </button>
+            ))}
+            {selectedDomain && DOMAINES[selectedDomain] && (
+              <div className="pt-2 pb-1 pl-3 border-l-2 border-primary/30 ml-1 mt-1">
+                <p className="text-[10px] font-extrabold uppercase tracking-widest text-slate-400 mb-2">Expertise</p>
+                <div className="flex flex-wrap gap-1.5 max-h-36 overflow-y-auto">
+                  {DOMAINES[selectedDomain].expertises.map((exp) => (
+                    <button
+                      key={exp}
+                      onClick={() => setSelectedExpertise(selectedExpertise === exp ? null : exp)}
+                      className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold border transition-all ${
+                        selectedExpertise === exp
+                          ? "bg-primary text-slate-900 border-primary"
+                          : "border-slate-200 text-slate-600 hover:border-primary/40 hover:text-primary"
+                      }`}
+                    >
+                      {exp}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Liste catégories */}
+        {filterTab === "categorie" && (
+          <div className="space-y-0.5">
+            {PROVIDER_SCHEMA.map(({ value, label }) => (
+              <button
+                key={value}
+                onClick={() => {
+                  if (selectedCategory === value) { setSelectedCategory(null); setSelectedSubtype(null); }
+                  else { setSelectedCategory(value); setSelectedSubtype(null); }
+                }}
+                className={`w-full text-left px-3 py-2 rounded-xl text-sm font-semibold transition-all flex items-center justify-between ${
+                  selectedCategory === value
+                    ? "bg-primary/10 text-primary"
+                    : "text-slate-700 hover:bg-slate-50 hover:text-primary"
+                }`}
+              >
+                <span>{label}</span>
+                {selectedCategory === value && <span className="w-2 h-2 rounded-full bg-primary shrink-0" />}
+              </button>
+            ))}
+            {selectedCategory && (
+              <div className="pt-2 pb-1 pl-3 border-l-2 border-primary/30 ml-1 mt-1">
+                <p className="text-[10px] font-extrabold uppercase tracking-widest text-slate-400 mb-2">Sous-type</p>
+                <div className="flex flex-wrap gap-1.5">
+                  {(PROVIDER_SCHEMA.find((c) => c.value === selectedCategory)?.subtypes ?? []).map(({ value: sv, label: sl }) => (
+                    <button
+                      key={sv}
+                      onClick={() => setSelectedSubtype(selectedSubtype === sv ? null : sv)}
+                      className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold border transition-all ${
+                        selectedSubtype === sv
+                          ? "bg-primary text-slate-900 border-primary"
+                          : "border-slate-200 text-slate-600 hover:border-primary/40 hover:text-primary"
+                      }`}
+                    >
+                      {sl}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       <div>
@@ -1060,11 +1269,26 @@ export default function DestinationsPage() {
 
             {activeFilterCount > 0 && (
               <div className="flex flex-wrap gap-2 mb-6">
-                {selectedTypes.map((t) => (
-                  <button key={t} onClick={() => toggleType(t)} className="flex items-center gap-1.5 px-3 py-1.5 bg-primary/10 border border-primary text-primary text-xs font-bold rounded-full hover:bg-primary/20 transition-colors">
-                    {getTypeLabel(t)} <X className="w-3 h-3" />
+                {selectedDomain && (
+                  <button onClick={() => { setSelectedDomain(null); setSelectedExpertise(null); }} className="flex items-center gap-1.5 px-3 py-1.5 bg-primary/10 border border-primary text-primary text-xs font-bold rounded-full hover:bg-primary/20 transition-colors">
+                    {DOMAINES[selectedDomain]?.label} <X className="w-3 h-3" />
                   </button>
-                ))}
+                )}
+                {selectedExpertise && (
+                  <button onClick={() => setSelectedExpertise(null)} className="flex items-center gap-1.5 px-3 py-1.5 bg-primary/10 border border-primary text-primary text-xs font-bold rounded-full hover:bg-primary/20 transition-colors">
+                    {selectedExpertise} <X className="w-3 h-3" />
+                  </button>
+                )}
+                {selectedCategory && (
+                  <button onClick={() => { setSelectedCategory(null); setSelectedSubtype(null); }} className="flex items-center gap-1.5 px-3 py-1.5 bg-primary/10 border border-primary text-primary text-xs font-bold rounded-full hover:bg-primary/20 transition-colors">
+                    {PROVIDER_SCHEMA.find((c) => c.value === selectedCategory)?.label} <X className="w-3 h-3" />
+                  </button>
+                )}
+                {selectedSubtype && (
+                  <button onClick={() => setSelectedSubtype(null)} className="flex items-center gap-1.5 px-3 py-1.5 bg-primary/10 border border-primary text-primary text-xs font-bold rounded-full hover:bg-primary/20 transition-colors">
+                    {PROVIDER_SCHEMA.find((c) => c.value === selectedCategory)?.subtypes.find((s) => s.value === selectedSubtype)?.label ?? selectedSubtype} <X className="w-3 h-3" />
+                  </button>
+                )}
                 {regionSearch && (
                   <button onClick={() => setRegionSearch("")} className="flex items-center gap-1.5 px-3 py-1.5 bg-primary/10 border border-primary text-primary text-xs font-bold rounded-full hover:bg-primary/20 transition-colors">
                     <MapPin className="w-3 h-3" /> {regionSearch} <X className="w-3 h-3" />
@@ -1129,6 +1353,34 @@ export default function DestinationsPage() {
           </div>
         </div>
       </main>
+
+      {/* Circuits */}
+      {!loading && circuits.length > 0 && (
+        <section className="bg-white border-t border-slate-100 py-16 px-6 md:px-20 lg:px-40">
+          <div className="max-w-[1440px] mx-auto">
+            <div className="flex items-center gap-3 mb-3">
+              <div className="w-8 h-0.5 bg-primary" />
+              <span className="text-primary font-extrabold text-sm uppercase tracking-widest">Circuits Éco-Touristiques</span>
+            </div>
+            <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-4 mb-10">
+              <div>
+                <h2 className="text-3xl font-black text-slate-900 mb-2">Circuits disponibles</h2>
+                <p className="text-slate-500 max-w-lg">
+                  Parcourez les circuits éco-touristiques proposés par nos guides et prestataires certifiés à travers la Tunisie.
+                </p>
+              </div>
+              <span className="text-sm font-semibold text-slate-400 shrink-0">
+                {circuits.length} circuit{circuits.length !== 1 ? "s" : ""}
+              </span>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+              {circuits.map((circuit) => (
+                <CircuitCard key={circuit.id} circuit={circuit} onClick={() => setSelectedCircuit(circuit)} />
+              ))}
+            </div>
+          </div>
+        </section>
+      )}
 
       {/* Nos Partenaires */}
       {!loading && projects.length > 0 && (
@@ -1218,6 +1470,7 @@ export default function DestinationsPage() {
 
       {/* Detail modals */}
       {selectedOffer && <OfferModal offer={selectedOffer} onClose={() => setSelectedOffer(null)} />}
+      {selectedCircuit && <CircuitModal circuit={selectedCircuit} onClose={() => setSelectedCircuit(null)} />}
       {selectedProject && <ProjectModal project={selectedProject} onClose={() => setSelectedProject(null)} />}
       {selectedExperience && <ExperienceModal exp={selectedExperience} onClose={() => setSelectedExperience(null)} />}
 

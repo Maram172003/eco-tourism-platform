@@ -37,7 +37,7 @@ export class EcoTravelerMongoService {
   async syncPreferencesFromProfile(
     userId: string,
     profile: {
-      interests?: { name: string; level: string }[] | null;
+      interests?: string[] | null;
       landscapes?: string[] | null;
       motivations?: string[] | null;
       sustainability_goals?: string[] | null;
@@ -45,9 +45,8 @@ export class EcoTravelerMongoService {
   ) {
     const update: Partial<TravelerPreferences> = {};
 
-    if (profile.interests)           update.activities  = profile.interests;
-    if (profile.landscapes)          update.landscapes  = profile.landscapes;
-    if (profile.motivations)         update.interests   = profile.motivations;
+    if (profile.interests)            update.interests  = profile.interests;
+    if (profile.landscapes)           update.landscapes = profile.landscapes;
     if (profile.sustainability_goals) update.objectives = profile.sustainability_goals;
 
     return await this.upsertPreferences(userId, update);

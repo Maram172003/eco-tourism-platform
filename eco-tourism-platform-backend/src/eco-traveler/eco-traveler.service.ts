@@ -140,7 +140,7 @@ export class EcoTravelerService {
     const profile = await this.findOrFail(userId);
     profile.interests = dto.interests;
     profile.landscapes = dto.landscapes;
-    profile.travel_styles = dto.travel_styles;
+    profile.travel_styles = dto.travel_styles ?? null;
     profile.profile_completion = this.calculateCompletion(profile);
 
     const saved = await this.repo.save(profile);
@@ -314,6 +314,11 @@ export class EcoTravelerService {
       country: profile.country,
       sustainability_score: profile.sustainability_score,
       traveler_types: profile.traveler_types,
+      motivations: profile.motivations,
+      interests: profile.interests,
+      landscapes: profile.landscapes,
+      sustainability_values: profile.sustainability_values,
+      sustainability_goals: profile.sustainability_goals,
       publications,
       friend_status: friendStatus,
       friendship_id: friendshipId,

@@ -27,6 +27,8 @@ import { ProviderActivityModule } from './provider-activity/provider-activity.mo
 import { GuideModule } from './guide/guide.module';
 import { CircuitModule } from './circuit/circuit.module';
 import { NotificationModule } from './notifications/notification.module';
+import { PlaceContributionModule } from './place-contribution/place-contribution.module';
+import { ProjectOwnerModule } from './project-owner/project-owner.module';
 
 @Module({
   imports: [
@@ -58,6 +60,8 @@ import { NotificationModule } from './notifications/notification.module';
     GuideModule,
     CircuitModule,
     NotificationModule,
+    PlaceContributionModule,
+    ProjectOwnerModule,
   ],
   providers: [GoogleStrategy, {
     provide: APP_GUARD,

@@ -1,24 +1,10 @@
 import { ApiProperty } from '@nestjs/swagger';
 import {
   IsArray,
-  IsBoolean,
   IsNotEmpty,
   IsOptional,
   IsString,
-  IsUrl,
-  ValidateNested,
 } from 'class-validator';
-import { Type } from 'class-transformer';
-
-export class InterestDto {
-  @IsString()
-  @IsNotEmpty()
-  name!: string;
-
-  @IsString()
-  @IsNotEmpty()
-  level!: string; 
-}
 
 export class CompleteProfileDto {
   @ApiProperty({ example: 'Maram mejri' })
@@ -72,16 +58,10 @@ export class UpdateMotivationsDto {
 }
 
 export class UpdateInterestsDto {
-  @ApiProperty({
-    example: [
-      { name: 'randonnée', level: 'intermediate' },
-      { name: 'kayak', level: 'beginner' },
-    ],
-  })
+  @ApiProperty({ example: ['randonnee_pedestre', 'kayak_canoe'] })
   @IsArray()
-  @ValidateNested({ each: true })
-  @Type(() => InterestDto)
-  interests!: InterestDto[];
+  @IsString({ each: true })
+  interests!: string[];
 
   @ApiProperty({ example: ['mountain', 'forest', 'oasis'] })
   @IsArray()
@@ -89,9 +69,10 @@ export class UpdateInterestsDto {
   landscapes!: string[];
 
   @ApiProperty({ example: ['eco_tourism', 'slow_tourism'] })
+  @IsOptional()
   @IsArray()
   @IsString({ each: true })
-  travel_styles!: string[];
+  travel_styles?: string[];
 }
 
 export class UpdateGoalsDto {

@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Leaf, ChevronRight, ChevronLeft } from "lucide-react";
+import { ChevronRight, ChevronLeft } from "lucide-react";
 import { apiFetch } from "@/lib/api";
 
 type Answer = {
@@ -249,7 +249,7 @@ export default function GuideQuestionnairePage() {
       <header className="sticky top-0 z-50 bg-white/90 backdrop-blur-md border-b border-slate-200 px-6 py-4">
         <div className="max-w-2xl mx-auto flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <Leaf className="text-primary w-7 h-7" />
+            <span className="material-symbols-outlined text-primary text-3xl leading-none">explore</span>
             <span className="text-lg font-extrabold tracking-tight">Évaluation Guide</span>
           </div>
           {!result && (
@@ -276,8 +276,9 @@ export default function GuideQuestionnairePage() {
             <>
               {currentQuestion === 0 && answeredCount === 0 && (
                 <div className="bg-primary/10 border border-primary/20 rounded-2xl p-5 mb-6">
-                  <p className="text-sm font-medium text-slate-700 leading-relaxed">
-                    <strong>🧭 En tant que guide</strong>, répondez aux situations suivantes en choisissant ce que vous feriez le plus naturellement dans votre pratique quotidienne.
+                  <p className="text-sm font-medium text-slate-700 leading-relaxed flex items-start gap-2">
+                    <span className="material-symbols-outlined text-primary text-lg flex-shrink-0 mt-0.5">explore</span>
+                    <span><strong>En tant que guide</strong>, répondez aux situations suivantes en choisissant ce que vous feriez le plus naturellement dans votre pratique quotidienne.</span>
                   </p>
                 </div>
               )}

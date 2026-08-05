@@ -10,6 +10,9 @@ import { CreateOfferDto, OfferSustainabilityDto, UpdateOfferDto } from './dto/of
 import { ProviderActivity } from '../provider-activity/entities/provider-activity.entity';
 import { ActivityDetails, ActivityDetailsDocument } from '../provider-activity/schemas/activity-details.schema';
 import { GuideAvailabilitySlot } from '../guide/entities/guide-availability.entity';
+import { Guide } from '../guide/entities/guide.entity';
+import { Provider } from '../provider/entities/provider.entity';
+import { Organization } from '../organization/entities/organization.entity';
 import { NotificationService } from '../notifications/notification.service';
 import { SlotLike, overlappingDays, dispoEqual, toSlotType } from '../shared/slot.utils';
 
@@ -39,6 +42,15 @@ export class OfferService {
 
     @InjectRepository(GuideAvailabilitySlot)
     private readonly availRepo: Repository<GuideAvailabilitySlot>,
+
+    @InjectRepository(Guide)
+    private readonly guideRepo: Repository<Guide>,
+
+    @InjectRepository(Provider)
+    private readonly providerRepo: Repository<Provider>,
+
+    @InjectRepository(Organization)
+    private readonly orgRepo: Repository<Organization>,
 
     private readonly notifService: NotificationService,
   ) {}
@@ -132,11 +144,38 @@ export class OfferService {
     });
   }
 
-  async findAllPublic(): Promise<Offer[]> {
-    return this.repo.find({
+  async findAllPublic(): Promise<any[]> {
+    const offers = await this.repo.find({
       where: { status: 'approved' },
       order: { created_at: 'DESC' },
     });
+
+    return Promise.all(
+      offers.map(async (offer) => {
+        let author_name: string | null = null;
+        let author_photo: string | null = null;
+        let org_name: string | null = null;
+        let org_logo: string | null = null;
+
+        if (offer.author_type === 'guide') {
+          const guide = await this.guideRepo.findOne({ where: { user_id: offer.author_id } });
+          author_name = guide?.full_name ?? null;
+          author_photo = guide?.photo ?? null;
+        } else {
+          const provider = await this.providerRepo.findOne({ where: { user_id: offer.author_id } as any });
+          author_name = (provider as any)?.full_name ?? null;
+          author_photo = (provider as any)?.photo ?? null;
+        }
+
+        if (offer.organization_id) {
+          const org = await this.orgRepo.findOne({ where: { id: offer.organization_id } as any });
+          org_name = (org as any)?.name ?? null;
+          org_logo = (org as any)?.logo ?? null;
+        }
+
+        return { ...offer, author_name, author_photo, org_name, org_logo };
+      }),
+    );
   }
 
   async findById(id: string): Promise<Offer> {

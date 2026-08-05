@@ -34,6 +34,7 @@ import AvailabilitySyncPanel from "@/components/guide/offer/AvailabilitySyncPane
 import { PricingBlock, type PricingData, EMPTY_PRICING } from "@/components/offer/PricingBlock";
 import { ConfirmationTypePicker, type ConfirmationData, EMPTY_CONFIRMATION } from "@/components/offer/ConfirmationTypePicker";
 import InviteCollaboratorModal, { type CollabSection } from "@/components/guide/offer/InviteCollaboratorModal";
+import TaxonomyTagPicker from "@/components/common/TaxonomyTagPicker";
 
 
 const MultiLocationPickerDyn = dynamic(() => import("@/components/map/MultiLocationPicker"), { ssr: false });
@@ -178,6 +179,7 @@ interface FormData {
   pricing: PricingData;
   // Étape 8
   confirmation: ConfirmationData;
+  tags: string[];
 }
 
 const EMPTY_FORM: FormData = {
@@ -208,6 +210,7 @@ const EMPTY_FORM: FormData = {
   avail_has_conflict: false,
   pricing: EMPTY_PRICING,
   confirmation: EMPTY_CONFIRMATION,
+  tags: [],
 };
 
 function buildEmptyForProfile(profile: GuideProfile): FormData {
@@ -304,6 +307,7 @@ function offerToFormData(offer: Record<string, any>, profile: GuideProfile): For
       description_politique: d.description_politique ?? "",
       annulation_meteo: d.annulation_meteo_confirmation ?? null,
     },
+    tags: offer.tags ?? [],
   };
 }
 
@@ -2124,8 +2128,27 @@ function Step7({ d, u }: { d: FormData; u: (x: Partial<FormData>) => void }) {
 }
 
 function Step8({ d, u }: { d: FormData; u: (x: Partial<FormData>) => void }) {
+  const suggest = async () => {
+    const res = await fetch('/api/offers/suggest-tags', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ titre: d.titre, description: d.description_courte }),
+    });
+    if (!res.ok) throw new Error('fetch failed');
+    const data = await res.json() as { tags?: unknown };
+    if (!Array.isArray(data.tags)) throw new Error('invalid response');
+    return data.tags as string[];
+  };
+
   return (
-    <div className="space-y-5">
+    <div className="space-y-8">
+      <div className="space-y-3">
+        <div>
+          <p className="text-xs font-black tracking-widest text-slate-400 uppercase mb-0.5">Tags thématiques</p>
+          <p className="text-xs text-slate-500">Facultatif — aide à classer et retrouver votre offre.</p>
+        </div>
+        <TaxonomyTagPicker value={d.tags} onChange={(tags) => u({ tags })} onSuggest={suggest} />
+      </div>
       <ConfirmationTypePicker value={d.confirmation} onChange={(v) => u({ confirmation: { ...d.confirmation, ...v } })} />
     </div>
   );
@@ -2415,6 +2438,7 @@ function buildPayload(d: FormData) {
       description_politique: d.confirmation.description_politique || null,
       annulation_meteo_confirmation: d.confirmation.annulation_meteo,
     },
+    ...(d.tags.length ? { tags: d.tags } : {}),
   };
 }
 
