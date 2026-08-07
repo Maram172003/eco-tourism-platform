@@ -106,8 +106,8 @@ export class EcoTravelerService {
     profile.bio = dto.bio ?? null;
     profile.country = dto.country ?? null;
     profile.language = dto.language ?? null;
-    profile.photo = dto.photo ?? null;
-    profile.cover_photo = dto.cover_photo ?? null;
+    if (dto.photo !== undefined) profile.photo = dto.photo ?? null;
+    if (dto.cover_photo !== undefined) profile.cover_photo = dto.cover_photo ?? null;
     profile.profile_completion = this.calculateCompletion(profile);
 
     return await this.repo.save(profile);

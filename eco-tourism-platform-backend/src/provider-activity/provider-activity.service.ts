@@ -50,8 +50,16 @@ export class ProviderActivityService {
     return { activity: saved, details };
   }
 
-  // Créer plusieurs activités en une fois (onboarding)
+  // Créer plusieurs activités en une fois (onboarding / edit profile) — remplace les existantes
   async createBulk(providerId: string, dto: CreateBulkActivitiesDto): Promise<any[]> {
+    // Supprimer les activités existantes pour ce provider/org
+    const existing = await this.pgRepo.find({ where: { provider_id: providerId, organization_id: dto.organization_id } });
+    if (existing.length > 0) {
+      const ids = existing.map((a) => a.id);
+      await this.mongoModel.deleteMany({ activity_id: { $in: ids } });
+      await this.pgRepo.remove(existing);
+    }
+    // Créer les nouvelles
     const results: any[] = [];
     for (const actDto of dto.activities) {
       const result = await this.create(providerId, { ...actDto, organization_id: dto.organization_id });

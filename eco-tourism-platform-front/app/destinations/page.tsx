@@ -22,15 +22,30 @@ import {
   Calendar,
   Tag,
   Star,
+  Landmark,
+  Mountain,
+  UtensilsCrossed,
+  Palette,
+  Sparkles,
+  Heart,
+  Bike,
+  HandHeart,
+  Home,
+  Tent,
+  TreePine,
+  LayoutGrid,
+  Route,
+  Ticket,
 } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 import dynamic from "next/dynamic";
 import Navbar from "@/components/home/Navbar";
 import Footer from "@/components/home/Footer";
 import { apiFetch } from "@/lib/api";
 import OfferDetailView from "@/components/offer/OfferDetailView";
 import CircuitViewContent from "@/components/circuit/CircuitViewContent";
-import { DOMAINES } from "@/lib/guideOfferConfig";
-import { PROVIDER_SCHEMA } from "@/lib/provider-schema";
+import { MACRO_CATEGORIES, TAXONOMY_TAGS, getTagsByMacro } from "@/lib/constants/taxonomy-tags";
+import type { MacroSlug } from "@/lib/constants/taxonomy-tags";
 
 const MapView = dynamic(() => import("@/components/map/MapView"),
   { ssr: false, loading: () => <div className="h-[200px] rounded-xl bg-slate-100 animate-pulse" /> }
@@ -99,6 +114,7 @@ type Offer = {
   min_age: number | null;
   cancellation_policy: string | null;
   sustainability_score: number | null;
+  tags: string[] | null;
   details: Record<string, any> | null;
   created_at: string;
 };
@@ -147,6 +163,7 @@ type Circuit = {
   cover_image: string | null;
   etapes: any[];
   hebergement: any | null;
+  tags: string[] | null;
   owner_type: string;
   author_name: string | null;
   author_photo: string | null;
@@ -188,13 +205,86 @@ const AVATAR_COLORS = [
   "bg-lime-600",
 ];
 
+// ─── Taxonomy matching ─────────────────────────────────────────────────────────
+
+const OFFER_TYPE_TO_MACRO: Partial<Record<string, MacroSlug>> = {
+  hebergement:       "hebergement",
+  restauration:      "gastronomie",
+  artisanat:         "artisanat",
+  transport:         "transport_experientiel",
+  bien_etre:         "bien_etre",
+  location_materiel: "transport_experientiel",
+};
+
+// Normalisation subtype offre → slug taxonomie (quand ils diffèrent)
+const SUBTYPE_TO_TAG: Record<string, string> = {
+  randonnee:                  "randonnee_pedestre",
+  velo_vtt:                   "vtt_cyclisme",
+  observation_oiseaux:        "ornithologie",
+  observation_etoiles:        "astronomie",
+  visite_oasis:               "oasis",
+  poterie:                    "poterie_ceramique",
+  tissage:                    "tissage_tapis",
+  location_velo:              "vtt_cyclisme",
+  education_environnementale: "conservation_protection",
+};
+
+const MACRO_ICON: Record<string, LucideIcon> = {
+  nature:                 TreePine,
+  histoire_archeologie:   Landmark,
+  aventure_sport:         Mountain,
+  gastronomie:            UtensilsCrossed,
+  artisanat:              Palette,
+  decouverte_urbaine:     Building2,
+  culture_patrimoine:     Sparkles,
+  bien_etre:              Heart,
+  transport_experientiel: Bike,
+  volontariat:            HandHeart,
+  hebergement:            Tent,
+};
+
+function getOfferTagSlugs(offer: Offer): string[] {
+  const subtypes = offer.offer_subtypes ?? [];
+  const normalized = subtypes.map((st) => SUBTYPE_TO_TAG[st] ?? st);
+  return [...new Set([...normalized, ...(offer.tags ?? [])])];
+}
+
+function offerMatchesMacro(offer: Offer, macro: MacroSlug): boolean {
+  if (OFFER_TYPE_TO_MACRO[offer.offer_type ?? ""] === macro) return true;
+  const slugs = getOfferTagSlugs(offer);
+  return slugs.some((slug) => TAXONOMY_TAGS.find((t) => t.slug === slug)?.macro === macro);
+}
+
+function circuitMatchesMacro(circuit: Circuit, macro: MacroSlug): boolean {
+  const tags = circuit.tags ?? [];
+  if (tags.some((slug) => TAXONOMY_TAGS.find((t) => t.slug === slug)?.macro === macro)) return true;
+  return (circuit.etapes ?? []).some((e: any) =>
+    (e.subtypes ?? []).some((st: string) => {
+      const slug = SUBTYPE_TO_TAG[st] ?? st;
+      return TAXONOMY_TAGS.find((t) => t.slug === slug)?.macro === macro;
+    })
+  );
+}
+
+function circuitMatchesTag(circuit: Circuit, tagSlug: string): boolean {
+  if ((circuit.tags ?? []).includes(tagSlug)) return true;
+  return (circuit.etapes ?? []).some((e: any) =>
+    (e.subtypes ?? []).some((st: string) => (SUBTYPE_TO_TAG[st] ?? st) === tagSlug)
+  );
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+
 function seedFromId(id: string, mod: number): number {
   return id.charCodeAt(0) % mod;
 }
 
 function getTypeLabel(type: string | null): string {
   if (!type) return "Offre";
-  return PROVIDER_SCHEMA.find((c) => c.value === type)?.label ?? type;
+  const macro = MACRO_CATEGORIES.find((m) => m.slug === type);
+  if (macro) return macro.label;
+  const tag = TAXONOMY_TAGS.find((t) => t.slug === type);
+  return tag?.label ?? type;
 }
 
 function formatDate(dateStr: string) {
@@ -967,11 +1057,9 @@ export default function DestinationsPage() {
   const [error, setError] = useState("");
 
   const [search, setSearch] = useState("");
-  const [filterTab, setFilterTab] = useState<"domaine" | "categorie">("domaine");
-  const [selectedDomain, setSelectedDomain] = useState<string | null>(null);
-  const [selectedExpertise, setSelectedExpertise] = useState<string | null>(null);
-  const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
-  const [selectedSubtype, setSelectedSubtype] = useState<string | null>(null);
+  const [contentType, setContentType] = useState<"all" | "offres" | "circuits">("all");
+  const [selectedMacro, setSelectedMacro] = useState<MacroSlug | null>(null);
+  const [selectedTag, setSelectedTag] = useState<string | null>(null);
   const [minPrice, setMinPrice] = useState<number | "">("");
   const [maxPrice, setMaxPrice] = useState<number | "">("");
   const [regionSearch, setRegionSearch] = useState("");
@@ -999,13 +1087,8 @@ export default function DestinationsPage() {
   const filtered = useMemo(() => {
     const result = offers.filter((o) => {
       if (search && !o.title.toLowerCase().includes(search.toLowerCase()) && !(o.description ?? "").toLowerCase().includes(search.toLowerCase())) return false;
-      if (selectedDomain && o.details?.domaine_offre !== selectedDomain) return false;
-      if (selectedExpertise) {
-        const expertises = o.details?.expertises_offre as string[] | null;
-        if (!expertises?.includes(selectedExpertise)) return false;
-      }
-      if (selectedCategory && o.offer_type !== selectedCategory) return false;
-      if (selectedSubtype && !(o.offer_subtypes?.includes(selectedSubtype))) return false;
+      if (selectedMacro && !offerMatchesMacro(o, selectedMacro)) return false;
+      if (selectedTag && !getOfferTagSlugs(o).includes(selectedTag)) return false;
       if (regionSearch && !(o.region ?? "").toLowerCase().includes(regionSearch.toLowerCase())) return false;
       if (minPrice !== "" && o.price !== null && o.price < minPrice) return false;
       if (maxPrice !== "" && o.price !== null && o.price > maxPrice) return false;
@@ -1017,18 +1100,29 @@ export default function DestinationsPage() {
       if (sortBy === "price_desc") { if (a.price === null) return 1; if (b.price === null) return -1; return b.price - a.price; }
       return 0;
     });
-  }, [offers, search, selectedDomain, selectedExpertise, selectedCategory, selectedSubtype, regionSearch, minPrice, maxPrice, minSustainability, sortBy]);
+  }, [offers, search, selectedMacro, selectedTag, regionSearch, minPrice, maxPrice, minSustainability, sortBy]);
+
+  const filteredCircuits = useMemo(() => {
+    return circuits.filter((c) => {
+      if (search && !c.title.toLowerCase().includes(search.toLowerCase()) && !(c.description ?? "").toLowerCase().includes(search.toLowerCase())) return false;
+      if (selectedMacro && !circuitMatchesMacro(c, selectedMacro)) return false;
+      if (selectedTag && !circuitMatchesTag(c, selectedTag)) return false;
+      if (regionSearch) {
+        const etapeDestinations = (c.etapes ?? []).map((e: any) => e.destination ?? "").join(" ");
+        if (!etapeDestinations.toLowerCase().includes(regionSearch.toLowerCase())) return false;
+      }
+      return true;
+    });
+  }, [circuits, search, selectedMacro, selectedTag, regionSearch]);
 
   function resetFilters() {
-    setSelectedDomain(null); setSelectedExpertise(null);
-    setSelectedCategory(null); setSelectedSubtype(null);
+    setContentType("all"); setSelectedMacro(null); setSelectedTag(null);
     setRegionSearch(""); setMinPrice(""); setMaxPrice(""); setMinSustainability(null);
   }
 
   const priceFilterActive = minPrice !== "" || maxPrice !== "";
   const activeFilterCount =
-    (selectedDomain ? 1 : 0) + (selectedExpertise ? 1 : 0) +
-    (selectedCategory ? 1 : 0) + (selectedSubtype ? 1 : 0) +
+    (contentType !== "all" ? 1 : 0) + (selectedMacro ? 1 : 0) + (selectedTag ? 1 : 0) +
     (regionSearch ? 1 : 0) + (priceFilterActive ? 1 : 0) + (minSustainability !== null ? 1 : 0);
 
   const filterContent = (
@@ -1040,113 +1134,78 @@ export default function DestinationsPage() {
         )}
       </div>
 
-      {/* Thématique — Domaine / Catégorie */}
+      {/* Type de contenu */}
+      <div>
+        <p className="text-xs font-extrabold uppercase tracking-widest text-slate-400 mb-3">Type</p>
+        <div className="grid grid-cols-3 gap-1.5">
+          {([
+            { value: "all",      label: "Tout",     Icon: LayoutGrid },
+            { value: "offres",   label: "Offres",   Icon: Ticket },
+            { value: "circuits", label: "Circuits", Icon: Route },
+          ] as const).map(({ value, label, Icon }) => (
+            <button
+              key={value}
+              onClick={() => setContentType(value)}
+              className={`flex flex-col items-center gap-1 py-2.5 rounded-xl border-2 text-xs font-bold transition-all ${
+                contentType === value
+                  ? "border-primary bg-primary/10 text-primary"
+                  : "border-slate-200 text-slate-500 hover:border-primary/40 hover:text-slate-700"
+              }`}
+            >
+              <Icon className="w-4 h-4" />
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Thématique — Macro-catégories */}
       <div>
         <p className="text-xs font-extrabold uppercase tracking-widest text-slate-400 mb-3">Thématique</p>
-
-        {/* Onglets */}
-        <div className="flex rounded-xl border border-slate-200 overflow-hidden mb-3">
-          <button
-            onClick={() => { setFilterTab("domaine"); }}
-            className={`flex-1 py-2 text-xs font-extrabold transition-all ${filterTab === "domaine" ? "bg-primary text-slate-900" : "text-slate-500 hover:bg-slate-50"}`}
-          >
-            Domaine
-          </button>
-          <button
-            onClick={() => { setFilterTab("categorie"); }}
-            className={`flex-1 py-2 text-xs font-extrabold border-l border-slate-200 transition-all ${filterTab === "categorie" ? "bg-primary text-slate-900" : "text-slate-500 hover:bg-slate-50"}`}
-          >
-            Catégorie
-          </button>
+        <div className="space-y-0.5">
+          {MACRO_CATEGORIES.map(({ slug, label }) => (
+            <button
+              key={slug}
+              onClick={() => {
+                if (selectedMacro === slug) { setSelectedMacro(null); setSelectedTag(null); }
+                else { setSelectedMacro(slug as MacroSlug); setSelectedTag(null); }
+              }}
+              className={`w-full text-left px-3 py-2 rounded-xl text-sm font-semibold transition-all flex items-center gap-2 ${
+                selectedMacro === slug
+                  ? "bg-primary/10 text-primary"
+                  : "text-slate-700 hover:bg-slate-50 hover:text-primary"
+              }`}
+            >
+              {(() => { const Icon = MACRO_ICON[slug]; return Icon ? <Icon className="w-4 h-4 shrink-0" /> : null; })()}
+              <span className="flex-1">{label}</span>
+              {selectedMacro === slug && <span className="w-2 h-2 rounded-full bg-primary shrink-0" />}
+            </button>
+          ))}
         </div>
 
-        {/* Liste domaines */}
-        {filterTab === "domaine" && (
-          <div className="space-y-0.5">
-            {Object.entries(DOMAINES).map(([key, { label }]) => (
-              <button
-                key={key}
-                onClick={() => {
-                  if (selectedDomain === key) { setSelectedDomain(null); setSelectedExpertise(null); }
-                  else { setSelectedDomain(key); setSelectedExpertise(null); }
-                }}
-                className={`w-full text-left px-3 py-2 rounded-xl text-sm font-semibold transition-all flex items-center justify-between group ${
-                  selectedDomain === key
-                    ? "bg-primary/10 text-primary"
-                    : "text-slate-700 hover:bg-slate-50 hover:text-primary"
-                }`}
-              >
-                <span>{label}</span>
-                {selectedDomain === key && <span className="w-2 h-2 rounded-full bg-primary shrink-0" />}
-              </button>
-            ))}
-            {selectedDomain && DOMAINES[selectedDomain] && (
-              <div className="pt-2 pb-1 pl-3 border-l-2 border-primary/30 ml-1 mt-1">
-                <p className="text-[10px] font-extrabold uppercase tracking-widest text-slate-400 mb-2">Expertise</p>
-                <div className="flex flex-wrap gap-1.5 max-h-36 overflow-y-auto">
-                  {DOMAINES[selectedDomain].expertises.map((exp) => (
-                    <button
-                      key={exp}
-                      onClick={() => setSelectedExpertise(selectedExpertise === exp ? null : exp)}
-                      className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold border transition-all ${
-                        selectedExpertise === exp
-                          ? "bg-primary text-slate-900 border-primary"
-                          : "border-slate-200 text-slate-600 hover:border-primary/40 hover:text-primary"
-                      }`}
-                    >
-                      {exp}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* Liste catégories */}
-        {filterTab === "categorie" && (
-          <div className="space-y-0.5">
-            {PROVIDER_SCHEMA.map(({ value, label }) => (
-              <button
-                key={value}
-                onClick={() => {
-                  if (selectedCategory === value) { setSelectedCategory(null); setSelectedSubtype(null); }
-                  else { setSelectedCategory(value); setSelectedSubtype(null); }
-                }}
-                className={`w-full text-left px-3 py-2 rounded-xl text-sm font-semibold transition-all flex items-center justify-between ${
-                  selectedCategory === value
-                    ? "bg-primary/10 text-primary"
-                    : "text-slate-700 hover:bg-slate-50 hover:text-primary"
-                }`}
-              >
-                <span>{label}</span>
-                {selectedCategory === value && <span className="w-2 h-2 rounded-full bg-primary shrink-0" />}
-              </button>
-            ))}
-            {selectedCategory && (
-              <div className="pt-2 pb-1 pl-3 border-l-2 border-primary/30 ml-1 mt-1">
-                <p className="text-[10px] font-extrabold uppercase tracking-widest text-slate-400 mb-2">Sous-type</p>
-                <div className="flex flex-wrap gap-1.5">
-                  {(PROVIDER_SCHEMA.find((c) => c.value === selectedCategory)?.subtypes ?? []).map(({ value: sv, label: sl }) => (
-                    <button
-                      key={sv}
-                      onClick={() => setSelectedSubtype(selectedSubtype === sv ? null : sv)}
-                      className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold border transition-all ${
-                        selectedSubtype === sv
-                          ? "bg-primary text-slate-900 border-primary"
-                          : "border-slate-200 text-slate-600 hover:border-primary/40 hover:text-primary"
-                      }`}
-                    >
-                      {sl}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
+        {selectedMacro && (
+          <div className="pt-2 pb-1 pl-3 border-l-2 border-primary/30 ml-1 mt-2">
+            <p className="text-[10px] font-extrabold uppercase tracking-widest text-slate-400 mb-2">Tags fins</p>
+            <div className="flex flex-wrap gap-1.5 max-h-40 overflow-y-auto pr-1">
+              {getTagsByMacro(selectedMacro).map(({ slug: tslug, label: tlabel }) => (
+                <button
+                  key={tslug}
+                  onClick={() => setSelectedTag(selectedTag === tslug ? null : tslug)}
+                  className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold border transition-all ${
+                    selectedTag === tslug
+                      ? "bg-primary text-slate-900 border-primary"
+                      : "border-slate-200 text-slate-600 hover:border-primary/40 hover:text-primary"
+                  }`}
+                >
+                  {tlabel}
+                </button>
+              ))}
+            </div>
           </div>
         )}
       </div>
 
+      {/* Emplacement */}
       <div>
         <p className="text-xs font-extrabold uppercase tracking-widest text-slate-400 mb-3">Emplacement</p>
         <div className="relative">
@@ -1164,6 +1223,7 @@ export default function DestinationsPage() {
         </div>
       </div>
 
+      {/* Budget */}
       <div>
         <p className="text-xs font-extrabold uppercase tracking-widest text-slate-400 mb-3">Budget (TND)</p>
         <div className="flex items-center gap-2">
@@ -1180,15 +1240,16 @@ export default function DestinationsPage() {
         )}
       </div>
 
+      {/* Durabilité */}
       <div>
         <p className="text-xs font-extrabold uppercase tracking-widest text-slate-400 mb-3">🌿 Durabilité minimale</p>
         <div className="space-y-2">
           {[
-            { value: null,  label: "Tous",              sub: "Sans filtre" },
-            { value: 31,    label: "Sensibilisé",       sub: "31+",  color: "text-blue-600" },
-            { value: 51,    label: "Engagé",            sub: "51+",  color: "text-teal-600" },
-            { value: 71,    label: "Éco-Responsable",   sub: "71+",  color: "text-emerald-600" },
-            { value: 86,    label: "Ambassadeur",       sub: "86+",  color: "text-primary" },
+            { value: null, label: "Tous",            sub: "Sans filtre" },
+            { value: 31,   label: "Sensibilisé",     sub: "31+",  color: "text-blue-600" },
+            { value: 51,   label: "Engagé",          sub: "51+",  color: "text-teal-600" },
+            { value: 71,   label: "Éco-Responsable", sub: "71+",  color: "text-emerald-600" },
+            { value: 86,   label: "Ambassadeur",     sub: "86+",  color: "text-primary" },
           ].map((opt) => (
             <button
               key={String(opt.value)}
@@ -1251,7 +1312,7 @@ export default function DestinationsPage() {
           <div className="flex-1 min-w-0">
             <div className="flex items-center justify-between mb-6 gap-4">
               <p className="text-sm font-semibold text-slate-500 shrink-0">
-                {loading ? "Chargement…" : `${filtered.length} offre${filtered.length !== 1 ? "s" : ""} trouvée${filtered.length !== 1 ? "s" : ""}`}
+                {loading ? "Chargement…" : contentType === "circuits" ? `${filteredCircuits.length} circuit${filteredCircuits.length !== 1 ? "s" : ""} trouvé${filteredCircuits.length !== 1 ? "s" : ""}` : `${filtered.length} offre${filtered.length !== 1 ? "s" : ""} trouvée${filtered.length !== 1 ? "s" : ""}`}
               </p>
               <div className="flex items-center gap-3 ml-auto">
                 <div className="relative hidden sm:flex items-center gap-2 bg-white border border-slate-200 rounded-xl px-3 py-2 shadow-sm">
@@ -1269,24 +1330,21 @@ export default function DestinationsPage() {
 
             {activeFilterCount > 0 && (
               <div className="flex flex-wrap gap-2 mb-6">
-                {selectedDomain && (
-                  <button onClick={() => { setSelectedDomain(null); setSelectedExpertise(null); }} className="flex items-center gap-1.5 px-3 py-1.5 bg-primary/10 border border-primary text-primary text-xs font-bold rounded-full hover:bg-primary/20 transition-colors">
-                    {DOMAINES[selectedDomain]?.label} <X className="w-3 h-3" />
+                {contentType !== "all" && (
+                  <button onClick={() => setContentType("all")} className="flex items-center gap-1.5 px-3 py-1.5 bg-primary/10 border border-primary text-primary text-xs font-bold rounded-full hover:bg-primary/20 transition-colors">
+                    {contentType === "offres" ? <Ticket className="w-3 h-3" /> : <Route className="w-3 h-3" />}
+                    {contentType === "offres" ? "Offres" : "Circuits"} <X className="w-3 h-3" />
                   </button>
                 )}
-                {selectedExpertise && (
-                  <button onClick={() => setSelectedExpertise(null)} className="flex items-center gap-1.5 px-3 py-1.5 bg-primary/10 border border-primary text-primary text-xs font-bold rounded-full hover:bg-primary/20 transition-colors">
-                    {selectedExpertise} <X className="w-3 h-3" />
+                {selectedMacro && (
+                  <button onClick={() => { setSelectedMacro(null); setSelectedTag(null); }} className="flex items-center gap-1.5 px-3 py-1.5 bg-primary/10 border border-primary text-primary text-xs font-bold rounded-full hover:bg-primary/20 transition-colors">
+                    {(() => { const Icon = MACRO_ICON[selectedMacro]; return Icon ? <Icon className="w-3 h-3" /> : null; })()}
+                    {MACRO_CATEGORIES.find((m) => m.slug === selectedMacro)?.label} <X className="w-3 h-3" />
                   </button>
                 )}
-                {selectedCategory && (
-                  <button onClick={() => { setSelectedCategory(null); setSelectedSubtype(null); }} className="flex items-center gap-1.5 px-3 py-1.5 bg-primary/10 border border-primary text-primary text-xs font-bold rounded-full hover:bg-primary/20 transition-colors">
-                    {PROVIDER_SCHEMA.find((c) => c.value === selectedCategory)?.label} <X className="w-3 h-3" />
-                  </button>
-                )}
-                {selectedSubtype && (
-                  <button onClick={() => setSelectedSubtype(null)} className="flex items-center gap-1.5 px-3 py-1.5 bg-primary/10 border border-primary text-primary text-xs font-bold rounded-full hover:bg-primary/20 transition-colors">
-                    {PROVIDER_SCHEMA.find((c) => c.value === selectedCategory)?.subtypes.find((s) => s.value === selectedSubtype)?.label ?? selectedSubtype} <X className="w-3 h-3" />
+                {selectedTag && (
+                  <button onClick={() => setSelectedTag(null)} className="flex items-center gap-1.5 px-3 py-1.5 bg-primary/10 border border-primary text-primary text-xs font-bold rounded-full hover:bg-primary/20 transition-colors">
+                    <Tag className="w-3 h-3" /> {TAXONOMY_TAGS.find((t) => t.slug === selectedTag)?.label ?? selectedTag} <X className="w-3 h-3" />
                   </button>
                 )}
                 {regionSearch && (
@@ -1328,7 +1386,7 @@ export default function DestinationsPage() {
               </div>
             )}
 
-            {!loading && !error && filtered.length === 0 && (
+            {!loading && !error && contentType !== "circuits" && filtered.length === 0 && (
               <div className="flex flex-col items-center justify-center py-20 text-center">
                 <Leaf className="w-12 h-12 text-slate-200 mb-4" />
                 <p className="text-slate-500 font-semibold text-lg mb-2">Aucune offre trouvée</p>
@@ -1343,7 +1401,7 @@ export default function DestinationsPage() {
               </div>
             )}
 
-            {!loading && !error && filtered.length > 0 && (
+            {!loading && !error && contentType !== "circuits" && filtered.length > 0 && (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 {filtered.map((offer) => (
                   <OfferCard key={offer.id} offer={offer} onClick={() => setSelectedOffer(offer)} />
@@ -1355,7 +1413,7 @@ export default function DestinationsPage() {
       </main>
 
       {/* Circuits */}
-      {!loading && circuits.length > 0 && (
+      {!loading && contentType !== "offres" && filteredCircuits.length > 0 && (
         <section className="bg-white border-t border-slate-100 py-16 px-6 md:px-20 lg:px-40">
           <div className="max-w-[1440px] mx-auto">
             <div className="flex items-center gap-3 mb-3">
@@ -1370,14 +1428,22 @@ export default function DestinationsPage() {
                 </p>
               </div>
               <span className="text-sm font-semibold text-slate-400 shrink-0">
-                {circuits.length} circuit{circuits.length !== 1 ? "s" : ""}
+                {filteredCircuits.length} circuit{filteredCircuits.length !== 1 ? "s" : ""}
+                {filteredCircuits.length !== circuits.length && <span className="text-slate-300"> / {circuits.length}</span>}
               </span>
             </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-              {circuits.map((circuit) => (
-                <CircuitCard key={circuit.id} circuit={circuit} onClick={() => setSelectedCircuit(circuit)} />
-              ))}
-            </div>
+            {filteredCircuits.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-12 text-center">
+                <Leaf className="w-10 h-10 text-slate-200 mb-3" />
+                <p className="text-slate-400 font-semibold">Aucun circuit ne correspond aux filtres sélectionnés.</p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+                {filteredCircuits.map((circuit) => (
+                  <CircuitCard key={circuit.id} circuit={circuit} onClick={() => setSelectedCircuit(circuit)} />
+                ))}
+              </div>
+            )}
           </div>
         </section>
       )}

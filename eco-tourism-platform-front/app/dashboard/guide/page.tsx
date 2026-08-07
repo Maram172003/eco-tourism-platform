@@ -130,12 +130,14 @@ export default function GuideDashboardPage() {
   const notifRef = useRef<HTMLDivElement>(null);
 
   const navItems = [
-    { label: "Tableau de bord", icon: "dashboard" },
-    { label: "Mes Offres", icon: "map" },
-    { label: "Réservations", icon: "event_available" },
-    { label: "Mes Avis", icon: "star" },
-    { label: "Certifications", icon: "verified" },
-    { label: "Paramètres", icon: "settings" },
+    { label: "Tableau de bord", icon: "dashboard",      href: "/dashboard/guide" },
+    { label: "Explorer",        icon: "explore",         href: "/explorer" },
+    { label: "Offres",          icon: "storefront",      href: "/profile/guide?tab=offres" },
+    { label: "Circuits",        icon: "route",           href: "/profile/guide?tab=circuits" },
+    { label: "Réservations",    icon: "event_available", href: "/reservations" },
+    { label: "Avis",            icon: "star",            href: "/profile/guide?tab=apropos" },
+    { label: "Paramètres",      icon: "settings",        href: "/dashboard/profile" },
+    { label: "Messagerie",      icon: "forum",           href: "/messagerie" },
   ];
 
   useEffect(() => {
@@ -285,7 +287,7 @@ export default function GuideDashboardPage() {
               {navItems.map((item) => (
                 <button
                   key={item.label}
-                  onClick={() => setActiveItem(item.label)}
+                  onClick={() => router.push(item.href)}
                   className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${
                     activeItem === item.label
                       ? "bg-primary/10 text-primary font-bold"

@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { Leaf, ArrowRight, ArrowLeft, Check } from "lucide-react";
 import { apiFetch } from "@/lib/api";
+import { MACRO_CATEGORIES } from "@/lib/constants/taxonomy-tags";
 
 // ─── Étape 2 — Type de voyageur ───────────────────────────────────────────────
 // Slugs identiques à public_recommande (guide) et details.public_cible (prestataire)
@@ -20,18 +21,7 @@ const TRAVELER_TYPES = [
 
 // ─── Étape 3 — Univers (macro-catégories) ────────────────────────────────────
 
-const UNIVERS = [
-  { value: "nature",                label: "Nature" },
-  { value: "histoire_archeologie",  label: "Histoire & Archéologie" },
-  { value: "aventure_sport",        label: "Aventure & Sport" },
-  { value: "gastronomie",           label: "Gastronomie" },
-  { value: "artisanat",             label: "Artisanat" },
-  { value: "decouverte_urbaine",    label: "Découverte urbaine" },
-  { value: "culture_patrimoine",    label: "Culture & Patrimoine" },
-  { value: "bien_etre",             label: "Bien-être" },
-  { value: "transport_experientiel",label: "Transport expérientiel" },
-  { value: "volontariat",           label: "Volontariat" },
-];
+const UNIVERS = MACRO_CATEGORIES.map((c) => ({ value: c.slug, label: c.label }));
 
 // ─── Étape 3 — Valeurs durables (contenu inchangé, affichage #Label) ─────────
 

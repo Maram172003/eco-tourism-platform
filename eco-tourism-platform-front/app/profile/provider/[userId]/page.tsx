@@ -472,9 +472,9 @@ export default function PublicProviderProfile() {
   const avatarSrc = org?.logo ?? profile.photo;
 
   const activeCollabs = collaborations.filter((c) => {
+    if (c.status !== "completed") return false;
     const st = c.source_type === "circuit" ? c.circuit_status : c.offer_status;
-    if (["offer_deleted","circuit_deleted","collab_kicked","collab_quit"].includes(st ?? "")) return false;
-    return c.status === "accepted" || c.status === "completed";
+    return st === "approved";
   });
 
   // ─── OfferCard — exact design profil prestataire ─────────────────────────

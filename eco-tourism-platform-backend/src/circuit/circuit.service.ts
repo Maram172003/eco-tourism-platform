@@ -12,6 +12,7 @@ import { CircuitCollaboration } from './entities/circuit-collaboration.entity';
 import { GuideAvailabilitySlot } from '../guide/entities/guide-availability.entity';
 import { Guide } from '../guide/entities/guide.entity';
 import { Provider } from '../provider/entities/provider.entity';
+import { Organization } from '../organization/entities/organization.entity';
 import { CreateCircuitDto, UpdateCircuitDto } from './dto/circuit.dto';
 import { NotificationService } from '../notifications/notification.service';
 import {
@@ -45,6 +46,8 @@ export class CircuitService {
     private readonly guideRepo: Repository<Guide>,
     @InjectRepository(Provider)
     private readonly providerRepo: Repository<Provider>,
+    @InjectRepository(Organization)
+    private readonly orgRepo: Repository<Organization>,
     private readonly notifService: NotificationService,
   ) {}
 
@@ -79,6 +82,7 @@ export class CircuitService {
       etapes: dto.etapes ?? [],
       availability: dto.availability ?? null,
       hebergement: dto.hebergement ?? null,
+      tags: dto.tags ?? null,
       status: 'draft',
       owner_type: ownerType,
     });
@@ -265,6 +269,7 @@ export class CircuitService {
       ...(dto.etapes !== undefined && { etapes: dto.etapes }),
       ...(dto.availability !== undefined && { availability: dto.availability }),
       ...(dto.hebergement !== undefined && { hebergement: dto.hebergement }),
+      ...(dto.tags !== undefined && { tags: dto.tags ?? null }),
     });
     const saved = await this.repo.save(circuit);
 
@@ -1112,5 +1117,104 @@ export class CircuitService {
     }
     if (active.length === 1) return active[0];
     return null;
+  }
+
+  async findFollowingsCircuits(followingIds: string[]): Promise<any[]> {
+    if (followingIds.length === 0) return [];
+
+    const directCircuits = await this.repo.find({
+      where: { provider_id: In(followingIds), status: 'approved' },
+      order: { created_at: 'DESC' },
+    });
+
+    const collabs = await this.collabRepo.find({
+      where: { invited_user_id: In(followingIds), status: 'accepted' },
+    });
+    const collabCircuitIds = [...new Set(collabs.map((c) => c.circuit_id))];
+
+    let collabCircuits: Circuit[] = [];
+    if (collabCircuitIds.length > 0) {
+      collabCircuits = await this.repo.find({
+        where: { id: In(collabCircuitIds), status: 'approved' },
+        order: { created_at: 'DESC' },
+      });
+    }
+
+    const seen = new Set<string>();
+    const all: Circuit[] = [];
+    for (const circuit of [...directCircuits, ...collabCircuits]) {
+      if (!seen.has(circuit.id)) { seen.add(circuit.id); all.push(circuit); }
+    }
+
+    return Promise.all(
+      all.map(async (circuit) => {
+        let author_name: string | null = null;
+        let author_photo: string | null = null;
+        let org_name: string | null = null;
+        let org_logo: string | null = null;
+
+        if (circuit.owner_type === 'guide') {
+          const guide = await this.guideRepo.findOne({ where: { user_id: circuit.provider_id } });
+          author_name = guide?.full_name ?? null;
+          author_photo = guide?.photo ?? null;
+        } else {
+          const provider = await this.providerRepo.findOne({ where: { user_id: circuit.provider_id } as any });
+          author_name = (provider as any)?.full_name ?? null;
+          author_photo = (provider as any)?.photo ?? null;
+          const org = await this.orgRepo.findOne({ where: { provider_id: circuit.provider_id } as any });
+          org_name = (org as any)?.name ?? null;
+          org_logo = (org as any)?.logo ?? null;
+        }
+
+        return { ...circuit, author_name, author_photo, org_name, org_logo };
+      }),
+    );
+  }
+
+  async findAllApprovedForRecommendations(): Promise<any[]> {
+    const circuits = await this.repo.find({
+      where: { status: 'approved' },
+      order: { created_at: 'DESC' },
+    });
+    if (circuits.length === 0) return [];
+
+    const guideIds = [...new Set(circuits.filter(c => c.owner_type === 'guide').map(c => c.provider_id))];
+    const providerIds = [...new Set(circuits.filter(c => c.owner_type !== 'guide').map(c => c.provider_id))];
+
+    const [guides, providers] = await Promise.all([
+      guideIds.length ? this.guideRepo.find({ where: { user_id: In(guideIds) } }) : Promise.resolve([]),
+      providerIds.length ? this.providerRepo.find({ where: { user_id: In(providerIds) } as any }) : Promise.resolve([]),
+    ]);
+
+    const guideMap = new Map(guides.map(g => [g.user_id, g]));
+    const providerMap = new Map(providers.map((p: any) => [p.user_id, p]));
+
+    const providerOnlyIds = [...new Set(providerIds)];
+    const orgs = providerOnlyIds.length
+      ? await this.orgRepo.find({ where: { provider_id: In(providerOnlyIds) } as any })
+      : [];
+    const orgByProvider = new Map(orgs.map((o: any) => [o.provider_id, o]));
+
+    return circuits.map(circuit => {
+      let author_name: string | null = null;
+      let author_photo: string | null = null;
+      let org_name: string | null = null;
+      let org_logo: string | null = null;
+
+      if (circuit.owner_type === 'guide') {
+        const g = guideMap.get(circuit.provider_id);
+        author_name = g?.full_name ?? null;
+        author_photo = g?.photo ?? null;
+      } else {
+        const p = providerMap.get(circuit.provider_id);
+        author_name = (p as any)?.full_name ?? null;
+        author_photo = (p as any)?.photo ?? null;
+        const org = orgByProvider.get(circuit.provider_id);
+        org_name = (org as any)?.name ?? null;
+        org_logo = (org as any)?.logo ?? null;
+      }
+
+      return { ...circuit, author_name, author_photo, org_name, org_logo };
+    });
   }
 }

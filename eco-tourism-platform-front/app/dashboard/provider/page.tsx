@@ -148,6 +148,7 @@ export default function ProviderDashboardPage() {
   const router = useRouter();
   const [user, setUser] = useState<User | null>(null);
   const [provider, setProvider] = useState<Provider | null>(null);
+  const [orgLogo, setOrgLogo] = useState<string | null>(null);
   const [offers, setOffers] = useState<Offer[]>([]);
   const [reservations, setReservations] = useState<Reservation[]>([]);
   const [loading, setLoading] = useState(true);
@@ -160,12 +161,14 @@ export default function ProviderDashboardPage() {
   const notifRef = useRef<HTMLDivElement>(null);
 
   const navItems = [
-    { label: "Tableau de bord", icon: "dashboard" },
-    { label: "Activités", icon: "local_activity" },
-    { label: "Offres", icon: "storefront" },
-    { label: "Réservations", icon: "event_available" },
-    { label: "Certifications", icon: "verified" },
-    { label: "Paramètres", icon: "settings" },
+    { label: "Tableau de bord", icon: "dashboard",      href: "/dashboard/provider" },
+    { label: "Explorer",        icon: "explore",         href: "/explorer" },
+    { label: "Offres",          icon: "storefront",      href: "/profile/provider?tab=offres" },
+    { label: "Circuits",        icon: "route",           href: "/profile/provider?tab=circuits" },
+    { label: "Réservations",    icon: "event_available", href: "/reservations" },
+    { label: "Avis",            icon: "star",            href: "/profile/provider?tab=apropos" },
+    { label: "Paramètres",      icon: "settings",        href: "/dashboard/profile" },
+    { label: "Messagerie",      icon: "forum",           href: "/messagerie" },
   ];
 
   useEffect(() => {
@@ -185,11 +188,13 @@ export default function ProviderDashboardPage() {
         apiFetch<Provider>("/providers/me", { headers: { Authorization: `Bearer ${tkn}` } }),
         apiFetch<Offer[]>("/offers/mine", { headers: { Authorization: `Bearer ${tkn}` } }),
         apiFetch<Reservation[]>("/reservations/provider/received", { headers: { Authorization: `Bearer ${tkn}` } }),
+        apiFetch<{ logo?: string | null }>("/organizations/me", { headers: { Authorization: `Bearer ${tkn}` } }).catch(() => null),
       ])
-        .then(([p, o, r]) => {
+        .then(([p, o, r, org]) => {
           setProvider(p);
           setOffers(o);
           setReservations(r);
+          setOrgLogo(org?.logo ?? null);
           if (!p.is_onboarded && !p.full_name) {
             router.push("/onboarding/provider");
           }
@@ -335,7 +340,7 @@ export default function ProviderDashboardPage() {
               {navItems.map((item) => (
                 <button
                   key={item.label}
-                  onClick={() => setActiveItem(item.label)}
+                  onClick={() => router.push(item.href)}
                   className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${
                     activeItem === item.label
                       ? "bg-primary/10 text-primary font-bold"
@@ -538,8 +543,8 @@ export default function ProviderDashboardPage() {
                 className="size-11 rounded-full bg-slate-200 border-2 border-primary overflow-hidden shrink-0 hover:opacity-80 transition-opacity"
                 title="Voir mon profil"
               >
-                {provider.photo ? (
-                  <img src={provider.photo} alt="Photo" className="w-full h-full object-cover" />
+                {(orgLogo ?? provider.photo) ? (
+                  <img src={(orgLogo ?? provider.photo)!} alt="Photo" className="w-full h-full object-cover" />
                 ) : (
                   <div className="w-full h-full flex items-center justify-center bg-primary/20">
                     <span className="material-symbols-outlined text-primary text-xl">person</span>
@@ -656,8 +661,8 @@ export default function ProviderDashboardPage() {
                   <div className="bg-white dark:bg-slate-900 rounded-2xl border border-primary/5 p-6 space-y-4">
                     <div className="flex items-start gap-4">
                       <div className="w-16 h-16 rounded-2xl bg-slate-100 dark:bg-slate-800 flex-shrink-0 overflow-hidden border-2 border-primary/20">
-                        {provider.photo ? (
-                          <img src={provider.photo} alt="Photo" className="w-full h-full object-cover" />
+                        {(orgLogo ?? provider.photo) ? (
+                          <img src={(orgLogo ?? provider.photo)!} alt="Photo" className="w-full h-full object-cover" />
                         ) : (
                           <div className="w-full h-full flex items-center justify-center">
                             <span className="material-symbols-outlined text-slate-400 text-3xl">person</span>

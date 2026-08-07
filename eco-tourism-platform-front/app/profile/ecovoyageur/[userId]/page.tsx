@@ -388,6 +388,8 @@ export default function PublicEcoTravelerProfile() {
 
   useEffect(() => {
     if (!highlightedPubId || !profile) return;
+    const pub = profile.publications.find((p) => p.id === highlightedPubId);
+    if (pub) { setSelectedPub(pub); setSliderIdx(0); return; }
     const el = pubRefs.current[highlightedPubId];
     if (el) setTimeout(() => el.scrollIntoView({ behavior: "smooth", block: "center" }), 400);
   }, [highlightedPubId, profile]);

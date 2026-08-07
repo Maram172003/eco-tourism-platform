@@ -1,6 +1,6 @@
 import { BadRequestException, Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { In, Repository } from 'typeorm';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { Offer } from './entities/offer.entity';
@@ -226,6 +226,7 @@ export class OfferService {
     if (dto.confirmation_deadline_hours !== undefined) offer.confirmation_deadline_hours = dto.confirmation_deadline_hours ?? null;
     if (dto.deposit_percentage !== undefined) offer.deposit_percentage = dto.deposit_percentage ?? null;
     if (dto.details !== undefined) offer.details = dto.details ?? null;
+    if (dto.tags !== undefined) (offer as any).tags = dto.tags ?? null;
     if (dto.status !== undefined) offer.status = dto.status;
 
     // Logique _finalize : draft → attente_publication si tous les collabs sont terminés/refusés
@@ -555,6 +556,131 @@ export class OfferService {
         );
       }
     }
+  }
+
+  async findFollowingsOffers(followingIds: string[]): Promise<any[]> {
+    if (followingIds.length === 0) return [];
+
+    const directOffers = await this.repo.find({
+      where: { author_id: In(followingIds), status: 'approved' },
+      order: { created_at: 'DESC' },
+    });
+
+    const collabs = await this.collabRepo.find({
+      where: { invited_user_id: In(followingIds), status: 'accepted' },
+    });
+    const collabOfferIds = [...new Set(collabs.map((c) => c.offer_id))];
+
+    let collabOffers: Offer[] = [];
+    if (collabOfferIds.length > 0) {
+      collabOffers = await this.repo.find({
+        where: { id: In(collabOfferIds), status: 'approved' },
+        order: { created_at: 'DESC' },
+      });
+    }
+
+    const seen = new Set<string>();
+    const all: Offer[] = [];
+    for (const offer of [...directOffers, ...collabOffers]) {
+      if (!seen.has(offer.id)) { seen.add(offer.id); all.push(offer); }
+    }
+
+    return Promise.all(
+      all.map(async (offer) => {
+        let author_name: string | null = null;
+        let author_photo: string | null = null;
+        let org_name: string | null = null;
+        let org_logo: string | null = null;
+
+        if (offer.author_type === 'guide') {
+          const guide = await this.guideRepo.findOne({ where: { user_id: offer.author_id } });
+          author_name = guide?.full_name ?? null;
+          author_photo = guide?.photo ?? null;
+        } else {
+          const provider = await this.providerRepo.findOne({ where: { user_id: offer.author_id } as any });
+          author_name = (provider as any)?.full_name ?? null;
+          author_photo = (provider as any)?.photo ?? null;
+        }
+
+        if (offer.organization_id) {
+          const org = await this.orgRepo.findOne({ where: { id: offer.organization_id } as any });
+          org_name = (org as any)?.name ?? null;
+          org_logo = (org as any)?.logo ?? null;
+        }
+
+        const collabRows = await this.collabRepo.find({ where: { offer_id: offer.id, status: In(['accepted', 'completed']) } });
+        const collaborators = await Promise.all(collabRows.map(async (c) => {
+          let collab_photo: string | null = null;
+          if ((c as any).invited_user_type === 'guide') {
+            const g = await this.guideRepo.findOne({ where: { user_id: (c as any).invited_user_id } });
+            collab_photo = g?.photo ?? null;
+          } else {
+            const org = await this.orgRepo.findOne({ where: { provider_id: (c as any).invited_user_id } as any });
+            collab_photo = (org as any)?.logo ?? null;
+            if (!collab_photo) {
+              const prov = await this.providerRepo.findOne({ where: { user_id: (c as any).invited_user_id } as any });
+              collab_photo = (prov as any)?.photo ?? null;
+            }
+          }
+          return {
+            name: c.invited_user_name,
+            section: c.section,
+            section_context: c.section_context ?? null,
+            contribution_data: (c as any).contribution_data ?? null,
+            photo: collab_photo,
+          };
+        }));
+
+        return { ...offer, author_name, author_photo, org_name, org_logo, collaborators };
+      }),
+    );
+  }
+
+  async findAllApprovedForRecommendations(): Promise<any[]> {
+    const offers = await this.repo.find({
+      where: { status: 'approved' },
+      order: { created_at: 'DESC' },
+    });
+    if (offers.length === 0) return [];
+
+    const guideIds = [...new Set(offers.filter(o => o.author_type === 'guide').map(o => o.author_id))];
+    const providerIds = [...new Set(offers.filter(o => o.author_type !== 'guide').map(o => o.author_id))];
+    const orgIds = [...new Set(offers.filter(o => o.organization_id).map(o => o.organization_id!))];
+
+    const [guides, providers, orgs] = await Promise.all([
+      guideIds.length ? this.guideRepo.find({ where: { user_id: In(guideIds) } }) : Promise.resolve([]),
+      providerIds.length ? this.providerRepo.find({ where: { user_id: In(providerIds) } as any }) : Promise.resolve([]),
+      orgIds.length ? this.orgRepo.find({ where: { id: In(orgIds) } as any }) : Promise.resolve([]),
+    ]);
+
+    const guideMap = new Map(guides.map(g => [g.user_id, g]));
+    const providerMap = new Map(providers.map((p: any) => [p.user_id, p]));
+    const orgMap = new Map(orgs.map((o: any) => [o.id, o]));
+
+    return offers.map(offer => {
+      let author_name: string | null = null;
+      let author_photo: string | null = null;
+      let org_name: string | null = null;
+      let org_logo: string | null = null;
+
+      if (offer.author_type === 'guide') {
+        const g = guideMap.get(offer.author_id);
+        author_name = g?.full_name ?? null;
+        author_photo = g?.photo ?? null;
+      } else {
+        const p = providerMap.get(offer.author_id);
+        author_name = (p as any)?.full_name ?? null;
+        author_photo = (p as any)?.photo ?? null;
+      }
+
+      if (offer.organization_id) {
+        const org = orgMap.get(offer.organization_id);
+        org_name = (org as any)?.name ?? null;
+        org_logo = (org as any)?.logo ?? null;
+      }
+
+      return { ...offer, author_name, author_photo, org_name, org_logo };
+    });
   }
 
   private async findOrFail(id: string): Promise<Offer> {

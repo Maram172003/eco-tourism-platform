@@ -997,7 +997,7 @@ function AutreServiceFields({ d, u, lockMeta, lockMode, hideMode, prestataireSlo
   const domaineCfg = selectedDomaine ? DOMAINES[selectedDomaine] : null;
   const cascadeCfg = selectedDomaine ? DOMAIN_CASCADE_CONFIG[selectedDomaine] : null;
   const typesForExpertise: string[] = cascadeCfg && selectedExpertise
-    ? (cascadeCfg.typesByExpertise?.[selectedExpertise] ?? []) : [];
+    ? (cascadeCfg.typesByExpertise?.[selectedExpertise] ?? cascadeCfg.typesByExpertise["_default"] ?? []) : [];
   const expGroups  = cascadeCfg && selectedTypes.length ? getExperiencesGrouped(cascadeCfg, selectedTypes) : [];
   const medGroups  = cascadeCfg && selectedTypes.length ? getMediationGrouped(cascadeCfg,  selectedTypes) : [];
   const allExpItems = [...new Set(expGroups.flatMap((g) => g.experiences))];
@@ -1262,17 +1262,25 @@ function AutreServiceFields({ d, u, lockMeta, lockMode, hideMode, prestataireSlo
                       return (
                         <div key={f.key}>
                           <Field label={f.label} required={f.required}>
-                            {f.type === "multiselect" ? (
+                            {f.type === "multiselect" && (f.options ?? []).length > 0 ? (
                               <Chips
-                                options={f.options ?? []}
+                                options={f.options!}
                                 selected={Array.isArray(val) ? (val as string[]) : []}
                                 onToggle={(v) => toggleDetailArr(f.key, v)}
                               />
-                            ) : f.type === "select" ? (
+                            ) : f.type === "multiselect" ? (
+                              <Txt value={Array.isArray(val) ? (val as string[]).join(", ") : ""}
+                                onChange={(v) => setDetailField(f.key, v ? v.split(",").map((s) => s.trim()).filter(Boolean) : [])}
+                                placeholder={f.placeholder ?? "Valeurs séparées par des virgules"} rows={2} />
+                            ) : f.type === "select" && (f.options ?? []).length > 0 ? (
                               <select value={val as string} onChange={(e) => setDetailField(f.key, e.target.value)} className={inputCls}>
                                 <option value="">— Choisir —</option>
-                                {(f.options ?? []).map((o) => <option key={o} value={o}>{o}</option>)}
+                                {f.options!.map((o) => <option key={o} value={o}>{o}</option>)}
                               </select>
+                            ) : f.type === "select" ? (
+                              <input type="text" value={val as string}
+                                onChange={(e) => setDetailField(f.key, e.target.value)}
+                                className={inputCls} placeholder={f.placeholder ?? f.label} />
                             ) : f.type === "textarea" ? (
                               <Txt value={val as string} onChange={(v) => setDetailField(f.key, v)} placeholder={f.placeholder ?? f.label} rows={3} />
                             ) : f.type === "time" ? (
@@ -1316,7 +1324,7 @@ function AutreServiceFields({ d, u, lockMeta, lockMode, hideMode, prestataireSlo
 }
 
 /** Section Repas : toggle Guidage (gastronomie locale) / Service prestataire (restaurant & terroir) */
-function RepasFields({ d, u, prestataireSlot, guidageSlot, guidageInviteSlot }: { d: FormData; u: (x: Partial<FormData>) => void; prestataireSlot?: React.ReactNode; guidageSlot?: React.ReactNode; guidageInviteSlot?: React.ReactNode }) {
+function RepasFields({ d, u, prestataireSlot, guidageSlot, guidageInviteSlot, lockMode }: { d: FormData; u: (x: Partial<FormData>) => void; prestataireSlot?: React.ReactNode; guidageSlot?: React.ReactNode; guidageInviteSlot?: React.ReactNode; lockMode?: boolean }) {
   type RepasMode = "guide" | "prestataire";
   const mode: RepasMode = (d.restauration_mode as RepasMode) || "guide";
 
@@ -1333,9 +1341,9 @@ function RepasFields({ d, u, prestataireSlot, guidageSlot, guidageInviteSlot }: 
   return (
     <div className="space-y-4 p-4 bg-slate-50 border border-slate-200 rounded-2xl">
       {/* Toggle */}
-      <div className="flex gap-2">
+      <div className={`flex gap-2${lockMode ? " pointer-events-none select-none opacity-70" : ""}`}>
         {(["guide", "prestataire"] as const).map((m) => (
-          <button key={m} type="button" onClick={() => setMode(m)}
+          <button key={m} type="button" onClick={() => !lockMode && setMode(m)}
             className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl border-2 text-xs font-black transition-all ${
               mode === m
                 ? "border-primary bg-primary/5 text-primary"
@@ -1362,7 +1370,7 @@ function RepasFields({ d, u, prestataireSlot, guidageSlot, guidageInviteSlot }: 
             const selectedTypes: string[] = d.restauration_gastro_details.types       ?? [];
             const selectedExps: string[]  = d.restauration_gastro_details.experiences  ?? [];
             const selectedMed: string[]   = d.restauration_gastro_details.mediation    ?? [];
-            const typesForExp = gastroCfg && d.restauration_gastro_expertise ? (gastroCfg.typesByExpertise?.[d.restauration_gastro_expertise] ?? []) : [];
+            const typesForExp = gastroCfg && d.restauration_gastro_expertise ? (gastroCfg.typesByExpertise?.[d.restauration_gastro_expertise] ?? gastroCfg.typesByExpertise["_default"] ?? []) : [];
             const expGroups   = gastroCfg && selectedTypes.length ? getExperiencesGrouped(gastroCfg, selectedTypes) : [];
             const medGroups   = gastroCfg && selectedTypes.length ? getMediationGrouped(gastroCfg, selectedTypes)   : [];
             const allExpItems = [...new Set(expGroups.flatMap((g) => g.experiences))];
@@ -1461,12 +1469,13 @@ export interface RepasBlockData {
   prestDet: Record<string, any>;
 }
 
-export function RepasBlock({ data, onUpdate, prestataireSlot, guidageSlot, guidageInviteSlot }: {
+export function RepasBlock({ data, onUpdate, prestataireSlot, guidageSlot, guidageInviteSlot, lockMode }: {
   data: RepasBlockData;
   onUpdate: (patch: Partial<RepasBlockData>) => void;
   prestataireSlot?: React.ReactNode;
   guidageSlot?: React.ReactNode;
   guidageInviteSlot?: React.ReactNode;
+  lockMode?: boolean;
 }) {
   const shimD = {
     restauration_mode: data.mode,
@@ -1486,7 +1495,7 @@ export function RepasBlock({ data, onUpdate, prestataireSlot, guidageSlot, guida
     if (Object.keys(p).length > 0) onUpdate(p);
   };
 
-  return <RepasFields d={shimD} u={shimU} prestataireSlot={prestataireSlot} guidageSlot={guidageSlot} guidageInviteSlot={guidageInviteSlot} />;
+  return <RepasFields d={shimD} u={shimU} prestataireSlot={prestataireSlot} guidageSlot={guidageSlot} guidageInviteSlot={guidageInviteSlot} lockMode={lockMode} />;
 }
 
 export interface AutreServiceBlockData {
@@ -1532,21 +1541,61 @@ export function AutreServiceBlock({ data, onUpdate, prestataireSlot, prestataire
 }
 
 /** Bloc prestataire générique : sous-type picker + champs OFFER_DETAIL_FIELDS */
+export interface PrestSubBlockMultiMode {
+  sousTypes: string[];
+  activeType: string;
+  detailsMap: Record<string, Record<string, any>>;
+  onToggle: (v: string) => void;
+  onSetActive: (v: string) => void;
+  onDetailsChange: (type: string, k: string, v: any) => void;
+}
+
 export function PrestSubBlock({
-  title, icon, subtypes, sousType, details, onSousType, onDetails,
+  title, icon, subtypes, sousType, details, onSousType, onDetails, lockedSousType, multiMode,
 }: {
   title: string; icon: string;
   subtypes: Array<{ value: string; label: string }>;
   sousType: string; details: Record<string, any>;
   onSousType: (v: string) => void;
   onDetails: (k: string, v: any) => void;
+  lockedSousType?: boolean;
+  multiMode?: PrestSubBlockMultiMode;
 }) {
-  const cfg = sousType ? (OFFER_DETAIL_FIELDS[sousType] ?? null) : null;
+  // En mode multi, le type actif et les détails viennent de multiMode
+  const effectiveSousType = multiMode ? multiMode.activeType : sousType;
+  const effectiveDetails  = multiMode ? (multiMode.detailsMap[multiMode.activeType] ?? {}) : details;
+  const cfg = effectiveSousType ? (OFFER_DETAIL_FIELDS[effectiveSousType] ?? null) : null;
 
-  const setField = (k: string, v: any) => onDetails(k, v);
+  const setField = (k: string, v: any) => {
+    if (multiMode) multiMode.onDetailsChange(multiMode.activeType, k, v);
+    else onDetails(k, v);
+  };
   const toggleField = (k: string, v: string) => {
-    const arr: string[] = Array.isArray(details[k]) ? details[k] : [];
-    onDetails(k, arr.includes(v) ? arr.filter((x) => x !== v) : [...arr, v]);
+    const arr: string[] = Array.isArray(effectiveDetails[k]) ? effectiveDetails[k] : [];
+    setField(k, arr.includes(v) ? arr.filter((x) => x !== v) : [...arr, v]);
+  };
+
+  const handlePillClick = (stValue: string) => {
+    if (lockedSousType) return;
+    if (multiMode) {
+      const { sousTypes, activeType, onToggle, onSetActive } = multiMode;
+      const isIn = sousTypes.includes(stValue);
+      if (!isIn) {
+        // Ajouter et activer
+        onToggle(stValue);
+        onSetActive(stValue);
+      } else if (activeType !== stValue) {
+        // Déjà sélectionné mais pas actif → activer sans retirer
+        onSetActive(stValue);
+      } else {
+        // Actif → retirer ; si d'autres restent, activer le premier
+        onToggle(stValue);
+        const remaining = sousTypes.filter((t) => t !== stValue);
+        if (remaining.length > 0) onSetActive(remaining[0]);
+      }
+    } else {
+      onSousType(sousType === stValue ? "" : stValue);
+    }
   };
 
   return (
@@ -1554,27 +1603,50 @@ export function PrestSubBlock({
       <p className="text-[10px] font-black tracking-widest text-slate-400 uppercase flex items-center gap-1.5">
         <span className="material-symbols-outlined text-sm">{icon}</span>
         {title}
+        {lockedSousType && <span className="material-symbols-outlined text-xs text-slate-400 ml-1">lock</span>}
       </p>
 
-      <div className="flex flex-wrap gap-1.5">
-        {subtypes.map((st) => (
-          <button key={st.value} type="button"
-            onClick={() => onSousType(sousType === st.value ? "" : st.value)}
-            className={`px-3 py-1.5 rounded-full text-xs font-bold border-2 transition-all ${
-              sousType === st.value
-                ? "border-primary bg-primary text-white"
+      <div className={`flex flex-wrap gap-1.5${lockedSousType ? " pointer-events-none select-none" : ""}`}>
+        {subtypes.map((st) => {
+          const isSelected = multiMode ? multiMode.sousTypes.includes(st.value) : sousType === st.value;
+          const isActive   = multiMode ? multiMode.activeType === st.value      : sousType === st.value;
+          return (
+            <button key={st.value} type="button" onClick={() => handlePillClick(st.value)}
+              className={`px-3 py-1.5 rounded-full text-xs font-bold border-2 transition-all ${
+                isActive   ? "border-primary bg-primary text-white"
+                : isSelected ? "border-primary/60 bg-primary/10 text-primary"
                 : "border-slate-200 bg-white text-slate-600 hover:border-primary/40"
-            }`}>
-            {st.label}
-          </button>
-        ))}
+              }`}>
+              {st.label}
+            </button>
+          );
+        })}
       </div>
+
+      {/* Onglets de navigation quand plusieurs types sélectionnés (mode multi uniquement) */}
+      {multiMode && multiMode.sousTypes.length > 1 && (
+        <div className="flex gap-0 border-b border-slate-200">
+          {multiMode.sousTypes.map((st) => {
+            const stLabel = subtypes.find((s) => s.value === st)?.label ?? st;
+            return (
+              <button key={st} type="button" onClick={() => multiMode.onSetActive(st)}
+                className={`px-3 py-1.5 text-xs font-bold border-b-2 transition-all -mb-px ${
+                  multiMode.activeType === st
+                    ? "border-primary text-primary"
+                    : "border-transparent text-slate-400 hover:text-primary"
+                }`}>
+                {stLabel}
+              </button>
+            );
+          })}
+        </div>
+      )}
 
       {cfg && (
         <div className="space-y-4 pl-1">
           {cfg.sections.map((sec, si) => {
             if (sec.conditionalOn?.field) {
-              const cv = details[sec.conditionalOn.field];
+              const cv = effectiveDetails[sec.conditionalOn.field];
               if (sec.conditionalOn.value !== undefined && cv !== sec.conditionalOn.value) return null;
             }
             return (
@@ -1585,11 +1657,11 @@ export function PrestSubBlock({
                 </p>
                 {sec.fields.map((f) => {
                   if (f.conditionalOn?.field) {
-                    const cv = details[f.conditionalOn.field];
+                    const cv = effectiveDetails[f.conditionalOn.field];
                     if (f.conditionalOn.value !== undefined && cv !== f.conditionalOn.value) return null;
                     if (f.conditionalOn.notValue !== undefined && cv === f.conditionalOn.notValue) return null;
                   }
-                  const val = details[f.key] ?? (f.type === "multiselect" ? [] : f.type === "boolean" ? null : "");
+                  const val = effectiveDetails[f.key] ?? (f.type === "multiselect" ? [] : f.type === "boolean" ? null : "");
 
                   if (f.type === "boolean") {
                     return (
@@ -1609,13 +1681,21 @@ export function PrestSubBlock({
 
                   return (
                     <Field key={f.key} label={f.label} required={f.required}>
-                      {f.type === "multiselect" ? (
-                        <Chips options={f.options ?? []} selected={Array.isArray(val) ? val as string[] : []} onToggle={(v) => toggleField(f.key, v)} />
-                      ) : f.type === "select" ? (
+                      {f.type === "multiselect" && (f.options ?? []).length > 0 ? (
+                        <Chips options={f.options!} selected={Array.isArray(val) ? val as string[] : []} onToggle={(v) => toggleField(f.key, v)} />
+                      ) : f.type === "multiselect" ? (
+                        <Txt value={Array.isArray(val) ? (val as string[]).join(", ") : ""}
+                          onChange={(v) => setField(f.key, v ? v.split(",").map((s) => s.trim()).filter(Boolean) : [])}
+                          placeholder={f.placeholder ?? "Valeurs séparées par des virgules"} rows={2} />
+                      ) : f.type === "select" && (f.options ?? []).length > 0 ? (
                         <select value={val as string} onChange={(e) => setField(f.key, e.target.value)} className={inputCls}>
                           <option value="">— Choisir —</option>
-                          {(f.options ?? []).map((o) => <option key={o} value={o}>{o}</option>)}
+                          {f.options!.map((o) => <option key={o} value={o}>{o}</option>)}
                         </select>
+                      ) : f.type === "select" ? (
+                        <input type="text" value={val as string}
+                          onChange={(e) => setField(f.key, e.target.value)}
+                          className={inputCls} placeholder={f.placeholder ?? f.label} />
                       ) : f.type === "textarea" ? (
                         <Txt value={val as string} onChange={(v) => setField(f.key, v)} placeholder={f.placeholder ?? f.label} rows={3} />
                       ) : f.type === "time" ? (
@@ -1653,7 +1733,7 @@ function GastroGuideBlock({
   const selectedExps: string[]  = details.experiences  ?? [];
   const selectedMed: string[]   = details.mediation    ?? [];
 
-  const typesForExp = gastroCfg && expertise ? (gastroCfg.typesByExpertise?.[expertise] ?? []) : [];
+  const typesForExp = gastroCfg && expertise ? (gastroCfg.typesByExpertise?.[expertise] ?? gastroCfg.typesByExpertise["_default"] ?? []) : [];
   const expGroups   = gastroCfg && selectedTypes.length ? getExperiencesGrouped(gastroCfg, selectedTypes) : [];
   const medGroups   = gastroCfg && selectedTypes.length ? getMediationGrouped(gastroCfg,  selectedTypes) : [];
   const allExpItems = [...new Set(expGroups.flatMap((g) => g.experiences))];
@@ -1784,62 +1864,91 @@ function Step5({ d, u, collaborations, onInvite, onKickCollab, savingDraft, coll
                 u({ transport_inclus: v, transport_types: v ? d.transport_types : [], transport_active: "", transport_svcs: v ? d.transport_svcs : {} });
               }} />
           )}
-          {(!isSurMesure || d.transport_inclus === true) && (
-            collabSectionOnly === "transport" ? (
+          {(!isSurMesure || d.transport_inclus === true) && (() => {
+            const toggleType = (v: string) => {
+              const next = d.transport_types.includes(v)
+                ? d.transport_types.filter((x) => x !== v)
+                : [...d.transport_types, v];
+              u({ transport_types: next });
+            };
+            const TransportPills = ({ active }: { active: boolean }) => (
               <div className="space-y-3">
-                <PrestSubBlock
-                  title="Transport Éco" icon="electric_bike"
-                  subtypes={TRANSPORT_ECO_SUBTYPES}
-                  sousType={d.transport_eco_sous_type} details={d.transport_eco_details}
-                  onSousType={(v) => u({ transport_eco_sous_type: v })}
-                  onDetails={(k, v) => u({ transport_eco_details: { ...d.transport_eco_details, [k]: v } })}
-                />
-                <PrestSubBlock
-                  title="Transport" icon="directions_car"
-                  subtypes={TRANSPORT_STD_SUBTYPES}
-                  sousType={d.transport_std_sous_type} details={d.transport_std_details}
-                  onSousType={(v) => u({ transport_std_sous_type: v })}
-                  onDetails={(k, v) => u({ transport_std_details: { ...d.transport_std_details, [k]: v } })}
-                />
+                {([
+                  { title: "Transport Éco", icon: "electric_bike", items: TRANSPORT_ECO_SUBTYPES },
+                  { title: "Transport", icon: "directions_car", items: TRANSPORT_STD_SUBTYPES },
+                ] as const).map(({ title, icon, items }) => (
+                  <div key={title}>
+                    <p className="text-[10px] font-black tracking-widest text-slate-400 uppercase flex items-center gap-1.5 mb-1.5">
+                      <span className="material-symbols-outlined text-sm">{icon}</span>
+                      {title}
+                    </p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {items.map((st) => (
+                        <button key={st.value} type="button"
+                          onClick={() => active && toggleType(st.value)}
+                          className={`px-3 py-1.5 rounded-full text-xs font-bold border-2 transition-all ${
+                            d.transport_types.includes(st.value)
+                              ? "border-primary bg-primary text-white"
+                              : "border-slate-200 bg-white text-slate-600 hover:border-primary/40"
+                          }`}>
+                          {st.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                ))}
               </div>
-            ) : lockTransport ? (
-              <div className="space-y-3">
-                <PrestSubBlock
-                  title="Transport Éco" icon="electric_bike"
-                  subtypes={TRANSPORT_ECO_SUBTYPES}
-                  sousType={d.transport_eco_sous_type} details={d.transport_eco_details}
-                  onSousType={() => {}} onDetails={() => {}}
-                />
-                <PrestSubBlock
-                  title="Transport" icon="directions_car"
-                  subtypes={TRANSPORT_STD_SUBTYPES}
-                  sousType={d.transport_std_sous_type} details={d.transport_std_details}
-                  onSousType={() => {}} onDetails={() => {}}
-                />
-              </div>
-            ) : transportCollab ? (
-              <div className="space-y-2">
-                <SectionLockedBanner collab={transportCollab} onKick={transportCollab.id ? () => onKickCollab?.(transportCollab.id!) : undefined} />
-                <div className="pointer-events-none select-none opacity-70 space-y-3">
+            );
+
+            if (collabSectionOnly === "transport") {
+              // Filtrer aux sous-types choisis par le guide ; fallback sur tout si transport_types est vide/corrompu
+              const ecoFiltered = TRANSPORT_ECO_SUBTYPES.filter((st) => d.transport_types.includes(st.value));
+              const stdFiltered = TRANSPORT_STD_SUBTYPES.filter((st) => d.transport_types.includes(st.value));
+              const ecoList = ecoFiltered.length > 0 ? ecoFiltered : TRANSPORT_ECO_SUBTYPES;
+              const stdList = stdFiltered.length > 0 ? stdFiltered : TRANSPORT_STD_SUBTYPES;
+              return (
+                <div className="space-y-3">
                   <PrestSubBlock
                     title="Transport Éco" icon="electric_bike"
-                    subtypes={TRANSPORT_ECO_SUBTYPES}
-                    sousType={d.transport_eco_sous_type} details={d.transport_eco_details}
-                    onSousType={() => {}} onDetails={() => {}}
+                    subtypes={ecoList}
+                    sousType={d.transport_eco_sous_type || (ecoList.length >= 1 ? ecoList[0].value : "")}
+                    details={d.transport_eco_details}
+                    onSousType={(v) => u({ transport_eco_sous_type: v })}
+                    onDetails={(k, v) => u({ transport_eco_details: { ...d.transport_eco_details, [k]: v } })}
+                    lockedSousType={true}
                   />
                   <PrestSubBlock
                     title="Transport" icon="directions_car"
-                    subtypes={TRANSPORT_STD_SUBTYPES}
-                    sousType={d.transport_std_sous_type} details={d.transport_std_details}
-                    onSousType={() => {}} onDetails={() => {}}
+                    subtypes={stdList}
+                    sousType={d.transport_std_sous_type || (stdList.length >= 1 ? stdList[0].value : "")}
+                    details={d.transport_std_details}
+                    onSousType={(v) => u({ transport_std_sous_type: v })}
+                    onDetails={(k, v) => u({ transport_std_details: { ...d.transport_std_details, [k]: v } })}
+                    lockedSousType={true}
                   />
                 </div>
+              );
+            }
+            if (lockTransport) return <TransportPills active={false} />;
+            if (transportCollab) return (
+              <div className="space-y-2">
+                <SectionLockedBanner collab={transportCollab} onKick={transportCollab.id ? () => onKickCollab?.(transportCollab.id!) : undefined} />
+                <div className="pointer-events-none select-none opacity-70">
+                  <TransportPills active={false} />
+                </div>
               </div>
-            ) : (
-              <InviteRequired section="transport" icon="directions_car"
-                message="Le transport sera assuré par un prestataire — invitez-le pour que cette section soit complétée." />
-            )
-          )}
+            );
+            return (
+              <div className="space-y-3">
+                <TransportPills active={true} />
+                {d.transport_types.length > 0
+                  ? <InviteRequired section="transport" icon="directions_car"
+                      message="Le transport doit être assuré par un prestataire de transport — invitez-en un ci-dessous." />
+                  : <p className="text-xs font-semibold text-slate-400 text-center py-2">Sélectionnez au moins un type de transport avant d'inviter un collaborateur.</p>
+                }
+              </div>
+            );
+          })()}
         </div>
       )}
 
@@ -1864,17 +1973,100 @@ function Step5({ d, u, collaborations, onInvite, onKickCollab, savingDraft, coll
                   <RepasFields d={d} u={() => {}} />
                 </div>
               </div>
-            ) : (
-              <RepasFields d={d} u={u}
-                guidageInviteSlot={
-                  <InviteButton section="restauration" onInvite={onInvite} loading={savingDraft} />
-                }
-                prestataireSlot={
-                  <InviteRequired section="restauration" icon="restaurant"
-                    message="La restauration sera assurée par un prestataire — invitez-le pour que cette section soit complétée." />
-                }
-              />
-            )
+            ) : (() => {
+              const isCollabRepas = collabSectionOnly === "restauration";
+              const gastroCfg = DOMAIN_CASCADE_CONFIG["gastronomie_locale"];
+              const gastroExpertise = d.restauration_gastro_expertise;
+              const gastroTypes: string[]  = d.restauration_gastro_details?.types        ?? [];
+              const gastroExps: string[]   = d.restauration_gastro_details?.experiences  ?? [];
+              const gastroMed: string[]    = d.restauration_gastro_details?.mediation     ?? [];
+              const typesForExp = gastroCfg && gastroExpertise ? (gastroCfg.typesByExpertise?.[gastroExpertise] ?? gastroCfg.typesByExpertise["_default"] ?? []) : [];
+              const expGroups   = gastroCfg && gastroTypes.length ? getExperiencesGrouped(gastroCfg, gastroTypes) : [];
+              const medGroups   = gastroCfg && gastroTypes.length ? getMediationGrouped(gastroCfg, gastroTypes)   : [];
+              const allExpItems = [...new Set(expGroups.flatMap((g) => g.experiences))];
+              const allMedItems = [...new Set(medGroups.flatMap((g) => g.mediation))];
+              function toggleGastro(key: "types"|"experiences"|"mediation", val: string, current: string[]) {
+                const next = current.includes(val) ? current.filter((x) => x !== val) : [...current, val];
+                u({ restauration_gastro_details: { ...d.restauration_gastro_details, [key]: next } });
+              }
+              const collabGuidageSlot = isCollabRepas ? (
+                <div className="space-y-3">
+                  <p className="text-[10px] font-black tracking-widest text-slate-400 uppercase flex items-center gap-1.5">
+                    <span className="material-symbols-outlined text-sm">restaurant</span>
+                    Guidage Gastronomie locale
+                  </p>
+                  {gastroExpertise && (
+                    <div className="flex flex-wrap items-center gap-2 pointer-events-none">
+                      <span className="px-3 py-1.5 rounded-full text-xs font-bold border-2 border-primary bg-primary text-white opacity-70">{gastroExpertise}</span>
+                      <span className="text-[10px] text-slate-400 italic flex items-center gap-1">
+                        <span className="material-symbols-outlined text-xs">lock</span>Définie par le propriétaire
+                      </span>
+                    </div>
+                  )}
+                  {gastroCfg && gastroExpertise && typesForExp.length > 0 && (
+                    <div>
+                      <p className="text-[10px] font-black text-slate-400 uppercase tracking-wide mb-1.5">{gastroCfg.labelType}</p>
+                      <div className="flex flex-wrap gap-1.5">
+                        {typesForExp.map((t) => <PillToggle key={t} label={t} active={gastroTypes.includes(t)} onClick={() => toggleGastro("types", t, gastroTypes)} />)}
+                      </div>
+                    </div>
+                  )}
+                  {gastroCfg && gastroTypes.length > 0 && allExpItems.length > 0 && (
+                    <div>
+                      <p className="text-[10px] font-black text-slate-400 uppercase tracking-wide mb-1.5">{gastroCfg.labelExperiences}</p>
+                      <div className="flex flex-wrap gap-1.5">
+                        {allExpItems.map((e) => <PillToggle key={e} label={e} active={gastroExps.includes(e)} onClick={() => toggleGastro("experiences", e, gastroExps)} />)}
+                      </div>
+                    </div>
+                  )}
+                  {gastroCfg && gastroTypes.length > 0 && allMedItems.length > 0 && (
+                    <div>
+                      <p className="text-[10px] font-black text-slate-400 uppercase tracking-wide mb-1.5">{gastroCfg.labelMediation}</p>
+                      <div className="flex flex-wrap gap-1.5">
+                        {allMedItems.map((m) => <PillToggle key={m} label={m} active={gastroMed.includes(m)} onClick={() => toggleGastro("mediation", m, gastroMed)} />)}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ) : undefined;
+              return (
+                <RepasFields d={d} u={u}
+                  lockMode={isCollabRepas}
+                  guidageSlot={collabGuidageSlot}
+                  guidageInviteSlot={
+                    gastroExpertise
+                      ? <InviteButton section="restauration" onInvite={onInvite} loading={savingDraft} />
+                      : <p className="text-xs font-semibold text-slate-400 text-center py-2">Sélectionnez d'abord une expertise de guidage avant d'inviter un collaborateur.</p>
+                  }
+                  prestataireSlot={
+                    <div className="space-y-3 pt-3 border-t border-dashed border-slate-200">
+                      <p className="text-[10px] font-black tracking-widest text-slate-400 uppercase flex items-center gap-1.5">
+                        <span className="material-symbols-outlined text-sm">storefront</span>
+                        Restaurant &amp; Terroir
+                      </p>
+                      <div className="flex flex-wrap gap-1.5">
+                        {RESTAURANT_PREST_SUBTYPES.map((st) => (
+                          <button key={st.value} type="button"
+                            onClick={() => u({ restauration_prest_sous_type: d.restauration_prest_sous_type === st.value ? "" : st.value })}
+                            className={`px-3 py-1.5 rounded-full text-xs font-bold border-2 transition-all ${
+                              d.restauration_prest_sous_type === st.value
+                                ? "border-primary bg-primary text-white"
+                                : "border-slate-200 bg-white text-slate-600 hover:border-primary/40"
+                            }`}>
+                            {st.label}
+                          </button>
+                        ))}
+                      </div>
+                      {d.restauration_prest_sous_type
+                        ? <InviteRequired section="restauration" icon="restaurant"
+                            message="La restauration sera assurée par un prestataire — invitez-en un ci-dessous." />
+                        : <p className="text-xs font-semibold text-slate-400 text-center py-2">Sélectionnez un type de restaurant avant d'inviter un collaborateur.</p>
+                      }
+                    </div>
+                  }
+                />
+              );
+            })()
           )}
         </div>
       )}
@@ -1890,52 +2082,101 @@ function Step5({ d, u, collaborations, onInvite, onKickCollab, savingDraft, coll
                 u({ hebergement_inclus: v, hebergement_types: v ? d.hebergement_types : [], hebergement_active: "", hebergement_svcs: v ? d.hebergement_svcs : {} });
               }} />
           )}
-          {(!isSurMesure || d.hebergement_inclus === true) && (
-            collabSectionOnly === "hebergement" ? (
-              <MultiTypeSection
-                title="Hébergement" icon="hotel"
-                options={GUIDE_HEBERGEMENT_TYPES}
-                types={d.hebergement_types} active={d.hebergement_active} svcs={d.hebergement_svcs}
-                emptyFn={() => ({ ...EMPTY_HEBERG })}
-                onToggleType={(types, active, svcs) => u({ hebergement_types: types, hebergement_active: active, hebergement_svcs: svcs })}
-                onSetActive={(a) => u({ hebergement_active: a })}
-                onSvcChange={(t, s) => u({ hebergement_svcs: { ...d.hebergement_svcs, [t]: s } })}
-                renderBlock={(type, svc) => (
-                  <HebergBlock subtype={type} value={svc} onChange={(s) => u({ hebergement_svcs: { ...d.hebergement_svcs, [type]: s } })} />
-                )}
-              />
-            ) : lockHebergement ? (
-              <MultiTypeSection
-                title="Hébergement" icon="hotel"
-                options={GUIDE_HEBERGEMENT_TYPES}
-                types={d.hebergement_types} active={d.hebergement_active} svcs={d.hebergement_svcs}
-                emptyFn={() => ({ ...EMPTY_HEBERG })}
-                onToggleType={() => {}} onSetActive={() => {}} onSvcChange={() => {}}
-                renderBlock={(type, svc) => (
-                  <HebergBlock subtype={type} value={svc} onChange={() => {}} />
-                )}
-              />
-            ) : hebergementCollab ? (
+          {(!isSurMesure || d.hebergement_inclus === true) && (() => {
+            const toggleHeberg = (v: string) => {
+              const next = d.hebergement_types.includes(v)
+                ? d.hebergement_types.filter((x) => x !== v)
+                : [...d.hebergement_types, v];
+              u({ hebergement_types: next });
+            };
+            const HebergPills = ({ active }: { active: boolean }) => (
+              <div>
+                <p className="text-[10px] font-black tracking-widest text-slate-400 uppercase flex items-center gap-1.5 mb-1.5">
+                  <span className="material-symbols-outlined text-sm">hotel</span>
+                  Type d&apos;hébergement
+                </p>
+                <div className="flex flex-wrap gap-1.5">
+                  {GUIDE_HEBERGEMENT_TYPES.map((t) => (
+                    <button key={t.value} type="button"
+                      onClick={() => active && toggleHeberg(t.value)}
+                      className={`px-3 py-1.5 rounded-full text-xs font-bold border-2 transition-all ${
+                        d.hebergement_types.includes(t.value)
+                          ? "border-primary bg-primary text-white"
+                          : "border-slate-200 bg-white text-slate-600 hover:border-primary/40"
+                      }`}>
+                      {t.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            );
+            if (collabSectionOnly === "hebergement") {
+              // Collab hébergement : types fixés par le guide (lecture seule), collab remplit les détails
+              const selectedTypes = d.hebergement_types;
+              const activeType = d.hebergement_active || selectedTypes[0] || "";
+              return (
+                <div className="space-y-3">
+                  {/* Types en lecture seule — seuls ceux du guide sont disponibles */}
+                  <div>
+                    <p className="text-[10px] font-black tracking-widest text-slate-400 uppercase flex items-center gap-1.5 mb-1.5">
+                      <span className="material-symbols-outlined text-sm">hotel</span>
+                      Type d&apos;hébergement
+                    </p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {GUIDE_HEBERGEMENT_TYPES.map((t) => {
+                        const isSelected = selectedTypes.includes(t.value);
+                        const isActive = activeType === t.value;
+                        return (
+                          <button key={t.value} type="button"
+                            disabled={!isSelected}
+                            onClick={() => isSelected && u({ hebergement_active: t.value, hebergement_svcs: { ...d.hebergement_svcs, [t.value]: d.hebergement_svcs[t.value] ?? { ...EMPTY_HEBERG } } })}
+                            className={`px-3 py-1.5 rounded-full text-xs font-bold border-2 transition-all ${
+                              !isSelected
+                                ? "border-slate-100 bg-slate-50 text-slate-300 cursor-not-allowed"
+                                : isActive
+                                  ? "border-primary bg-primary text-white"
+                                  : "border-primary/30 bg-primary/5 text-primary hover:bg-primary/10"
+                            }`}>
+                            {t.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                  {/* Champs de détails pour le type actif */}
+                  {activeType && selectedTypes.includes(activeType) && (
+                    <HebergBlock
+                      subtype={activeType}
+                      value={d.hebergement_svcs[activeType] ?? { ...EMPTY_HEBERG }}
+                      onChange={(s) => u({ hebergement_svcs: { ...d.hebergement_svcs, [activeType]: s } })}
+                    />
+                  )}
+                  {selectedTypes.length === 0 && (
+                    <p className="text-xs text-slate-400 italic">Le propriétaire n&apos;a pas encore choisi de type d&apos;hébergement.</p>
+                  )}
+                </div>
+              );
+            }
+            if (lockHebergement) return <HebergPills active={false} />;
+            if (hebergementCollab) return (
               <div className="space-y-2">
                 <SectionLockedBanner collab={hebergementCollab} onKick={hebergementCollab.id ? () => onKickCollab?.(hebergementCollab.id!) : undefined} />
                 <div className="pointer-events-none select-none opacity-70">
-                  <MultiTypeSection
-                    title="Hébergement" icon="hotel"
-                    options={GUIDE_HEBERGEMENT_TYPES}
-                    types={d.hebergement_types} active={d.hebergement_active} svcs={d.hebergement_svcs}
-                    emptyFn={() => ({ ...EMPTY_HEBERG })}
-                    onToggleType={() => {}} onSetActive={() => {}} onSvcChange={() => {}}
-                    renderBlock={(type, svc) => (
-                      <HebergBlock subtype={type} value={svc} onChange={() => {}} />
-                    )}
-                  />
+                  <HebergPills active={false} />
                 </div>
               </div>
-            ) : (
-              <InviteRequired section="hebergement" icon="hotel"
-                message="L'hébergement sera assuré par un prestataire — invitez-le pour que cette section soit complétée." />
-            )
-          )}
+            );
+            return (
+              <div className="space-y-3">
+                <HebergPills active={true} />
+                {d.hebergement_types.length > 0
+                  ? <InviteRequired section="hebergement" icon="hotel"
+                      message="L'hébergement doit être assuré par un prestataire d'hébergement — invitez-en un ci-dessous." />
+                  : <p className="text-xs font-semibold text-slate-400 text-center py-2">Sélectionnez au moins un type d'hébergement avant d'inviter un collaborateur.</p>
+                }
+              </div>
+            );
+          })()}
         </div>
       )}
 
@@ -1970,16 +2211,101 @@ function Step5({ d, u, collaborations, onInvite, onKickCollab, savingDraft, coll
                 </div>
               );
             })() : (
-              <AutreServiceFields d={d} u={u}
-                lockMeta={collabSectionOnly === "autre_service"}
-                guidageInviteSlot={
-                  <InviteButton section="autre_service" onInvite={onInvite} loading={savingDraft} />
-                }
-                prestataireSousTypeSlot={(cat) => (
-                  <InviteRequired section="autre_service" icon="add_circle"
-                    message={`Ce service (${cat}) sera assuré par un prestataire — invitez-le pour que cette section soit complétée.`} />
+              <div className="space-y-3">
+                <AutreServiceFields d={d} u={u}
+                  lockMode={collabSectionOnly === "autre_service"}
+                  lockMeta={collabSectionOnly === "autre_service"}
+                  guidageSousTypeSlot={collabSectionOnly === "autre_service" ? (domaine) => {
+                    const domCfg = DOMAINES[domaine];
+                    const cascadeCfg = DOMAIN_CASCADE_CONFIG[domaine];
+                    const lockedExp = d.autre_service_sous_type;
+                    if (!domCfg) return null;
+                    const selTypes: string[]  = (d.autre_service_details as any)?.types        ?? [];
+                    const selExps: string[]   = (d.autre_service_details as any)?.experiences  ?? [];
+                    const selMed: string[]    = (d.autre_service_details as any)?.mediation     ?? [];
+                    const typesForExp = cascadeCfg && lockedExp ? (cascadeCfg.typesByExpertise?.[lockedExp] ?? cascadeCfg.typesByExpertise["_default"] ?? []) : [];
+                    const expGroups   = cascadeCfg && selTypes.length ? getExperiencesGrouped(cascadeCfg, selTypes) : [];
+                    const medGroups   = cascadeCfg && selTypes.length ? getMediationGrouped(cascadeCfg, selTypes)   : [];
+                    const allExpItems = [...new Set(expGroups.flatMap((g) => g.experiences))];
+                    const allMedItems = [...new Set(medGroups.flatMap((g) => g.mediation))];
+                    function toggleAutreCollab(key: "types"|"experiences"|"mediation", val: string, current: string[]) {
+                      const next = current.includes(val) ? current.filter((x) => x !== val) : [...current, val];
+                      u({ autre_service_details: { ...(d.autre_service_details as any), [key]: next } });
+                    }
+                    return (
+                      <div className="space-y-3">
+                        {/* Expertise verrouillée */}
+                        <div className="flex flex-wrap items-center gap-2 pointer-events-none">
+                          <span className="px-3 py-1.5 rounded-full text-xs font-bold border-2 border-primary bg-primary text-white opacity-70">{lockedExp || domCfg.label}</span>
+                          <span className="text-[10px] text-slate-400 italic flex items-center gap-1">
+                            <span className="material-symbols-outlined text-xs">lock</span>Défini par le propriétaire
+                          </span>
+                        </div>
+                        {/* Cascade éditable par le collaborateur */}
+                        {cascadeCfg && lockedExp && typesForExp.length > 0 && (
+                          <div>
+                            <p className="text-[10px] font-black text-slate-400 uppercase tracking-wide mb-1.5">{cascadeCfg.labelType}</p>
+                            <div className="flex flex-wrap gap-1.5">
+                              {typesForExp.map((t) => <PillToggle key={t} label={t} active={selTypes.includes(t)} onClick={() => toggleAutreCollab("types", t, selTypes)} />)}
+                            </div>
+                          </div>
+                        )}
+                        {cascadeCfg && selTypes.length > 0 && allExpItems.length > 0 && (
+                          <div>
+                            <p className="text-[10px] font-black text-slate-400 uppercase tracking-wide mb-1.5">{cascadeCfg.labelExperiences}</p>
+                            <div className="flex flex-wrap gap-1.5">
+                              {allExpItems.map((e) => <PillToggle key={e} label={e} active={selExps.includes(e)} onClick={() => toggleAutreCollab("experiences", e, selExps)} />)}
+                            </div>
+                          </div>
+                        )}
+                        {cascadeCfg && selTypes.length > 0 && allMedItems.length > 0 && (
+                          <div>
+                            <p className="text-[10px] font-black text-slate-400 uppercase tracking-wide mb-1.5">{cascadeCfg.labelMediation}</p>
+                            <div className="flex flex-wrap gap-1.5">
+                              {allMedItems.map((m) => <PillToggle key={m} label={m} active={selMed.includes(m)} onClick={() => toggleAutreCollab("mediation", m, selMed)} />)}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  } : undefined}
+                  guidageInviteSlot={
+                    (d.autre_service_categorie && d.autre_service_sous_type)
+                      ? <InviteButton section="autre_service" onInvite={onInvite} loading={savingDraft} />
+                      : <p className="text-xs font-semibold text-slate-400 text-center py-2">Sélectionnez d'abord un domaine et une expertise avant d'inviter un collaborateur.</p>
+                  }
+                  prestataireSousTypeSlot={(cat) => {
+                    const cfg = PROVIDER_SCHEMA.find((c) => c.value === cat) ?? null;
+                    if (!cfg || cfg.subtypes.length === 0) return undefined;
+                    return (
+                      <div className="space-y-1.5">
+                        <p className="text-[10px] font-black tracking-widest text-slate-400 uppercase flex items-center gap-1.5">
+                          <span className="w-5 h-5 rounded-full bg-primary/10 text-primary text-[10px] font-black flex items-center justify-center shrink-0">2</span>
+                          Type précis
+                        </p>
+                        <div className="flex flex-wrap gap-1.5">
+                          {cfg.subtypes.map((st) => (
+                            <button key={st.value} type="button"
+                              onClick={() => u({ autre_service_sous_type: d.autre_service_sous_type === st.value ? "" : st.value })}
+                              className={`px-3 py-1.5 rounded-full text-xs font-bold border-2 transition-all ${
+                                d.autre_service_sous_type === st.value
+                                  ? "border-primary bg-primary text-white"
+                                  : "border-slate-200 bg-white text-slate-600 hover:border-primary/40"
+                              }`}>
+                              {st.label}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  }}
+                />
+                {(d.autre_service_details as Record<string, unknown>)._mode === "prestataire" && d.autre_service_categorie && (
+                  d.autre_service_sous_type
+                    ? <InviteButton section="autre_service" onInvite={onInvite} loading={savingDraft} />
+                    : <p className="text-xs font-semibold text-slate-400 text-center py-2">Sélectionnez d'abord un type précis avant d'inviter un collaborateur.</p>
                 )}
-              />
+              </div>
             )
           )}
         </div>
@@ -2127,12 +2453,27 @@ function Step7({ d, u }: { d: FormData; u: (x: Partial<FormData>) => void }) {
   return <PricingBlock value={d.pricing} onChange={(v) => u({ pricing: { ...d.pricing, ...v } })} />;
 }
 
-function Step8({ d, u }: { d: FormData; u: (x: Partial<FormData>) => void }) {
+function Step8({ d, u, collaborations }: { d: FormData; u: (x: Partial<FormData>) => void; collaborations?: Collab[] }) {
   const suggest = async () => {
+    const activeCollabs = (collaborations ?? []).filter((c) => c.status !== "declined");
     const res = await fetch('/api/offers/suggest-tags', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ titre: d.titre, description: d.description_courte }),
+      body: JSON.stringify({
+        titre: d.titre,
+        description: d.description_courte,
+        contexte: {
+          domaine_guide:    d.domaine ?? "",
+          expertises_guide: Array.isArray(d.expertises) ? d.expertises : [],
+          sections_collab:  activeCollabs.map((c) => ({
+            section:    c.section,
+            domaine:    c.sectionContext?.domaine,
+            expertises: c.sectionContext?.expertises,
+            categorie:  c.sectionContext?.categorie,
+            sous_types: c.sectionContext?.sous_types,
+          })),
+        },
+      }),
     });
     if (!res.ok) throw new Error('fetch failed');
     const data = await res.json() as { tags?: unknown };
@@ -2217,15 +2558,19 @@ export function GuideOfferReadOnlySteps({
     const activeKey = `${name}_active` as keyof FormData;
     const typesKey  = `${name}_types`  as keyof FormData;
     // Svcs fusionnés : données du collab en priorité, fallback selon la section
+    // Pour hébergement : utiliser les types du propriétaire (pas svcTypes qui est vide)
     const emptySvc = name === 'hebergement' ? { ...EMPTY_HEBERG } : { ...EMPTY_SIMPLE_SERVICE };
+    const mergedKeys = name === 'hebergement' ? filledData.hebergement_types : types;
     const mergedSvcs = Object.fromEntries(
-      types.map((t) => [t, svcs[t] ?? emptySvc])
+      mergedKeys.map((t) => [t, svcs[t] ?? emptySvc])
     );
     return {
       ...filledData,
-      [typesKey]:  types,                              // types choisis par le collaborateur
+      // Transport et hébergement : garder les types du propriétaire (filtre/disponibilité).
+      // Pour les autres sections : types = sélection du collaborateur.
+      ...(name !== 'transport' && name !== 'hebergement' ? { [typesKey]: types } : {}),
       [svcsKey]:   mergedSvcs,
-      [activeKey]: active || types[0] || "",
+      [activeKey]: active || (name === 'hebergement' ? filledData.hebergement_types[0] : types[0]) || "",
       ...(extraFormData ?? {}),                        // champs libres restaurés (mode, gastro…)
     };
   })();
@@ -2454,7 +2799,20 @@ interface Props {
   editOffer?: Record<string, any> | null;
 }
 
-export interface Collab { id?: string; userId: string; userName: string; userType: string; section: CollabSection; status?: string; }
+export interface Collab {
+  id?: string;
+  userId: string;
+  userName: string;
+  userType: string;
+  section: CollabSection;
+  status?: string;
+  sectionContext?: {
+    domaine?: string;
+    expertises?: string[];
+    categorie?: string;
+    sous_types?: string[];
+  } | null;
+}
 
 export default function GuideOfferModal({ open, onClose, onSuccess, onDelete, profile, token, editOffer }: Props) {
   const [step, setStep] = useState(1);
@@ -2485,14 +2843,21 @@ export default function GuideOfferModal({ open, onClose, onSuccess, onDelete, pr
           headers: { Authorization: `Bearer ${token}` },
         }).then((collabs) => {
           if (Array.isArray(collabs)) {
-            setCollaborations(collabs.map((c) => ({
+            const mapped = collabs.map((c) => ({
               id: c.id,
               userId: c.invited_user_id,
               userName: c.invited_user_name,
               userType: c.invited_user_type,
               section: c.section as CollabSection,
               status: c.status,
-            })));
+              sectionContext: c.section_context ?? null,
+            }));
+            setCollaborations(mapped);
+            // Si une collaboration hébergement active existe, vider les svcs du state local
+            const hasActiveHebergCollab = mapped.some(
+              (c) => c.section === "hebergement" && (c.status === "pending" || c.status === "accepted"),
+            );
+            if (hasActiveHebergCollab) upd({ hebergement_svcs: {} });
           }
         }).catch(() => {});
       } else {
@@ -2702,7 +3067,7 @@ export default function GuideOfferModal({ open, onClose, onSuccess, onDelete, pr
           {step === 5 && <Step6 d={data} u={upd} token={token} editOfferTitle={editOffer?.title} editOfferId={editOffer?.id} onCollabConflictsChange={(c) => { setCollabConflicts(c); setShowCollabConfirm(false); collabAckedRef.current = false; }} />}
           {step === 6 && <Step5 d={data} u={upd} collaborations={collaborations} onInvite={handleInvite} onKickCollab={kickCollab} savingDraft={savingDraft} />}
           {step === 7 && <Step7 d={data} u={upd} />}
-          {step === 8 && <Step8 d={data} u={upd} />}
+          {step === 8 && <Step8 d={data} u={upd} collaborations={collaborations} />}
         </div>
 
         {/* Pied */}
@@ -2798,6 +3163,28 @@ export default function GuideOfferModal({ open, onClose, onSuccess, onDelete, pr
         token={token}
         offerId={draftOfferId}
         offerAvail={data.avail}
+        formContext={(() => {
+          const asMode = (data.autre_service_details._mode as string) || "guide";
+          const repasMode = data.restauration_mode;
+          const isRepasGuide = repasMode === "guide";
+          const isRepasPresta = repasMode !== "guide" && repasMode !== "";
+          return {
+            transportTypes:  data.transport_types,
+            hebergementTypes: data.hebergement_types,
+            prefillGuideDomaine:
+              (inviteSection === "restauration" && isRepasGuide) ? "gastronomie_locale" :
+              (inviteSection === "autre_service" && asMode === "guide") ? (data.autre_service_categorie || undefined) :
+              undefined,
+            prefillGuideExpertise:
+              (inviteSection === "restauration" && isRepasGuide) ? (data.restauration_gastro_expertise || undefined) :
+              (inviteSection === "autre_service" && asMode === "guide") ? (data.autre_service_sous_type || undefined) :
+              undefined,
+            prefillPrestSousType:
+              (inviteSection === "restauration" && isRepasPresta) ? (data.restauration_prest_sous_type || undefined) :
+              (inviteSection === "autre_service" && asMode === "prestataire") ? (data.autre_service_sous_type || undefined) :
+              undefined,
+          };
+        })()}
         filterMode={(() => {
           if (inviteSection === "restauration") {
             return data.restauration_mode === "guide" ? "guide" : "restaurant_terroir";
@@ -2811,17 +3198,19 @@ export default function GuideOfferModal({ open, onClose, onSuccess, onDelete, pr
         })()}
         alreadyInvited={collaborations.filter((c) => c.section === inviteSection && c.status !== "declined").map((c) => c.userId)}
         onClose={() => setInviteSection(null)}
-        onInvited={(c) => {
+        onInvited={(c, sectionContext) => {
           // Optimistic update, puis re-fetch pour récupérer les IDs
           setCollaborations((prev) => {
             const exists = prev.findIndex((x) => x.userId === c.user_id && x.section === inviteSection);
             if (exists >= 0) {
               const updated = [...prev];
-              updated[exists] = { ...updated[exists], status: "pending" };
+              updated[exists] = { ...updated[exists], status: "pending", sectionContext };
               return updated;
             }
-            return [...prev, { userId: c.user_id, userName: c.name, userType: c.type, section: inviteSection!, status: "pending" }];
+            return [...prev, { userId: c.user_id, userName: c.name, userType: c.type, section: inviteSection!, status: "pending", sectionContext }];
           });
+          // Section hébergement déléguée → effacer les unités du state local (le collab remplira les siennes)
+          if (inviteSection === "hebergement") upd({ hebergement_svcs: {} });
           setInviteSection(null);
           // Re-fetch pour avoir les IDs de collab (nécessaires pour kick)
           const offerId = draftOfferId;
@@ -2836,6 +3225,7 @@ export default function GuideOfferModal({ open, onClose, onSuccess, onDelete, pr
                     userType: x.invited_user_type,
                     section: x.section as CollabSection,
                     status: x.status,
+                    sectionContext: x.section_context ?? null,
                   })));
                 }
               }).catch(() => {});

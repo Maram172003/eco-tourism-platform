@@ -1,24 +1,6 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import L from "leaflet";
-
-const markerIcon = L.icon({
-  iconUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png",
-  shadowUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
-  iconSize: [25, 41],
-  iconAnchor: [12, 41],
-});
-
-async function reverseGeocode(lat: number, lng: number): Promise<string> {
-  try {
-    const res = await fetch(`/api/geocode/reverse?lat=${lat}&lon=${lng}`);
-    const data = await res.json();
-    return data.display_name ?? `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
-  } catch {
-    return `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
-  }
-}
 
 const GEO_STOP = new Set([
   "de","du","des","le","la","les","el","al","d","l","sur","en","au","aux",
@@ -33,6 +15,16 @@ const GEO_STOP = new Set([
 
 function simplifyQuery(q: string): string {
   return q.split(/\s+/).filter((w) => !GEO_STOP.has(w.toLowerCase())).join(" ").trim();
+}
+
+async function reverseGeocode(lat: number, lng: number): Promise<string> {
+  try {
+    const res = await fetch(`/api/geocode/reverse?lat=${lat}&lon=${lng}`);
+    const data = await res.json();
+    return data.display_name ?? `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
+  } catch {
+    return `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
+  }
 }
 
 async function tryFetch(q: string): Promise<{ lat: number; lng: number } | null> {
@@ -51,39 +43,33 @@ async function searchPlace(
 ): Promise<{ lat: number; lng: number; display_name: string } | null> {
   const label = query.trim();
 
-  // 1 — requête exacte
   let c = await tryFetch(label);
   if (c) return { ...c, display_name: label };
 
-  // 2 — avant la première virgule
   const beforeComma = label.split(",")[0].trim();
   if (beforeComma !== label) {
     c = await tryFetch(beforeComma);
     if (c) return { ...c, display_name: label };
   }
 
-  // 3 — après la première virgule
   const commaIdx = label.indexOf(",");
   if (commaIdx !== -1) {
     const afterComma = label.slice(commaIdx + 1).trim();
     if (afterComma) { c = await tryFetch(afterComma); if (c) return { ...c, display_name: label }; }
   }
 
-  // 4 — avant le tiret
   const beforeDash = label.split(/\s*[-–]\s*/)[0].trim();
   if (beforeDash !== label) {
     c = await tryFetch(beforeDash);
     if (c) return { ...c, display_name: label };
   }
 
-  // 5 — simplifié (sans mots génériques)
   const stripped = simplifyQuery(label);
   if (stripped && stripped !== label) {
     c = await tryFetch(stripped);
     if (c) return { ...c, display_name: label };
   }
 
-  // 6 — avant-virgule simplifié
   if (beforeComma !== label) {
     const strippedComma = simplifyQuery(beforeComma);
     if (strippedComma && strippedComma !== beforeComma) {
@@ -92,7 +78,6 @@ async function searchPlace(
     }
   }
 
-  // 7 — mots longs uniquement (noms propres probables, ≥4 chars, non-stop)
   const properWords = label
     .replace(/[,\-–]/g, " ")
     .split(/\s+/)
@@ -102,7 +87,6 @@ async function searchPlace(
     if (c) return { ...c, display_name: label };
   }
 
-  // 8 — le premier mot propre seul (si plusieurs)
   if (properWords.length > 1) {
     c = await tryFetch(properWords[0]);
     if (c) return { ...c, display_name: label };
@@ -121,22 +105,33 @@ export default function MapPicker({
   onPick: (lat: number, lng: number, address: string) => void;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const mapRef = useRef<L.Map | null>(null);
-  const markerRef = useRef<L.Marker | null>(null);
-  // Keep onPick ref fresh so the map click handler never captures a stale closure
+  const mapRef = useRef<any>(null);
+  const markerRef = useRef<any>(null);
   const onPickRef = useRef(onPick);
   onPickRef.current = onPick;
+  const destroyedRef = useRef(false);
 
   const [searching, setSearching] = useState(false);
   const [searchErr, setSearchErr] = useState("");
   const searchRef = useRef<HTMLInputElement>(null);
 
-  // Create the Leaflet map imperatively — runs once per mount, destroyed on unmount
   useEffect(() => {
+    destroyedRef.current = false;
+
     const link = document.createElement("link");
     link.rel = "stylesheet";
     link.href = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.css";
     document.head.appendChild(link);
+
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const L = require("leaflet") as typeof import("leaflet");
+
+    const markerIcon = L.icon({
+      iconUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png",
+      shadowUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
+      iconSize: [25, 41],
+      iconAnchor: [12, 41],
+    });
 
     const container = containerRef.current!;
     const map = L.map(container, {
@@ -150,7 +145,8 @@ export default function MapPicker({
       markerRef.current = L.marker([lat, lng], { icon: markerIcon }).addTo(map);
     }
 
-    map.on("click", async (e) => {
+    map.on("click", async (e: any) => {
+      if (destroyedRef.current) return;
       const clat = e.latlng.lat;
       const clng = e.latlng.lng;
       if (markerRef.current) {
@@ -159,13 +155,15 @@ export default function MapPicker({
         markerRef.current = L.marker([clat, clng], { icon: markerIcon }).addTo(map);
       }
       const address = await reverseGeocode(clat, clng);
-      onPickRef.current(clat, clng, address);
+      if (!destroyedRef.current) onPickRef.current(clat, clng, address);
     });
 
     mapRef.current = map;
 
     return () => {
-      map.remove();
+      destroyedRef.current = true;
+      try { map.stop(); } catch {}
+      try { map.remove(); } catch {}
       mapRef.current = null;
       markerRef.current = null;
       try { document.head.removeChild(link); } catch {}
@@ -173,17 +171,24 @@ export default function MapPicker({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Sync marker imperatively when lat/lng props change after initial mount
   useEffect(() => {
     const map = mapRef.current;
-    if (!map) return;
+    if (!map || destroyedRef.current) return;
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const L = require("leaflet") as typeof import("leaflet");
+    const markerIcon = L.icon({
+      iconUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png",
+      shadowUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
+      iconSize: [25, 41],
+      iconAnchor: [12, 41],
+    });
     if (lat !== null && lng !== null) {
       if (markerRef.current) {
         markerRef.current.setLatLng([lat, lng]);
       } else {
         markerRef.current = L.marker([lat, lng], { icon: markerIcon }).addTo(map);
       }
-      map.flyTo([lat, lng], 14, { duration: 1 });
+      try { map.flyTo([lat, lng], 14, { duration: 1 }); } catch {}
     }
   }, [lat, lng]);
 
@@ -193,18 +198,27 @@ export default function MapPicker({
     setSearching(true);
     setSearchErr("");
     const result = await searchPlace(q);
+    if (destroyedRef.current) return;
     setSearching(false);
     if (!result) { setSearchErr("Lieu introuvable. Essayez un autre nom."); return; }
     const map = mapRef.current;
-    if (map) {
+    if (map && !destroyedRef.current) {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const L = require("leaflet") as typeof import("leaflet");
+      const markerIcon = L.icon({
+        iconUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png",
+        shadowUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
+        iconSize: [25, 41],
+        iconAnchor: [12, 41],
+      });
       if (markerRef.current) {
         markerRef.current.setLatLng([result.lat, result.lng]);
       } else {
         markerRef.current = L.marker([result.lat, result.lng], { icon: markerIcon }).addTo(map);
       }
-      map.flyTo([result.lat, result.lng], 14, { duration: 1 });
+      try { map.flyTo([result.lat, result.lng], 14, { duration: 1 }); } catch {}
+      onPickRef.current(result.lat, result.lng, result.display_name);
     }
-    onPickRef.current(result.lat, result.lng, result.display_name);
   }
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {

@@ -3,7 +3,7 @@
 export type MacroSlug =
   | "nature" | "histoire_archeologie" | "aventure_sport" | "gastronomie"
   | "artisanat" | "decouverte_urbaine" | "culture_patrimoine"
-  | "bien_etre" | "transport_experientiel" | "volontariat";
+  | "bien_etre" | "transport_experientiel" | "volontariat" | "hebergement";
 
 export interface MacroCategory {
   slug: MacroSlug;
@@ -16,7 +16,7 @@ export interface TaxonomyTag {
   macro: MacroSlug;
 }
 
-// ── 1. Les 10 macro-catégories ────────────────────────────────────────────────
+// ── 1. Les 11 macro-catégories ────────────────────────────────────────────────
 
 export const MACRO_CATEGORIES: MacroCategory[] = [
   { slug: "nature",                 label: "Nature" },
@@ -29,6 +29,7 @@ export const MACRO_CATEGORIES: MacroCategory[] = [
   { slug: "bien_etre",              label: "Bien-Être" },
   { slug: "transport_experientiel", label: "Transport expérientiel" },
   { slug: "volontariat",            label: "Volontariat" },
+  { slug: "hebergement",            label: "Hébergement" },
 ];
 
 // ── 2. Les ~153 tags fins, groupés par macro ──────────────────────────────────
@@ -203,6 +204,20 @@ export const TAXONOMY_TAGS: TaxonomyTag[] = [
   { slug: "education_environnementale", label: "Éducation environnementale",      macro: "volontariat" },
   { slug: "jardin_communautaire",       label: "Jardin communautaire",            macro: "volontariat" },
   { slug: "sensibilisation_ecoles",     label: "Sensibilisation dans les écoles", macro: "volontariat" },
+
+  // 11. Hébergement
+  { slug: "dortoir",                label: "Dortoir",               macro: "hebergement" },
+  { slug: "chambre_standard",       label: "Chambre standard",      macro: "hebergement" },
+  { slug: "chambre_superieure",     label: "Chambre supérieure",    macro: "hebergement" },
+  { slug: "suite",                  label: "Suite",                 macro: "hebergement" },
+  { slug: "bungalow",               label: "Bungalow",              macro: "hebergement" },
+  { slug: "tente_glamping",         label: "Tente glamping",        macro: "hebergement" },
+  { slug: "gite_rural",             label: "Gîte rural",            macro: "hebergement" },
+  { slug: "maison_hotes",           label: "Maison d'hôtes",        macro: "hebergement" },
+  { slug: "riad_traditionnel",      label: "Riad traditionnel",     macro: "hebergement" },
+  { slug: "ecolodge",               label: "Éco-lodge",             macro: "hebergement" },
+  { slug: "camping_sauvage",        label: "Camping sauvage",       macro: "hebergement" },
+  { slug: "ferme_agritouristique",  label: "Ferme agritouristique", macro: "hebergement" },
 ];
 
 // ── Helpers ───────────────────────────────────────────────────────────────────

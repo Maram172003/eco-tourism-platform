@@ -37,7 +37,7 @@ export default function MapView({ lat, lng, label }: { lat: number; lng: number;
     const marker = L.marker([lat, lng], { icon }).addTo(map);
     if (label) marker.bindTooltip(label, { permanent: true, direction: "top", offset: [0, -44], className: "leaflet-meeting-label" });
     mapRef.current = map;
-    return () => { map.remove(); mapRef.current = null; };
+    return () => { try { map.stop(); } catch {} try { map.remove(); } catch {} mapRef.current = null; };
   }, [cssReady, lat, lng, label]);
 
   return (

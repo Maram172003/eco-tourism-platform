@@ -320,6 +320,39 @@ const culture_patrimoine: DomainCascadeConfig = {
 };
 
 // ──────────────────────────────────────────────────────────────────────────────
+// AUTRE (domaines divers sans cascade spécifique)
+// ──────────────────────────────────────────────────────────────────────────────
+
+const autre: DomainCascadeConfig = {
+  labelType: "Format de l'activité",
+  labelExperiences: "Expériences proposées",
+  labelMediation: "Supports fournis",
+
+  typesByExpertise: {
+    "Bien-être & yoga":             ["Cours de yoga", "Séance de relaxation", "Atelier respiration & méditation", "Yoga en plein air"],
+    "Méditation & pleine conscience": ["Séance de méditation guidée", "Atelier pleine conscience", "Retraite silence", "Méditation en nature"],
+    "Photographie":                 ["Atelier photo débutant", "Sortie photo thématique", "Stage retouche photo", "Photo de paysage & nature"],
+    "Peinture & arts plastiques":   ["Atelier aquarelle", "Cours dessin & croquis", "Stage huile & acrylique", "Art en plein air"],
+    "Écriture créative":            ["Atelier nouvelles & contes", "Carnet de voyage illustré", "Écriture poétique", "Journal créatif"],
+    "Astronomie":                   ["Nuit d'observation étoiles", "Atelier télescope", "Initiation astrophotographie", "Conférence astronomie"],
+    "Tourisme solidaire":           ["Visite projet solidaire", "Rencontre associations locales", "Atelier échange culturel", "Chantier participatif"],
+    "Langues & dialectes locaux":   ["Initiation dialecte tunisien", "Atelier calligraphie arabe", "Cours français-arabe", "Échange linguistique"],
+    "_default": ["Atelier pratique", "Stage découverte", "Session initiation", "Conférence & échange", "Session groupe", "Session individuelle"],
+  },
+
+  experiencesByType: {
+    "Cours de yoga":                ["Postures adaptées au niveau", "Exercices de respiration", "Relaxation guidée en fin de séance"],
+    "Nuit d'observation étoiles":  ["Télescope mis à disposition", "Carte du ciel fournie", "Explication constellations", "Photo astrophotographie basique"],
+    "Sortie photo thématique":     ["Conseils cadrage & lumière", "Repérages meilleurs spots", "Retour critique collectif"],
+    "_default": ["Contenu adapté au niveau", "Matériel inclus", "Support de cours fourni", "Échanges en groupe"],
+  },
+
+  mediationByType: {
+    "_default": ["Support pédagogique imprimé", "Matériel de pratique", "Guide de référence", "Carnet personnel"],
+  },
+};
+
+// ──────────────────────────────────────────────────────────────────────────────
 // Registre global
 // ──────────────────────────────────────────────────────────────────────────────
 
@@ -331,6 +364,7 @@ export const DOMAIN_CASCADE_CONFIG: Record<string, DomainCascadeConfig> = {
   gastronomie_locale,
   artisanat_traditions,
   decouverte_urbaine,
+  autre,
 };
 
 // ──────────────────────────────────────────────────────────────────────────────

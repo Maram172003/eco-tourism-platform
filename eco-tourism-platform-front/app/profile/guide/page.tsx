@@ -14,6 +14,7 @@ import {
   MoreVertical, UserX, ShieldBan, Flag, Route, Trash2,
 } from "lucide-react";
 import { apiFetch, ApiError } from "@/lib/api";
+import { logoutUser } from "@/lib/auth";
 import { DOMAIN_CASCADE_CONFIG } from "@/lib/domainCascadeConfig";
 import { OFFER_DETAIL_FIELDS } from "@/lib/offer-schema";
 import { PROVIDER_SCHEMA } from "@/lib/provider-schema";
@@ -686,6 +687,14 @@ export default function GuideProfilePage() {
     init();
   }, [router]);
 
+  async function handleLogout() {
+    try { if (token) await logoutUser(token); } catch {}
+    localStorage.removeItem("access_token");
+    localStorage.removeItem("refresh_token");
+    localStorage.removeItem("user");
+    router.push("/auth/login");
+  }
+
   // Network search — prestataires + guides
   useEffect(() => {
     if (!netSearch.trim() || !token) { setNetResults([]); return; }
@@ -745,7 +754,8 @@ export default function GuideProfilePage() {
     });
     if (!res.ok) throw new Error("Upload échoué");
     const data = await res.json();
-    return data.url as string;
+    if (!data?.url || typeof data.url !== "string") throw new Error("URL d'image invalide après upload");
+    return data.url;
   }
 
   // ── Score label ─────────────────────────────────────────────────────────
@@ -938,16 +948,17 @@ export default function GuideProfilePage() {
         apiFetch("/guide/identity", {
           method: "POST", headers,
           body: JSON.stringify({
-            full_name:       editProfileForm.full_name.trim(),
-            bio:             editProfileForm.bio.trim()             || undefined,
-            photo:           photoUrl,
+            full_name:        editProfileForm.full_name.trim(),
+            bio:              editProfileForm.bio.trim()             || undefined,
+            photo:            photoUrl,
+            cover_photo:      coverUrl,
             languages_spoken: editLangsSpoken,
             years_experience: editProfileForm.years_experience !== "" ? Number(editProfileForm.years_experience) : undefined,
-            telephone:       editProfileForm.telephone.trim()       || undefined,
-            ville_residence: editProfileForm.ville_residence.trim() || undefined,
-            experience_pro:  editProfileForm.experience_pro.trim()  || undefined,
-            centres_interet: editProfileForm.centres_interet.trim() || undefined,
-            pourquoi_moi:    editProfileForm.pourquoi_moi.trim()    || undefined,
+            telephone:        editProfileForm.telephone.trim()       || undefined,
+            ville_residence:  editProfileForm.ville_residence.trim() || undefined,
+            experience_pro:   editProfileForm.experience_pro.trim()  || undefined,
+            centres_interet:  editProfileForm.centres_interet.trim() || undefined,
+            pourquoi_moi:     editProfileForm.pourquoi_moi.trim()    || undefined,
           }),
         }),
         // Étape 2 : domaines + expertises + certifications
@@ -971,13 +982,6 @@ export default function GuideProfilePage() {
             publics_accueillis: editPublicsAccueillis,
           }),
         }),
-        // Photo de couverture via l'ancien endpoint si changée
-        coverUrl !== profile?.cover_photo
-          ? apiFetch("/guide/profile", {
-              method: "POST", headers,
-              body: JSON.stringify({ full_name: editProfileForm.full_name.trim(), cover_photo: coverUrl }),
-            }).catch(() => {})
-          : Promise.resolve(),
       ]);
 
       setProfile((prev) => prev ? {
@@ -1987,6 +1991,7 @@ export default function GuideProfilePage() {
 
           {/* ── LEFT SIDEBAR ────────────────────────────────────────────────── */}
           <div className="lg:col-span-4 lg:sticky lg:top-6 space-y-6">
+
             <div className="bg-white p-6 rounded-3xl border border-slate-100/80 shadow-sm">
               <div className="flex items-center gap-2.5 mb-5">
                 <div className="w-8 h-8 rounded-full bg-emerald-100 flex items-center justify-center text-primary">

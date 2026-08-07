@@ -1,6 +1,6 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { IsNull, Repository } from 'typeorm';
+import { In, IsNull, Repository } from 'typeorm';
 import { Publication } from './entities/publication.entity';
 import { PublicationLike } from './entities/publication-like.entity';
 import { PublicationComment } from './entities/publication-comment.entity';
@@ -10,6 +10,11 @@ import { EcoTravelerService } from '../eco-traveler/eco-traveler.service';
 import { EcoTravelerMongoService } from '../eco-traveler/eco-traveler-mongo.service';
 import { EcoTraveler } from '../eco-traveler/entities/eco-traveler.entity';
 import { Provider } from '../provider/entities/provider.entity';
+import { Follow } from '../follow/entities/follow.entity';
+import { Friendship } from '../eco-traveler/entities/friendship.entity';
+import { OfferService } from '../offer/offer.service';
+import { CircuitService } from '../circuit/circuit.service';
+import { ItemLike } from '../interactions/entities/item-like.entity';
 
 const AMBASSADOR_BADGE = 'Ambassadeur Éco-Voyage';
 
@@ -28,8 +33,16 @@ export class PublicationService {
     private readonly ecoRepo: Repository<EcoTraveler>,
     @InjectRepository(Provider)
     private readonly providerRepo: Repository<Provider>,
+    @InjectRepository(Follow)
+    private readonly followRepo: Repository<Follow>,
+    @InjectRepository(Friendship)
+    private readonly friendshipRepo: Repository<Friendship>,
     private readonly ecoTravelerService: EcoTravelerService,
     private readonly ecoTravelerMongoService: EcoTravelerMongoService,
+    @InjectRepository(ItemLike)
+    private readonly itemLikeRepo: Repository<ItemLike>,
+    private readonly offerService: OfferService,
+    private readonly circuitService: CircuitService,
   ) {}
 
   // ─── CRUD ─────────────────────────────────────────────────────────────────
@@ -220,6 +233,117 @@ export class PublicationService {
     }
     const count = await this.commentLikeRepo.count({ where: { comment_id: commentId } });
     return { liked: !existing, count };
+  }
+
+  // ─── Explorer feed ────────────────────────────────────────────────────────
+
+  async getFeedEcoTraveler(userId: string): Promise<{ items: any[] }> {
+    const follows = await this.followRepo.find({ where: { follower_id: userId, status: 'accepted' } });
+    const followingIds = follows.map((f) => f.following_id);
+
+    const friendships = await this.friendshipRepo.find({
+      where: [
+        { requester_id: userId, status: 'accepted' },
+        { receiver_id: userId, status: 'accepted' },
+      ],
+    });
+    const friendIds = friendships.map((f) =>
+      f.requester_id === userId ? f.receiver_id : f.requester_id,
+    );
+
+    const pubAuthorIds = [...new Set([...friendIds, ...followingIds])];
+    const publications = pubAuthorIds.length > 0
+      ? await this.repo.find({
+          where: { author_id: In(pubAuthorIds), status: 'approved' },
+          order: { created_at: 'DESC' },
+        })
+      : [];
+
+    const enrichedPubs = await Promise.all(
+      publications.map(async (pub) => {
+        const author = await this.getAuthorInfo(pub.author_id, 'eco_traveler');
+        return { ...pub, author };
+      }),
+    );
+
+    const [offers, circuits] = await Promise.all([
+      this.offerService.findFollowingsOffers(followingIds),
+      this.circuitService.findFollowingsCircuits(followingIds),
+    ]);
+
+    const items = [
+      ...enrichedPubs.map((p) => ({ type: 'publication', id: p.id, created_at: p.created_at, data: p })),
+      ...offers.map((o) => ({ type: 'offer', id: o.id, created_at: o.created_at, data: o })),
+      ...circuits.map((c) => ({ type: 'circuit', id: c.id, created_at: c.created_at, data: c })),
+    ].sort((a, b) => new Date(b.created_at as string).getTime() - new Date(a.created_at as string).getTime());
+
+    return { items };
+  }
+
+  async getFeedPro(userId: string): Promise<{ items: any[] }> {
+    const follows = await this.followRepo.find({ where: { follower_id: userId, status: 'accepted' } });
+    const followingIds = follows.map((f) => f.following_id);
+
+    const [offers, circuits] = await Promise.all([
+      this.offerService.findFollowingsOffers(followingIds),
+      this.circuitService.findFollowingsCircuits(followingIds),
+    ]);
+
+    const items = [
+      ...offers.map((o) => ({ type: 'offer', id: o.id, created_at: o.created_at, data: o })),
+      ...circuits.map((c) => ({ type: 'circuit', id: c.id, created_at: c.created_at, data: c })),
+    ].sort((a, b) => new Date(b.created_at as string).getTime() - new Date(a.created_at as string).getTime());
+
+    return { items };
+  }
+
+  // ─── Recommendations ──────────────────────────────────────────────────────
+
+  async getRecommendations(userId: string, userRole: string): Promise<{ items: any[]; mode: 'tagged' | 'recent' }> {
+    const [offers, circuits] = await Promise.all([
+      this.offerService.findAllApprovedForRecommendations(),
+      this.circuitService.findAllApprovedForRecommendations(),
+    ]);
+
+    if (userRole === 'eco_traveler') {
+      const traveler = await this.ecoRepo.findOne({ where: { user_id: userId } });
+      const interests: string[] = traveler?.interests ?? [];
+
+      if (interests.length > 0) {
+        const intersect = (a: string[], b: string[]) => {
+          const setB = new Set(b);
+          return a.filter(x => setB.has(x)).length;
+        };
+        const scored = [
+          ...offers.map(o => ({ type: 'offer' as const, id: o.id, created_at: o.created_at, matchScore: intersect(interests, o.tags ?? []), data: o })),
+          ...circuits.map(c => ({ type: 'circuit' as const, id: c.id, created_at: c.created_at, matchScore: intersect(interests, c.tags ?? []), data: c })),
+        ]
+          .filter(item => item.matchScore > 0)
+          .sort((a, b) => b.matchScore - a.matchScore || new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+          .slice(0, 10);
+        return { items: scored, mode: 'tagged' };
+      }
+    }
+
+    // Guide, Provider, ou éco-voyageur sans intérêts → top 10 les plus likés
+    const likesRows = await this.itemLikeRepo
+      .createQueryBuilder('il')
+      .select('il.target_id', 'target_id')
+      .addSelect('COUNT(*)', 'count')
+      .where('il.target_type IN (:...types)', { types: ['offer', 'circuit'] })
+      .groupBy('il.target_id')
+      .getRawMany<{ target_id: string; count: string }>();
+
+    const likesMap = new Map(likesRows.map(r => [r.target_id, parseInt(r.count, 10)]));
+
+    const popular = [
+      ...offers.map(o => ({ type: 'offer' as const, id: o.id, created_at: o.created_at, matchScore: 0, likesCount: likesMap.get(o.id) ?? 0, data: o })),
+      ...circuits.map(c => ({ type: 'circuit' as const, id: c.id, created_at: c.created_at, matchScore: 0, likesCount: likesMap.get(c.id) ?? 0, data: c })),
+    ]
+      .sort((a, b) => b.likesCount - a.likesCount || new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+      .slice(0, 10);
+
+    return { items: popular, mode: 'recent' };
   }
 
   // ─── Private helpers ──────────────────────────────────────────────────────

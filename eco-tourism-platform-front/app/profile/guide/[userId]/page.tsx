@@ -415,7 +415,11 @@ export default function PublicGuideProfile() {
     apiFetch<SocialUser[]>(`/follows/following/public/${userId}`, { headers: { Authorization: `Bearer ${tkn}` } })
       .then(setTheirFollowing).catch(() => {});
     apiFetch<PubCollab[]>(`/guide/collaborations/public/${userId}`, { headers: { Authorization: `Bearer ${tkn}` } })
-      .then(setTheirCollabs).catch(() => {});
+      .then((list) => setTheirCollabs(list.filter((c) => {
+        if (c.status !== "completed") return false;
+        const st = c.source_type === "circuit" ? c.circuit_status : c.offer_status;
+        return st === "approved";
+      }))).catch(() => {});
     apiFetch<any[]>(`/circuits/public/${userId}`, { headers: { Authorization: `Bearer ${tkn}` } })
       .then(setTheirCircuits).catch(() => {});
     if (role === "eco_traveler") {

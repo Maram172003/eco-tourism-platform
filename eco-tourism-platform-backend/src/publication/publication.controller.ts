@@ -23,6 +23,15 @@ export class PublicationController {
   @ApiBearerAuth('bearer') @Roles(Role.ECO_TRAVELER) @Get('mine')
   findMine(@Req() req: any) { return this.service.findByAuthor(req.user.sub); }
 
+  @ApiBearerAuth('bearer') @Roles(Role.ECO_TRAVELER) @Get('feed')
+  getFeed(@Req() req: any) { return this.service.getFeedEcoTraveler(req.user.sub); }
+
+  @ApiBearerAuth('bearer') @Roles(Role.ECO_TRAVELER, Role.GUIDE, Role.PROVIDER) @Get('recommendations')
+  getRecommendations(@Req() req: any) { return this.service.getRecommendations(req.user.sub, req.user.role); }
+
+  @ApiBearerAuth('bearer') @Roles(Role.GUIDE, Role.PROJECT, Role.PROVIDER) @Get('feed/pro')
+  getFeedPro(@Req() req: any) { return this.service.getFeedPro(req.user.sub); }
+
   @Public() @Get('experiences')
   findAllExperiences() { return this.service.findAllExperiences(); }
 

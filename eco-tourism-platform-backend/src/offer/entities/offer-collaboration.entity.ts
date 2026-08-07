@@ -43,6 +43,10 @@ export class OfferCollaboration {
   @Column({ type: 'jsonb', nullable: true })
   contribution_data!: Record<string, any> | null;
 
+  // Contexte choisi par le propriétaire à l'invitation (domaine+expertises ou catégorie+sous_types)
+  @Column({ type: 'jsonb', nullable: true })
+  section_context!: Record<string, any> | null;
+
   @CreateDateColumn()
   created_at!: Date;
 }

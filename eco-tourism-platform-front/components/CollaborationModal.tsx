@@ -282,9 +282,14 @@ export default function CollaborationModal({
         const savedContrib = collab?.contribution_data as { types?: string[]; svcs?: Record<string, any>; formData?: Record<string, any> } | null ?? null;
         const restoredTypes = savedContrib?.types ?? [];
         const restoredSvcs  = savedContrib?.svcs  ?? {};
-        setSvcTypes(restoredTypes);
+        // Pour hébergement : les types sont fixés par le guide (le collab ne les choisit pas lui-même).
+        // On initialise depuis les types de l'offre pour que la validation et la sauvegarde fonctionnent.
+        const effectiveTypes = (section === 'hebergement' && restoredTypes.length === 0)
+          ? (parsed.hebergement_types ?? [])
+          : restoredTypes;
+        setSvcTypes(effectiveTypes);
         setSvcData(restoredSvcs);
-        setSvcActive(restoredTypes[0] ?? "");
+        setSvcActive(effectiveTypes[0] ?? "");
         setSvcFormData(savedContrib?.formData ?? {});
       } else if (collab?.contribution_data) {
         setForm(Object.fromEntries(
@@ -335,7 +340,7 @@ export default function CollaborationModal({
     // Circuit : validation gérée inline dans CircuitDetailView
     if (isCircuitCollab) return null;
     if (isService) {
-      if (svcTypes.length === 0 && Object.keys(svcFormData).length === 0)
+      if (svcTypes.length === 0 && Object.keys(svcData).length === 0 && Object.keys(svcFormData).length === 0)
         return "Complétez votre section avant d'enregistrer.";
       return null;
     }

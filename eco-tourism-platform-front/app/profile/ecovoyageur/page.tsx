@@ -10,6 +10,7 @@ import {
   Search, UserPlus, UserCheck, UserX, MoreVertical, ShieldBan, Flag,
 } from "lucide-react";
 import { apiFetch } from "@/lib/api";
+import { logoutUser } from "@/lib/auth";
 import MessagerieWidget from "@/components/MessagerieWidget";
 import PubInteractions from "@/components/PubInteractions";
 import PlaceContributions, { type TopPhotoData, type TopDescData } from "@/components/PlaceContributions";
@@ -403,6 +404,14 @@ export default function EcoTravelerProfilePage() {
     init();
   }, [router]);
 
+  async function handleLogout() {
+    try { if (token) await logoutUser(token); } catch {}
+    localStorage.removeItem("access_token");
+    localStorage.removeItem("refresh_token");
+    localStorage.removeItem("user");
+    router.push("/auth/login");
+  }
+
   // Unified search — eco-travelers + guides + project-owners
   useEffect(() => {
     if (!searchQuery.trim() || !token) { setAllResults([]); return; }
@@ -444,7 +453,8 @@ export default function EcoTravelerProfilePage() {
     });
     if (!res.ok) throw new Error("Upload échoué");
     const data = await res.json();
-    return data.url as string;
+    if (!data?.url || typeof data.url !== "string") throw new Error("URL d'image invalide après upload");
+    return data.url;
   }
 
   // ── Score label ──────────────────────────────────────────────────────────

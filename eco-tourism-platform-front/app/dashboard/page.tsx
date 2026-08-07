@@ -3,11 +3,14 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import dynamic from "next/dynamic";
-import { Leaf, Plus, X, Check, MapPin } from "lucide-react";
+import { Leaf, Plus, X, Check, MapPin, ArrowRight } from "lucide-react";
 import { logoutUser } from "@/lib/auth";
 import { apiFetch } from "@/lib/api";
 import OfferDetailView, { type OfferFull } from "@/components/offer/OfferDetailView";
 import CollaborationModal from "@/components/CollaborationModal";
+import SharedAddPublicationModal from "@/components/publication/AddPublicationModal";
+import ViewPublicationModal from "@/components/publication/ViewPublicationModal";
+import PubInteractions from "@/components/PubInteractions";
 
 const MapPicker = dynamic(
   () => import("@/components/map/MapPicker"),
@@ -264,12 +267,13 @@ function ProjectTypeIcon({ types }: { types: string[] | null }) {
 
 // ─── AddPublicationModal ──────────────────────────────────────────────────────
 
-function AddPublicationModal({ onClose, onSuccess, token }: {
+function AddPublicationModal({ onClose, onSuccess, token, initialStep }: {
   onClose: () => void;
   onSuccess: (p: Publication) => void;
   token: string;
+  initialStep?: "place" | "experience";
 }) {
-  const [step, setStep] = useState<"place" | "experience" | null>(null);
+  const [step, setStep] = useState<"place" | "experience" | null>(initialStep ?? null);
   const [loading, setLoading] = useState(false);
   const [submitError, setSubmitError] = useState("");
   const [titleError, setTitleError] = useState("");
@@ -964,6 +968,8 @@ export default function DashboardPage() {
   const [token, setToken] = useState("");
   const [publications, setPublications] = useState<Publication[]>([]);
   const [showAddPublication, setShowAddPublication] = useState(false);
+  const [pubModalInitialStep, setPubModalInitialStep] = useState<"place" | "experience" | undefined>(undefined);
+  const [viewPub, setViewPub] = useState<Publication | null>(null);
   const [offers, setOffers] = useState<Offer[]>([]);
   const [showAddOffer, setShowAddOffer] = useState(false);
   const [showAddProject, setShowAddProject] = useState(false);
@@ -1072,32 +1078,34 @@ export default function DashboardPage() {
     } catch { alert("Erreur lors de la suppression."); }
   }
 
-  const navItems = role === "eco_traveler"
+  const navItems: { label: string; icon: string; action: () => void }[] = role === "eco_traveler"
     ? [
-        { label: "Tableau de bord", icon: "dashboard" },
-        { label: "Mes Publications", icon: "public" },
-        { label: "Mes Voyages", icon: "map" },
-        { label: "Impact Éco", icon: "energy_savings_leaf" },
-        { label: "Favoris", icon: "favorite" },
-        { label: "Paramètres", icon: "settings" },
+        { label: "Tableau de bord", icon: "dashboard",      action: () => setActiveItem("Tableau de bord") },
+        { label: "Explorer",        icon: "explore",         action: () => router.push("/explorer") },
+        { label: "Expériences",     icon: "auto_stories",    action: () => setActiveItem("Expériences") },
+        { label: "Lieux",           icon: "location_on",     action: () => setActiveItem("Lieux") },
+        { label: "Séjour",          icon: "hotel",           action: () => router.push("/offers") },
+        { label: "Réservations",    icon: "book_online",     action: () => router.push("/dashboard/ecovoyageur/reservations") },
+        { label: "Paramètres",      icon: "settings",        action: () => setActiveItem("Paramètres") },
       ]
     : role === "guide"
     ? [
-        { label: "Tableau de bord", icon: "dashboard" },
-        { label: "Mes Offres", icon: "sell" },
-        { label: "Réservations", icon: "event_available" },
-        { label: "Mes Avis", icon: "star" },
-        { label: "Certifications", icon: "verified" },
-        { label: "Paramètres", icon: "settings" },
+        { label: "Tableau de bord", icon: "dashboard",      action: () => setActiveItem("Tableau de bord") },
+        { label: "Explorer",        icon: "explore",         action: () => router.push("/explorer") },
+        { label: "Offres",          icon: "storefront",      action: () => setActiveItem("Offres") },
+        { label: "Circuits",        icon: "route",           action: () => router.push("/profile/guide?tab=circuits") },
+        { label: "Réservations",    icon: "event_available", action: () => router.push("/reservations") },
+        { label: "Avis",            icon: "star",            action: () => router.push("/profile/guide?tab=apropos") },
+        { label: "Paramètres",      icon: "settings",        action: () => setActiveItem("Paramètres") },
       ]
     : [
-        { label: "Tableau de bord", icon: "dashboard" },
-        { label: "Mes Projets", icon: "domain" },
-        { label: "Mes Offres", icon: "sell" },
-        { label: "Réservations", icon: "event_available" },
-        { label: "Avis reçus", icon: "star" },
-        { label: "Certifications", icon: "verified" },
-        { label: "Paramètres", icon: "settings" },
+        { label: "Tableau de bord", icon: "dashboard",      action: () => setActiveItem("Tableau de bord") },
+        { label: "Explorer",        icon: "explore",         action: () => router.push("/explorer") },
+        { label: "Offres",          icon: "storefront",      action: () => setActiveItem("Offres") },
+        { label: "Circuits",        icon: "route",           action: () => router.push("/profile/provider?tab=circuits") },
+        { label: "Réservations",    icon: "event_available", action: () => router.push("/reservations") },
+        { label: "Avis",            icon: "star",            action: () => router.push("/profile/provider?tab=apropos") },
+        { label: "Paramètres",      icon: "settings",        action: () => setActiveItem("Paramètres") },
       ];
 
   const score = profile?.sustainability_score ?? null;
@@ -1333,9 +1341,9 @@ export default function DashboardPage() {
 
             <nav className="flex-1 space-y-1">
               {navItems.map((item) => (
-                <button key={item.label} onClick={() => setActiveItem(item.label)}
+                <button key={item.label} onClick={item.action}
                   className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${
-                    activeItem === item.label
+                    activeItem === item.label || (item.label === "Offres" && activeItem === "Offres")
                       ? "bg-primary/10 text-primary font-bold"
                       : "text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800"
                   }`}>
@@ -2092,8 +2100,181 @@ export default function DashboardPage() {
               </div>
             )}
 
+            {/* ── Expériences (eco_traveler) ───────────────────────────── */}
+            {role === "eco_traveler" && activeItem === "Expériences" && (() => {
+              const experiences = publications.filter((p) => p.type === "experience");
+              return (
+                <div>
+                  <div className="flex items-center justify-between mb-6">
+                    <h3 className="text-xl font-bold">Mes Expériences</h3>
+                    <button onClick={() => { setPubModalInitialStep("experience"); setShowAddPublication(true); }}
+                      className="flex items-center gap-2 px-5 py-2.5 bg-primary text-slate-900 font-bold rounded-xl shadow-lg shadow-primary/20 hover:-translate-y-0.5 transition-all text-sm">
+                      <Plus className="w-4 h-4" />Partager une expérience
+                    </button>
+                  </div>
+                  {experiences.length === 0 ? (
+                    <div className="bg-white dark:bg-slate-900 rounded-3xl border border-dashed border-slate-200 p-12 flex flex-col items-center justify-center text-center">
+                      <span className="material-symbols-outlined text-5xl text-slate-300 mb-3">hiking</span>
+                      <p className="font-bold text-slate-500">Aucune expérience partagée</p>
+                      <p className="text-sm text-slate-400 mt-1">Racontez vos aventures éco-touristiques.</p>
+                      <button onClick={() => { setPubModalInitialStep("experience"); setShowAddPublication(true); }}
+                        className="mt-4 px-5 py-2.5 bg-teal-50 text-teal-700 font-bold rounded-xl text-sm hover:bg-teal-100 transition-colors">
+                        Partager une expérience
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="space-y-4">
+                      {experiences.map((pub) => (
+                        <div key={pub.id} className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-100/90 shadow-sm hover:shadow-md transition-shadow duration-300 overflow-hidden">
+                          <div className="flex flex-col lg:flex-row">
+                            <div className="lg:w-2/5 relative min-h-[180px] bg-slate-50 flex items-center justify-center overflow-hidden border-b lg:border-b-0 lg:border-r border-slate-100">
+                              {pub.images?.[0] ? (
+                                <img src={pub.images[0]} alt={pub.title} className="absolute inset-0 w-full h-full object-cover" />
+                              ) : (
+                                <>
+                                  <div className="absolute inset-0 opacity-85 bg-gradient-to-br from-teal-500 to-emerald-400" />
+                                  <span className="material-symbols-outlined text-white/35 relative z-10" style={{ fontSize: 90 }}>hiking</span>
+                                </>
+                              )}
+                              <div className="absolute top-3 left-3 z-10 text-[10px] font-black tracking-widest uppercase px-3 py-1 rounded-xl shadow border bg-white/90 text-slate-700 border-white/40">
+                                Expérience
+                              </div>
+                            </div>
+                            <div className="lg:w-3/5 p-6 flex flex-col justify-between">
+                              <div>
+                                <h3 className="text-lg font-extrabold text-slate-800 dark:text-slate-100 tracking-tight leading-tight mb-1">{pub.title}</h3>
+                                {(pub.place_name || pub.region) && (
+                                  <div className="flex items-center gap-1 text-slate-500 text-xs font-semibold mb-3">
+                                    <MapPin size={11} className="text-primary shrink-0" />
+                                    {[pub.place_name, pub.region].filter(Boolean).join(", ")}
+                                  </div>
+                                )}
+                                {pub.description && <p className="text-slate-500 text-sm leading-relaxed line-clamp-3">{pub.description}</p>}
+                              </div>
+                              <div className="flex items-center justify-between border-t border-slate-50 pt-4 mt-4">
+                                <p className="text-[11px] font-bold text-slate-400">
+                                  {new Date(pub.created_at).toLocaleDateString("fr-FR", { day: "numeric", month: "long", year: "numeric" })}
+                                </p>
+                                <div className="flex items-center gap-3">
+                                  {pub.status === "approved" && <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-green-100 text-green-700">Publié</span>}
+                                  {pub.status === "pending" && <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">En attente</span>}
+                                  {pub.status === "rejected" && <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-red-100 text-red-600">Refusé</span>}
+                                  <button onClick={() => setViewPub(pub as any)}
+                                    className="text-primary hover:text-primary/80 font-extrabold text-xs inline-flex items-center gap-1 hover:translate-x-1 transition-transform duration-200">
+                                    Voir les détails <ArrowRight size={14} strokeWidth={2.5} />
+                                  </button>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                          {pub.status === "approved" && (
+                            <PubInteractions
+                              pubId={pub.id}
+                              token={token}
+                              viewerId={(profile as any)?.user_id ?? ""}
+                              shareUrl={`${typeof window !== "undefined" ? window.location.origin : ""}/publications/${pub.id}`}
+                              pubTitle={pub.title}
+                            />
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
+
+            {/* ── Lieux (eco_traveler) ─────────────────────────────────── */}
+            {role === "eco_traveler" && activeItem === "Lieux" && (() => {
+              const lieux = publications.filter((p) => p.type === "place");
+              return (
+                <div>
+                  <div className="flex items-center justify-between mb-6">
+                    <h3 className="text-xl font-bold">Mes Lieux</h3>
+                    <button onClick={() => { setPubModalInitialStep("place"); setShowAddPublication(true); }}
+                      className="flex items-center gap-2 px-5 py-2.5 bg-primary text-slate-900 font-bold rounded-xl shadow-lg shadow-primary/20 hover:-translate-y-0.5 transition-all text-sm">
+                      <Plus className="w-4 h-4" />Recommander un lieu
+                    </button>
+                  </div>
+                  {lieux.length === 0 ? (
+                    <div className="bg-white dark:bg-slate-900 rounded-3xl border border-dashed border-slate-200 p-12 flex flex-col items-center justify-center text-center">
+                      <MapPin className="text-slate-300 w-12 h-12 mb-3" />
+                      <p className="font-bold text-slate-500">Aucun lieu recommandé</p>
+                      <p className="text-sm text-slate-400 mt-1">Partagez des endroits éco-touristiques remarquables.</p>
+                      <button onClick={() => { setPubModalInitialStep("place"); setShowAddPublication(true); }}
+                        className="mt-4 px-5 py-2.5 bg-primary/10 text-primary font-bold rounded-xl text-sm hover:bg-primary/20 transition-colors">
+                        Recommander un lieu
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="space-y-4">
+                      {lieux.map((pub) => (
+                        <div key={pub.id} className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-100/90 shadow-sm hover:shadow-md transition-shadow duration-300 overflow-hidden">
+                          <div className="flex flex-col lg:flex-row">
+                            <div className="lg:w-2/5 relative min-h-[180px] bg-slate-50 flex items-center justify-center overflow-hidden border-b lg:border-b-0 lg:border-r border-slate-100">
+                              {pub.images?.[0] ? (
+                                <img src={pub.images[0]} alt={pub.title} className="absolute inset-0 w-full h-full object-cover" />
+                              ) : (
+                                <>
+                                  <div className="absolute inset-0 opacity-85 bg-gradient-to-br from-blue-500 to-cyan-400" />
+                                  <span className="material-symbols-outlined text-white/35 relative z-10" style={{ fontSize: 90 }}>location_on</span>
+                                </>
+                              )}
+                              <div className="absolute top-3 left-3 z-10 text-[10px] font-black tracking-widest uppercase px-3 py-1 rounded-xl shadow border bg-white/90 text-slate-700 border-white/40">
+                                Lieu
+                              </div>
+                              {pub.images?.[0] && (
+                                <span className="absolute bottom-3 left-3 z-10 text-[9px] font-black uppercase tracking-wide bg-white/90 text-slate-700 px-2 py-0.5 rounded-full shadow-sm border border-white/40">
+                                  Officiel
+                                </span>
+                              )}
+                            </div>
+                            <div className="lg:w-3/5 p-6 flex flex-col justify-between">
+                              <div>
+                                <h3 className="text-lg font-extrabold text-slate-800 dark:text-slate-100 tracking-tight leading-tight mb-1">{pub.title}</h3>
+                                {(pub.place_name || pub.region) && (
+                                  <div className="flex items-center gap-1 text-slate-500 text-xs font-semibold mb-3">
+                                    <MapPin size={11} className="text-primary shrink-0" />
+                                    {[pub.place_name, pub.region].filter(Boolean).join(", ")}
+                                  </div>
+                                )}
+                                {pub.description && <p className="text-slate-500 text-sm leading-relaxed line-clamp-3">{pub.description}</p>}
+                              </div>
+                              <div className="flex items-center justify-between border-t border-slate-50 pt-4 mt-4">
+                                <p className="text-[11px] font-bold text-slate-400">
+                                  {new Date(pub.created_at).toLocaleDateString("fr-FR", { day: "numeric", month: "long", year: "numeric" })}
+                                </p>
+                                <div className="flex items-center gap-3">
+                                  {pub.status === "approved" && <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-green-100 text-green-700">Publié</span>}
+                                  {pub.status === "pending" && <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">En attente</span>}
+                                  {pub.status === "rejected" && <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-red-100 text-red-600">Refusé</span>}
+                                  <button onClick={() => setViewPub(pub as any)}
+                                    className="text-primary hover:text-primary/80 font-extrabold text-xs inline-flex items-center gap-1 hover:translate-x-1 transition-transform duration-200">
+                                    Voir les détails <ArrowRight size={14} strokeWidth={2.5} />
+                                  </button>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                          {pub.status === "approved" && (
+                            <PubInteractions
+                              pubId={pub.id}
+                              token={token}
+                              viewerId={(profile as any)?.user_id ?? ""}
+                              shareUrl={`${typeof window !== "undefined" ? window.location.origin : ""}/publications/${pub.id}`}
+                              pubTitle={pub.title}
+                            />
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
+
             {/* ── Mes Offres (guide + project) ─────────────────────────── */}
-            {(role === "guide" || role === "project") && activeItem === "Mes Offres" && (
+            {(role === "guide" || role === "project") && activeItem === "Offres" && (
               <div>
                 <div className="flex items-center justify-between mb-6">
                   <h3 className="text-xl font-bold">Mes Offres</h3>
@@ -2485,9 +2666,21 @@ export default function DashboardPage() {
       </div>
 
       {/* ── Modals ──────────────────────────────────────────────────────── */}
-      {role === "eco_traveler" && showAddPublication && (
-        <AddPublicationModal token={token} onClose={() => setShowAddPublication(false)}
+      {role === "eco_traveler" && showAddPublication && pubModalInitialStep && (
+        <SharedAddPublicationModal
+          type={pubModalInitialStep}
+          token={token}
+          onClose={() => { setShowAddPublication(false); setPubModalInitialStep(undefined); }}
+          onSuccess={(p) => { setPublications((prev) => [p, ...prev] as Publication[]); setShowAddPublication(false); setPubModalInitialStep(undefined); }}
+        />
+      )}
+      {role === "eco_traveler" && showAddPublication && !pubModalInitialStep && (
+        <AddPublicationModal token={token} initialStep={undefined}
+          onClose={() => setShowAddPublication(false)}
           onSuccess={(p) => { setPublications((prev) => [p, ...prev]); setShowAddPublication(false); }} />
+      )}
+      {viewPub && (
+        <ViewPublicationModal pub={viewPub as any} onClose={() => setViewPub(null)} />
       )}
       {role === "guide" && showAddOffer && (
         <GuideOfferModal token={token} onClose={() => setShowAddOffer(false)}

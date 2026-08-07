@@ -102,6 +102,10 @@ export class UpdateGuideIdentityDto {
   @IsString()
   photo?: string;
 
+  @IsOptional()
+  @IsString()
+  cover_photo?: string;
+
   @IsArray()
   @IsString({ each: true })
   languages_spoken!: string[];
