@@ -12,6 +12,7 @@ import { CircuitCollaboration } from './entities/circuit-collaboration.entity';
 import { GuideAvailabilitySlot } from '../guide/entities/guide-availability.entity';
 import { Guide } from '../guide/entities/guide.entity';
 import { Provider } from '../provider/entities/provider.entity';
+import { ProfileApprovalService } from '../common/services/profile-approval.service';
 import { Organization } from '../organization/entities/organization.entity';
 import { CreateCircuitDto, UpdateCircuitDto } from './dto/circuit.dto';
 import { NotificationService } from '../notifications/notification.service';
@@ -49,6 +50,8 @@ export class CircuitService {
     @InjectRepository(Organization)
     private readonly orgRepo: Repository<Organization>,
     private readonly notifService: NotificationService,
+
+    private readonly profileApproval: ProfileApprovalService,
   ) {}
 
   // ── Agenda ────────────────────────────────────────────────────────────────
@@ -73,6 +76,8 @@ export class CircuitService {
   // ── CRUD de base ──────────────────────────────────────────────────────────
 
   async create(providerId: string, dto: CreateCircuitDto, ownerType = 'provider'): Promise<Circuit> {
+    // Aucun circuit — pas même un brouillon — tant que le profil n'est pas validé.
+    await this.profileApproval.assertApproved(providerId, 'créer un circuit');
     const circuit = this.repo.create({
       provider_id: providerId,
       title: dto.title,
@@ -244,6 +249,8 @@ export class CircuitService {
   }
 
   async update(id: string, providerId: string, dto: UpdateCircuitDto): Promise<Circuit> {
+    // Profil non validé : les brouillons déjà en base ne sont pas modifiables non plus.
+    await this.profileApproval.assertApproved(providerId, 'modifier un circuit');
     const circuit = await this.findOne(id);
     if (circuit.provider_id !== providerId) throw new ForbiddenException();
     if (circuit.status === 'approved') {
@@ -421,6 +428,8 @@ export class CircuitService {
       message?: string;
     },
   ): Promise<CircuitCollaboration> {
+    // Un profil non validé ne doit pas pouvoir solliciter des collaborateurs.
+    await this.profileApproval.assertApproved(ownerId, 'inviter un collaborateur');
     const circuit = await this.repo.findOne({ where: { id: circuitId } });
     if (!circuit || circuit.provider_id !== ownerId) throw new NotFoundException('Circuit introuvable ou non autorisé');
     if (circuit.status === 'approved') {
@@ -526,7 +535,19 @@ export class CircuitService {
     return result;
   }
 
+  /** Enregistre le score du questionnaire de durabilité du circuit. */
+  async updateCircuitSustainability(ownerId: string, circuitId: string, score: number): Promise<Circuit> {
+    const circuit = await this.repo.findOne({ where: { id: circuitId } });
+    if (!circuit || circuit.provider_id !== ownerId) {
+      throw new NotFoundException('Circuit introuvable ou non autorisé');
+    }
+    circuit.sustainability_score = score;
+    return this.repo.save(circuit);
+  }
+
   async publishCircuit(ownerId: string, circuitId: string): Promise<void> {
+    // Un profil professionnel doit être validé par un administrateur avant diffusion.
+    await this.profileApproval.assertApproved(ownerId, 'publier un circuit');
     const circuit = await this.repo.findOne({ where: { id: circuitId } });
     if (!circuit || circuit.provider_id !== ownerId) throw new NotFoundException('Circuit introuvable ou non autorisé');
     if (circuit.status !== 'attente_publication') {

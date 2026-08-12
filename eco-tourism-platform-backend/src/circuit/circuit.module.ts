@@ -9,9 +9,11 @@ import { Organization } from '../organization/entities/organization.entity';
 import { CircuitService } from './circuit.service';
 import { CircuitController } from './circuit.controller';
 import { NotificationModule } from '../notifications/notification.module';
+import { ProfileApprovalModule } from '../common/services/profile-approval.module';
 
 @Module({
   imports: [
+    ProfileApprovalModule,
     TypeOrmModule.forFeature([Circuit, CircuitCollaboration, GuideAvailabilitySlot, Guide, Provider, Organization]),
     NotificationModule,
   ],

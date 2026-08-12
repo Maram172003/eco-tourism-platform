@@ -73,7 +73,15 @@ export class Guide {
   pourquoi_moi!: string | null;
 
   @Column({ type: 'varchar', default: 'pending' })
-  status!: string; // pending | active | suspended
+  status!: string; // pending | active | rejected | suspended
+
+  // Motif renseigné par l'administrateur lorsqu'il refuse le profil.
+  @Column({ type: 'text', nullable: true })
+  rejection_reason!: string | null;
+
+  // Horodatage du refus : le compte est désactivé 24h après cette date.
+  @Column({ type: 'timestamp', nullable: true })
+  rejected_at!: Date | null;
 
   @Column({ type: 'int', default: 0 })
   profile_completion!: number;

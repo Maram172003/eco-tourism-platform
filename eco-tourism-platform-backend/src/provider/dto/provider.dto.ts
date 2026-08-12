@@ -1,4 +1,4 @@
-import { IsArray, IsInt, IsObject, IsOptional, IsString, Min, ValidateNested } from 'class-validator';
+import { IsArray, IsInt, IsNumber, IsObject, IsOptional, IsString, Min, ValidateNested } from 'class-validator';
 import { Type } from 'class-transformer';
 
 class PersonalCertificationDto {
@@ -32,6 +32,10 @@ export class UpdateProviderDto {
   @IsOptional() @IsString() region?: string;
   @IsOptional() @IsString() address?: string;
   @IsOptional() @IsString() zone?: string;
+  // Coordonnées du point de vente : le formulaire de profil les envoie, elles
+  // étaient absentes du DTO et la requête entière partait en 400.
+  @IsOptional() @IsNumber() @Type(() => Number) lat?: number;
+  @IsOptional() @IsNumber() @Type(() => Number) lng?: number;
   @IsOptional() @IsString() opening_hours?: string;
   @IsOptional() @IsArray() activity_types?: string[];
   @IsOptional() @IsArray() secondary_activity_types?: string[];

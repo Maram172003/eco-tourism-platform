@@ -31,6 +31,7 @@ type Provider = {
   score_reservations: number | null;
   score_feedbacks: number | null;
   status: string;
+  rejection_reason?: string | null;
   eco_labels: string[] | null;
   activity_types: string[] | null;
   secondary_activity_types: string[] | null;
@@ -245,6 +246,14 @@ export default function ProviderDashboardPage() {
     const who        = n.data?.inviter_name ?? n.data?.invited_user_name ?? "Quelqu'un";
     const sourceOf   = isCircuit ? "du circuit" : "de l'offre";
     switch (n.type) {
+      case "profile_rejected": {
+        const deadline = n.data?.disable_at
+          ? new Date(n.data.disable_at).toLocaleString("fr-FR", { dateStyle: "long", timeStyle: "short" })
+          : null;
+        return { title: "Profil refusé", icon: "gpp_bad",
+          body: `Votre profil n'a pas été validé${n.data?.reason ? ` — motif : ${n.data.reason}` : ""}. `
+            + `Votre compte sera désactivé${deadline ? ` le ${deadline}` : ` sous ${n.data?.grace_hours ?? 24}h`}.` };
+      }
       case "collaboration_invite":
         return { title: "Invitation à collaborer", icon: "handshake",
           body: `${who} vous invite à compléter la section « ${section} » ${sourceOf} « ${resource} »` };
@@ -572,6 +581,24 @@ export default function ProviderDashboardPage() {
                 >
                   Commencer →
                 </button>
+              </div>
+            )}
+
+            {/* Profil refusé — compte désactivé sous 24h */}
+            {provider.status === "rejected" && (
+              <div className="mb-6 p-5 bg-red-50 border border-red-200 rounded-2xl flex items-start gap-3">
+                <span className="material-symbols-outlined text-red-500 text-2xl">gpp_bad</span>
+                <div>
+                  <p className="font-bold text-red-800">Profil refusé</p>
+                  <p className="text-sm text-red-600 font-medium">
+                    {provider.rejection_reason
+                      ? `Motif : ${provider.rejection_reason}`
+                      : "Aucun motif n'a été précisé."}
+                  </p>
+                  <p className="text-sm text-red-600 font-medium mt-1">
+                    Votre compte sera désactivé sous 24h. Contactez l&apos;équipe Éco-Voyage avant ce délai.
+                  </p>
+                </div>
               </div>
             )}
 

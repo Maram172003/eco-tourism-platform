@@ -2,12 +2,22 @@
 
 import Navbar from "@/components/home/Navbar";
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { registerUser } from "@/lib/auth";
 
 export default function RegisterPage() {
   const router = useRouter();
+
+  // Une session encore ouverte dans un autre onglet laisserait son jeton dans
+  // localStorage — partagé par tout le domaine. L'onboarding du compte qu'on
+  // vient de créer l'utiliserait alors, et écrirait dans le profil du compte
+  // précédent. On repart donc systématiquement d'une session vierge.
+  useEffect(() => {
+    localStorage.removeItem("access_token");
+    localStorage.removeItem("refresh_token");
+    localStorage.removeItem("user");
+  }, []);
 
   const [role, setRole] = useState<"eco_traveler" | "provider" | "guide">("eco_traveler");
   const [email, setEmail] = useState("");

@@ -13,9 +13,11 @@ import { Guide } from '../guide/entities/guide.entity';
 import { Provider } from '../provider/entities/provider.entity';
 import { Organization } from '../organization/entities/organization.entity';
 import { NotificationModule } from '../notifications/notification.module';
+import { ProfileApprovalModule } from '../common/services/profile-approval.module';
 
 @Module({
   imports: [
+    ProfileApprovalModule,
     TypeOrmModule.forFeature([Offer, OfferSession, ProviderActivity, OfferCollaboration, GuideAvailabilitySlot, Guide, Provider, Organization]),
     MongooseModule.forFeature([
       { name: ActivityDetails.name, schema: ActivityDetailsSchema },

@@ -29,9 +29,11 @@ import { CircuitModule } from './circuit/circuit.module';
 import { NotificationModule } from './notifications/notification.module';
 import { PlaceContributionModule } from './place-contribution/place-contribution.module';
 import { ProjectOwnerModule } from './project-owner/project-owner.module';
+import { ScheduleModule } from '@nestjs/schedule';
 
 @Module({
   imports: [
+    ScheduleModule.forRoot(),
     ThrottlerModule.forRoot([{
       ttl: 60000,
       limit: 100,

@@ -2044,24 +2044,60 @@ function Step5({ d, u, collaborations, onInvite, onKickCollab, savingDraft, coll
                         <span className="material-symbols-outlined text-sm">storefront</span>
                         Restaurant &amp; Terroir
                       </p>
-                      <div className="flex flex-wrap gap-1.5">
-                        {RESTAURANT_PREST_SUBTYPES.map((st) => (
-                          <button key={st.value} type="button"
-                            onClick={() => u({ restauration_prest_sous_type: d.restauration_prest_sous_type === st.value ? "" : st.value })}
-                            className={`px-3 py-1.5 rounded-full text-xs font-bold border-2 transition-all ${
-                              d.restauration_prest_sous_type === st.value
-                                ? "border-primary bg-primary text-white"
-                                : "border-slate-200 bg-white text-slate-600 hover:border-primary/40"
-                            }`}>
-                            {st.label}
-                          </button>
-                        ))}
-                      </div>
-                      {d.restauration_prest_sous_type
-                        ? <InviteRequired section="restauration" icon="restaurant"
-                            message="La restauration sera assurée par un prestataire — invitez-en un ci-dessous." />
-                        : <p className="text-xs font-semibold text-slate-400 text-center py-2">Sélectionnez un type de restaurant avant d'inviter un collaborateur.</p>
-                      }
+                      {isCollabRepas ? (
+                        // Le sous-type est arrêté par le propriétaire : le collaborateur
+                        // le constate, il ne le renégocie pas.
+                        <div className="flex flex-wrap items-center gap-2 pointer-events-none">
+                          <span className="px-3 py-1.5 rounded-full text-xs font-bold border-2 border-primary bg-primary text-white opacity-70">
+                            {RESTAURANT_PREST_SUBTYPES.find((st) => st.value === d.restauration_prest_sous_type)?.label
+                              ?? d.restauration_prest_sous_type}
+                          </span>
+                          <span className="text-[10px] text-slate-400 italic flex items-center gap-1">
+                            <span className="material-symbols-outlined text-xs">lock</span>Défini par le propriétaire
+                          </span>
+                        </div>
+                      ) : (
+                        <div className="flex flex-wrap gap-1.5">
+                          {RESTAURANT_PREST_SUBTYPES.map((st) => (
+                            <button key={st.value} type="button"
+                              onClick={() => u({ restauration_prest_sous_type: d.restauration_prest_sous_type === st.value ? "" : st.value })}
+                              className={`px-3 py-1.5 rounded-full text-xs font-bold border-2 transition-all ${
+                                d.restauration_prest_sous_type === st.value
+                                  ? "border-primary bg-primary text-white"
+                                  : "border-slate-200 bg-white text-slate-600 hover:border-primary/40"
+                              }`}>
+                              {st.label}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                      {isCollabRepas ? (
+                        // Côté collaborateur : c'est lui le prestataire. Il complète les
+                        // champs du sous-type retenu au lieu de se voir proposer d'inviter
+                        // quelqu'un d'autre.
+                        d.restauration_prest_sous_type ? (
+                          (() => {
+                            const prestCfg = OFFER_DETAIL_FIELDS[d.restauration_prest_sous_type] ?? null;
+                            if (!prestCfg) {
+                              return <p className="text-xs font-semibold text-slate-400 text-center py-2">Aucun champ à renseigner pour ce type.</p>;
+                            }
+                            return (
+                              <ProviderSchemaForm
+                                config={prestCfg}
+                                value={d.restauration_prest_details ?? {}}
+                                onChange={(v) => u({ restauration_prest_details: v })}
+                              />
+                            );
+                          })()
+                        ) : (
+                          <p className="text-xs font-semibold text-slate-400 text-center py-2">Sélectionnez le type de restaurant que vous proposez.</p>
+                        )
+                      ) : d.restauration_prest_sous_type ? (
+                        <InviteRequired section="restauration" icon="restaurant"
+                          message="La restauration sera assurée par un prestataire — invitez-en un ci-dessous." />
+                      ) : (
+                        <p className="text-xs font-semibold text-slate-400 text-center py-2">Sélectionnez un type de restaurant avant d'inviter un collaborateur.</p>
+                      )}
                     </div>
                   }
                 />

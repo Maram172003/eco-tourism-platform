@@ -12,6 +12,7 @@ import { ActivityDetails, ActivityDetailsDocument } from '../provider-activity/s
 import { GuideAvailabilitySlot } from '../guide/entities/guide-availability.entity';
 import { Guide } from '../guide/entities/guide.entity';
 import { Provider } from '../provider/entities/provider.entity';
+import { ProfileApprovalService } from '../common/services/profile-approval.service';
 import { Organization } from '../organization/entities/organization.entity';
 import { NotificationService } from '../notifications/notification.service';
 import { SlotLike, overlappingDays, dispoEqual, toSlotType } from '../shared/slot.utils';
@@ -53,10 +54,14 @@ export class OfferService {
     private readonly orgRepo: Repository<Organization>,
 
     private readonly notifService: NotificationService,
+
+    private readonly profileApproval: ProfileApprovalService,
   ) {}
 
   async create(authorId: string, dto: CreateOfferDto, initialStatus: string = 'draft'): Promise<Offer> {
     if (dto.status) initialStatus = dto.status;
+    // Aucune offre — pas même un brouillon — tant que le profil n'est pas validé.
+    await this.profileApproval.assertApproved(authorId, 'créer une offre');
     // Validation des contraintes si une activité est liée
     if (dto.activity_id) {
       await this.validateAgainstActivity(dto);
@@ -185,6 +190,8 @@ export class OfferService {
   }
 
   async update(authorId: string, offerId: string, dto: UpdateOfferDto): Promise<Offer> {
+    // Profil non validé : les brouillons déjà en base ne sont pas modifiables non plus.
+    await this.profileApproval.assertApproved(authorId, 'modifier une offre');
     const offer = await this.findOrFail(offerId);
     if (offer.author_id !== authorId) throw new ForbiddenException('Accès refusé.');
     if ((offer as any).status === 'approved') {
@@ -227,6 +234,8 @@ export class OfferService {
     if (dto.deposit_percentage !== undefined) offer.deposit_percentage = dto.deposit_percentage ?? null;
     if (dto.details !== undefined) offer.details = dto.details ?? null;
     if (dto.tags !== undefined) (offer as any).tags = dto.tags ?? null;
+    // Le profil est déjà vérifié en tête de méthode : un PATCH ne peut donc plus
+    // servir à contourner publishOffer() en forçant un statut diffusable.
     if (dto.status !== undefined) offer.status = dto.status;
 
     // Logique _finalize : draft → attente_publication si tous les collabs sont terminés/refusés
@@ -441,6 +450,8 @@ export class OfferService {
   }
 
   async publishOffer(authorId: string, offerId: string): Promise<void> {
+    // Un profil professionnel doit être validé par un administrateur avant diffusion.
+    await this.profileApproval.assertApproved(authorId, 'publier une offre');
     const offer = await this.findOrFail(offerId);
     if (offer.author_id !== authorId) throw new ForbiddenException('Accès refusé.');
     if ((offer as any).status !== 'attente_publication') {

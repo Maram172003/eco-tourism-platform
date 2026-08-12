@@ -15,9 +15,11 @@ import { GuideMongoService } from './guide-mongo.service';
 import { GuideSkills, GuideSkillsSchema } from './schemas/guide-skills.schema';
 import { GuideEngagement, GuideEngagementSchema } from './schemas/guide-engagement.schema';
 import { CircuitModule } from '../circuit/circuit.module';
+import { ProfileApprovalModule } from '../common/services/profile-approval.module';
 
 @Module({
   imports: [
+    ProfileApprovalModule,
     TypeOrmModule.forFeature([Guide, Offer, GuideAvailabilitySlot, OfferCollaboration, Organization, Provider]),
     MongooseModule.forFeature([
       { name: GuideSkills.name, schema: GuideSkillsSchema },

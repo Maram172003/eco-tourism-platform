@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { ArrowRight, ArrowLeft, Check } from "lucide-react";
 import Navbar from "@/components/home/Navbar";
 import { apiFetch } from "@/lib/api";
+import { getConsistentSession } from "@/lib/auth";
 
 // ─── Step components ───────────────────────────────────────────────────────────
 
@@ -203,9 +204,9 @@ export default function ProjectOwnerOnboardingPage() {
   });
 
   useEffect(() => {
-    const token = localStorage.getItem("access_token");
-    const user = localStorage.getItem("user");
-    if (!token || !user) router.push("/auth/login");
+    // Le jeton doit désigner le compte affiché, sinon l'onboarding écrirait
+    // dans le profil d'une session restée ouverte dans un autre onglet.
+    if (!getConsistentSession()) router.push("/auth/login");
   }, [router]);
 
   const getToken = () => localStorage.getItem("access_token") || "";

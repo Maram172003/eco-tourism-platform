@@ -15,6 +15,7 @@ import { Friendship } from '../eco-traveler/entities/friendship.entity';
 import { OfferService } from '../offer/offer.service';
 import { CircuitService } from '../circuit/circuit.service';
 import { ItemLike } from '../interactions/entities/item-like.entity';
+import { macrosOfTags } from '../common/constants/taxonomy';
 
 const AMBASSADOR_BADGE = 'Ambassadeur Éco-Voyage';
 
@@ -308,15 +309,28 @@ export class PublicationService {
     if (userRole === 'eco_traveler') {
       const traveler = await this.ecoRepo.findOne({ where: { user_id: userId } });
       const interests: string[] = traveler?.interests ?? [];
+      // Les univers choisis à l'onboarding (« motivations ») sont des
+      // macro-catégories. Ils permettent de recommander un hébergement à qui
+      // s'intéresse à l'hébergement, sans lui demander de cocher « suite » ou
+      // « chambre standard » — ce qui n'aurait aucun sens comme centre d'intérêt.
+      const macros: string[] = traveler?.motivations ?? [];
 
-      if (interests.length > 0) {
-        const intersect = (a: string[], b: string[]) => {
-          const setB = new Set(b);
-          return a.filter(x => setB.has(x)).length;
+      if (interests.length > 0 || macros.length > 0) {
+        const interestSet = new Set(interests);
+        const macroSet = new Set(macros);
+
+        // Un tag fin coché compte double : c'est un signal plus précis
+        // qu'un simple univers d'intérêt.
+        const score = (tags: string[]): number => {
+          const list = tags ?? [];
+          const exact = list.filter(t => interestSet.has(t)).length * 2;
+          const byMacro = [...macrosOfTags(list)].filter(m => macroSet.has(m)).length;
+          return exact + byMacro;
         };
+
         const scored = [
-          ...offers.map(o => ({ type: 'offer' as const, id: o.id, created_at: o.created_at, matchScore: intersect(interests, o.tags ?? []), data: o })),
-          ...circuits.map(c => ({ type: 'circuit' as const, id: c.id, created_at: c.created_at, matchScore: intersect(interests, c.tags ?? []), data: c })),
+          ...offers.map(o => ({ type: 'offer' as const, id: o.id, created_at: o.created_at, matchScore: score(o.tags ?? []), data: o })),
+          ...circuits.map(c => ({ type: 'circuit' as const, id: c.id, created_at: c.created_at, matchScore: score(c.tags ?? []), data: c })),
         ]
           .filter(item => item.matchScore > 0)
           .sort((a, b) => b.matchScore - a.matchScore || new Date(b.created_at).getTime() - new Date(a.created_at).getTime())

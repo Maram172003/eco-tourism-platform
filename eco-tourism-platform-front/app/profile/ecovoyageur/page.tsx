@@ -14,6 +14,7 @@ import { logoutUser } from "@/lib/auth";
 import MessagerieWidget from "@/components/MessagerieWidget";
 import PubInteractions from "@/components/PubInteractions";
 import PlaceContributions, { type TopPhotoData, type TopDescData } from "@/components/PlaceContributions";
+import { MACRO_CATEGORIES, TAXONOMY_TAGS as ALL_TAXONOMY_TAGS } from "@/lib/constants/taxonomy-tags";
 
 const MapPicker = dynamic(
   () => import("@/components/map/MapPicker"),
@@ -115,18 +116,10 @@ const TRAVELER_TYPES = [
   { value: "photo",     label: "Photographes" },
 ];
 
-const UNIVERS = [
-  { value: "nature",                 label: "Nature" },
-  { value: "histoire_archeologie",   label: "Histoire & Archéologie" },
-  { value: "aventure_sport",         label: "Aventure & Sport" },
-  { value: "gastronomie",            label: "Gastronomie" },
-  { value: "artisanat",              label: "Artisanat" },
-  { value: "decouverte_urbaine",     label: "Découverte urbaine" },
-  { value: "culture_patrimoine",     label: "Culture & Patrimoine" },
-  { value: "bien_etre",              label: "Bien-être" },
-  { value: "transport_experientiel", label: "Transport expérientiel" },
-  { value: "volontariat",            label: "Volontariat" },
-];
+// Les 11 univers proviennent de la taxonomie commune : ainsi « Hébergement »
+// n'est plus oublié ici, et toute macro ajoutée plus tard apparaît d'office.
+const UNIVERS = MACRO_CATEGORIES.map((c) => ({ value: c.slug, label: c.label }));
+
 
 const SUSTAINABILITY_VALUES = [
   { value: "support_local_economy",   label: "Économie locale" },
@@ -138,103 +131,22 @@ const SUSTAINABILITY_VALUES = [
   { value: "avoid_mass_tourism",      label: "Éviter le tourisme de masse" },
 ];
 
-const TAXONOMY_TAGS: Record<string, { value: string; label: string }[]> = {
-  nature: [
-    { value: "faune", label: "Faune" }, { value: "flore", label: "Flore" },
-    { value: "biodiversite", label: "Biodiversité" }, { value: "ornithologie", label: "Ornithologie & oiseaux" },
-    { value: "geologie", label: "Géologie" }, { value: "botanique", label: "Botanique" },
-    { value: "ecologie_marine", label: "Écologie marine" }, { value: "zones_humides", label: "Zones humides" },
-    { value: "forets_maquis", label: "Forêts & maquis" }, { value: "desert_dunes", label: "Désert & dunes" },
-    { value: "oasis", label: "Oasis" }, { value: "parcs_naturels", label: "Parcs naturels" },
-    { value: "astronomie", label: "Astronomie & ciel nocturne" }, { value: "photographie_nature", label: "Photographie nature" },
-    { value: "conservation_protection", label: "Conservation & protection" }, { value: "observation_faune", label: "Observation faune & mammifères" },
-    { value: "safari_desert", label: "Safari désert" }, { value: "circuit_nature", label: "Circuit nature" },
-    { value: "circuit_montagne", label: "Circuit montagne" }, { value: "tour_cotier", label: "Tour côtier" },
-  ],
-  histoire_archeologie: [
-    { value: "periode_punique", label: "Période punique" }, { value: "periode_romaine", label: "Période romaine" },
-    { value: "periode_byzantine", label: "Période byzantine" }, { value: "periode_arabe_medievale", label: "Période arabe & médiévale" },
-    { value: "periode_ottomane", label: "Période ottomane" }, { value: "periode_coloniale", label: "Période coloniale" },
-    { value: "prehistoire", label: "Préhistoire" }, { value: "fouilles_archeologiques", label: "Fouilles archéologiques" },
-    { value: "mosaiques_antiques", label: "Mosaïques antiques" }, { value: "thermes_romains", label: "Thermes romains" },
-    { value: "amphitheatres", label: "Amphithéâtres" }, { value: "necropoles", label: "Nécropoles" },
-    { value: "ksour_greniers_berberes", label: "Ksour & greniers berbères" }, { value: "routes_commerciales", label: "Routes commerciales" },
-    { value: "carthage_civilisation_punique", label: "Carthage & civilisation punique" }, { value: "circuit_historique", label: "Circuit historique" },
-  ],
-  aventure_sport: [
-    { value: "randonnee_pedestre", label: "Randonnée pédestre" }, { value: "trek_multi_jours", label: "Trek multi-jours" },
-    { value: "escalade", label: "Escalade" }, { value: "via_ferrata", label: "Via ferrata" },
-    { value: "speleologie", label: "Spéléologie" }, { value: "canyoning", label: "Canyoning" },
-    { value: "vtt_cyclisme", label: "VTT & cyclisme" }, { value: "kayak_canoe", label: "Kayak & canoë" },
-    { value: "surf_windsurf", label: "Surf & windsurf" }, { value: "plongee_sous_marine", label: "Plongée sous-marine" },
-    { value: "snorkeling", label: "Snorkeling" }, { value: "quad_4x4", label: "Quad & 4x4" },
-    { value: "bivouac", label: "Bivouac" }, { value: "equitation", label: "Équitation" },
-    { value: "tir_arc", label: "Tir à l'arc" }, { value: "peche_traditionnelle", label: "Pêche traditionnelle" },
-  ],
-  gastronomie: [
-    { value: "cuisine_tunisienne_traditionnelle", label: "Cuisine tunisienne traditionnelle" }, { value: "cuisine_berbere", label: "Cuisine berbère" },
-    { value: "cuisine_cotiere_fruits_mer", label: "Cuisine côtière & fruits de mer" }, { value: "street_food", label: "Street food" },
-    { value: "epices_condiments", label: "Épices & condiments" }, { value: "huile_olive_oleiculture", label: "Huile d'olive & oléiculture" },
-    { value: "dattes_palmeraies", label: "Dattes & palmeraies" }, { value: "marches_locaux", label: "Marchés locaux" },
-    { value: "cours_cuisine", label: "Cours de cuisine" }, { value: "degustation_thes", label: "Dégustation de thés" },
-    { value: "vins_viticulture", label: "Vins & viticulture" }, { value: "boulangerie_traditionnelle", label: "Boulangerie traditionnelle" },
-    { value: "miel_apiculture", label: "Miel & apiculture" }, { value: "restaurant_traditionnel", label: "Restaurant traditionnel" },
-    { value: "cafe_salon_the", label: "Café & salon de thé" }, { value: "ferme_restaurant", label: "Ferme-restaurant" },
-    { value: "food_truck", label: "Food truck" }, { value: "table_hotes", label: "Table d'hôtes" },
-    { value: "degustation_produits", label: "Dégustation de produits" }, { value: "diner_panoramique", label: "Dîner panoramique" },
-    { value: "visite_ferme", label: "Visite ferme" }, { value: "cueillette", label: "Cueillette" },
-    { value: "atelier_fromage_yaourt", label: "Atelier fromage & yaourt" }, { value: "jardinage", label: "Jardinage & plantation" },
-    { value: "elevage_responsable", label: "Élevage responsable" },
-  ],
-  artisanat: [
-    { value: "poterie_ceramique", label: "Poterie & céramique" }, { value: "tissage_tapis", label: "Tissage & tapis" },
-    { value: "broderie", label: "Broderie" }, { value: "bijoux_berberes", label: "Bijoux berbères" },
-    { value: "bijoux_argent", label: "Bijoux en argent" }, { value: "maroquinerie_cuir", label: "Maroquinerie & cuir" },
-    { value: "sculpture_bois", label: "Sculpture sur bois" }, { value: "thuya_marqueterie", label: "Thuya & marqueterie" },
-    { value: "vannerie_alfa", label: "Vannerie & alfa" }, { value: "calligraphie", label: "Calligraphie arabe" },
-    { value: "enluminure", label: "Enluminure" }, { value: "teinture_naturelle", label: "Teinture naturelle" },
-    { value: "dinanderie", label: "Dinanderie" }, { value: "savon_artisanal", label: "Savon artisanal" },
-    { value: "couture_caftan", label: "Couture & caftan" }, { value: "tannerie", label: "Tannerie" },
-    { value: "parfumerie_naturelle", label: "Parfumerie naturelle" }, { value: "peinture_traditionnelle", label: "Peinture traditionnelle" },
-  ],
-  decouverte_urbaine: [
-    { value: "architecture_moderne", label: "Architecture moderne" }, { value: "street_art_graffiti", label: "Street art & graffiti" },
-    { value: "quartiers_historiques", label: "Quartiers historiques" }, { value: "vie_de_quartier", label: "Vie de quartier" },
-    { value: "marches_urbains", label: "Marchés urbains" }, { value: "cafes_culture_locale", label: "Cafés & culture locale" },
-    { value: "gastronomie_urbaine", label: "Gastronomie urbaine" }, { value: "transport_local", label: "Transport local" },
-    { value: "scene_artistique", label: "Scène artistique" }, { value: "musique_nuits_locales", label: "Musique & nuits locales" },
-    { value: "shopping_alternatif", label: "Shopping alternatif" }, { value: "communautes_locales", label: "Communautés locales" },
-    { value: "parcs_espaces_verts", label: "Parcs & espaces verts" }, { value: "port_activites_maritimes", label: "Port & activités maritimes" },
-  ],
-  culture_patrimoine: [
-    { value: "architecture_islamique", label: "Architecture islamique" }, { value: "architecture_romaine", label: "Architecture romaine" },
-    { value: "architecture_coloniale", label: "Architecture coloniale" }, { value: "musees", label: "Musées" },
-    { value: "medinas", label: "Médinas" }, { value: "traditions_locales", label: "Traditions locales" },
-    { value: "costumes_bijoux", label: "Costumes & bijoux" }, { value: "musique_traditionnelle", label: "Musique traditionnelle" },
-    { value: "danse_folklorique", label: "Danse folklorique" }, { value: "litterature_poesie", label: "Littérature & poésie" },
-    { value: "fetes_festivals", label: "Fêtes & festivals" }, { value: "contes_legendes", label: "Contes & légendes" },
-    { value: "religion_spiritualite", label: "Religion & spiritualité" }, { value: "berbere_amazigh", label: "Berbère & amazigh" },
-    { value: "art_contemporain", label: "Art contemporain" }, { value: "soiree_culturelle", label: "Soirée culturelle" },
-    { value: "spectacle_traditionnel", label: "Spectacle traditionnel" }, { value: "atelier_musical", label: "Atelier musical" },
-    { value: "visite_medina", label: "Visite médina guidée" }, { value: "visite_musee", label: "Visite musée" },
-  ],
-  bien_etre: [
-    { value: "hammam_traditionnel", label: "Hammam traditionnel" }, { value: "massage_naturel", label: "Massage naturel" },
-    { value: "retraite_yoga", label: "Retraite yoga" }, { value: "meditation", label: "Méditation" },
-    { value: "bain_thermal", label: "Bain thermal" }, { value: "therapie_plantes", label: "Thérapie par les plantes" },
-    { value: "gommage_savon_noir", label: "Gommage & savon noir" }, { value: "yoga", label: "Yoga" },
-  ],
-  transport_experientiel: [
-    { value: "location_velo", label: "Balade à vélo" }, { value: "caleche", label: "Calèche" },
-    { value: "bateau_traditionnel", label: "Bateau traditionnel" }, { value: "tuk_tuk", label: "Tuk-tuk" },
-    { value: "dromadaire", label: "Balade à dromadaire" }, { value: "transfert_partage", label: "Transfert partagé & covoiturage local" },
-  ],
-  volontariat: [
-    { value: "plantation_arbres", label: "Plantation d'arbres" }, { value: "nettoyage_plage", label: "Nettoyage plage" },
-    { value: "nettoyage_foret", label: "Nettoyage forêt" }, { value: "education_environnementale", label: "Éducation environnementale" },
-    { value: "jardin_communautaire", label: "Jardin communautaire" }, { value: "sensibilisation_ecoles", label: "Sensibilisation dans les écoles" },
-  ],
-};
+// « Hébergement » reste un univers que l'on peut cocher, mais ses sous-types
+// (Dortoir, Suite, Chambre standard…) ne sont pas des centres d'intérêt : on ne
+// les propose donc jamais à la sélection. L'univers seul suffit à recevoir des
+// recommandations d'hébergement, le moteur faisant la correspondance par macro.
+const INTEREST_MACROS = MACRO_CATEGORIES.filter((c) => c.slug !== "hebergement");
+
+// Activités groupées par univers, dérivées de la même source que les offres et
+// les circuits — plus de liste recopiée à la main qui finit par diverger.
+const TAXONOMY_TAGS: Record<string, { value: string; label: string }[]> =
+  INTEREST_MACROS.reduce((acc, macro) => {
+    acc[macro.slug] = ALL_TAXONOMY_TAGS
+      .filter((tag) => tag.macro === macro.slug)
+      .map((tag) => ({ value: tag.slug, label: tag.label }));
+    return acc;
+  }, {} as Record<string, { value: string; label: string }[]>);
+
 
 const LANDSCAPES = [
   { value: "mountain",    label: "Montagne" },
@@ -1195,29 +1107,50 @@ export default function EcoTravelerProfilePage() {
                       </button>
                     )}
                   </div>
-                  {/* Tags filtrés par univers sélectionnés */}
+                  {/* Activités regroupées sous leur univers */}
                   {(() => {
-                    const cats = editMotivations.length > 0 ? editMotivations : Object.keys(TAXONOMY_TAGS);
-                    const raw = cats.flatMap((c) => TAXONOMY_TAGS[c] ?? []);
-                    const seen = new Set<string>();
-                    const pool = raw.filter((t) => { if (seen.has(t.value)) return false; seen.add(t.value); return true; });
-                    const visible = editInterestSearch.trim()
-                      ? pool.filter((t) => t.label.toLowerCase().includes(editInterestSearch.toLowerCase()))
-                      : pool;
+                    const cats = editMotivations.length > 0 ? editMotivations : INTEREST_MACROS.map((u) => u.slug);
+                    const query = editInterestSearch.trim().toLowerCase();
+                    const groupes = cats
+                      .map((slug) => {
+                        const univers = UNIVERS.find((u) => u.value === slug);
+                        const tags = (TAXONOMY_TAGS[slug] ?? []).filter(
+                          (tag) => !query || tag.label.toLowerCase().includes(query),
+                        );
+                        return { slug, label: univers?.label ?? slug, tags };
+                      })
+                      .filter((g) => g.tags.length > 0);
+
+                    if (groupes.length === 0) {
+                      return (
+                        <p className="text-xs text-slate-500 italic">
+                          {query
+                            ? "Aucune activité correspondante."
+                            : "Les univers choisis n'appellent aucune précision — vous recevrez déjà des recommandations correspondantes."}
+                        </p>
+                      );
+                    }
                     return (
-                      <div className="flex flex-wrap gap-1.5 max-h-48 overflow-y-auto pr-1">
-                        {visible.length === 0
-                          ? <p className="text-xs text-slate-400 italic">Aucun tag correspondant.</p>
-                          : visible.map((tag) => {
-                            const active = editInterests.includes(tag.value);
-                            return (
-                              <button key={tag.value} type="button"
-                                onClick={() => setEditInterests((prev) => active ? prev.filter((s) => s !== tag.value) : [...prev, tag.value])}
-                                className={`px-3 py-1.5 rounded-xl text-xs font-bold border transition-all ${active ? "bg-primary/10 border-primary text-primary" : "bg-slate-50 border-slate-200 text-slate-500 hover:border-primary/40"}`}>
-                                {active && <Check size={10} className="inline mr-1" />}{tag.label}
-                              </button>
-                            );
-                          })}
+                      <div className="space-y-3 max-h-64 overflow-y-auto pr-1">
+                        {groupes.map((groupe) => (
+                          <div key={groupe.slug}>
+                            <p className="text-[10px] font-black tracking-wider text-primary/70 uppercase mb-1.5">
+                              {groupe.label}
+                            </p>
+                            <div className="flex flex-wrap gap-1.5">
+                              {groupe.tags.map((tag) => {
+                                const active = editInterests.includes(tag.value);
+                                return (
+                                  <button key={tag.value} type="button"
+                                    onClick={() => setEditInterests((prev) => active ? prev.filter((s) => s !== tag.value) : [...prev, tag.value])}
+                                    className={`px-3 py-1.5 rounded-xl text-xs font-bold border transition-all ${active ? "bg-primary/10 border-primary text-primary" : "bg-slate-50 border-slate-200 text-slate-500 hover:border-primary/40"}`}>
+                                    {active && <Check size={10} className="inline mr-1" />}{tag.label}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        ))}
                       </div>
                     );
                   })()}

@@ -44,6 +44,10 @@ export class Circuit {
   @Column({ type: 'jsonb', nullable: true })
   tags!: string[] | null;
 
+  // Score d'écoresponsabilité du circuit (0-100), issu du questionnaire dédié.
+  @Column({ type: 'int', nullable: true })
+  sustainability_score!: number | null;
+
   @CreateDateColumn()
   created_at!: Date;
 

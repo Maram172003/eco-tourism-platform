@@ -1,4 +1,4 @@
-import { IsArray, IsInt, IsNotEmpty, IsOptional, IsString, Min } from 'class-validator';
+import { IsArray, IsInt, IsNotEmpty, IsOptional, IsString, Max, Min } from 'class-validator';
 import { Type } from 'class-transformer';
 
 export class CreateCircuitDto {
@@ -68,4 +68,11 @@ export class UpdateCircuitDto {
   @IsArray()
   @IsString({ each: true })
   tags?: string[];
+}
+
+export class CircuitSustainabilityDto {
+  @IsInt()
+  @Min(0)
+  @Max(100)
+  score!: number;
 }

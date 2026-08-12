@@ -12,6 +12,7 @@ import {
 import { apiFetch } from "@/lib/api";
 import MessagerieWidget from "@/components/MessagerieWidget";
 import PubInteractions from "@/components/PubInteractions";
+import { OFFER_SUSTAINABILITY_STEPS, getOfferSustainabilityLevel } from "@/lib/constants/sustainability";
 
 const MapPicker = dynamic(
   () => import("@/components/map/MapPicker"),
@@ -248,58 +249,8 @@ function getSustainabilityLevel(score: number) {
   return              { label: "Projet Conventionnel",               color: "text-slate-500",  bg: "bg-slate-100",  emoji: "📋" };
 }
 
-const OFFER_SUSTAINABILITY_STEPS = [
-  {
-    category: "Impact Écologique", emoji: "🌿",
-    description: "Empreinte environnementale de l'activité proposée",
-    questions: [
-      { id: "oq1", text: "L'activité se déroule-t-elle dans un milieu naturel préservé ?", options: [{ label: "Oui, site protégé", value: 10 }, { label: "Partiellement", value: 5 }, { label: "Non", value: 0 }] },
-      { id: "oq2", text: "Des mesures réduisent-elles l'empreinte carbone (transport, matériel éco…) ?", options: [{ label: "Oui", value: 10 }, { label: "Partiellement", value: 5 }, { label: "Non", value: 0 }] },
-      { id: "oq3", text: "Les déchets générés par l'activité sont-ils gérés de manière responsable ?", options: [{ label: "Aucun déchet / gestion complète", value: 10 }, { label: "Gestion partielle", value: 5 }, { label: "Non géré", value: 0 }] },
-    ],
-  },
-  {
-    category: "Valorisation Locale", emoji: "🤝",
-    description: "Intégration des ressources et acteurs locaux dans l'offre",
-    questions: [
-      { id: "oq4", text: "Faites-vous appel à des guides, artisans ou intervenants locaux ?", options: [{ label: "Oui, systématiquement", value: 10 }, { label: "Parfois", value: 5 }, { label: "Non", value: 0 }] },
-      { id: "oq5", text: "Valorisez-vous le patrimoine culturel ou naturel local dans votre offre ?", options: [{ label: "Oui", value: 8 }, { label: "Partiellement", value: 4 }, { label: "Non", value: 0 }] },
-      { id: "oq6", text: "Les achats liés à l'offre (matériel, nourriture) sont-ils effectués localement ?", options: [{ label: "Oui, majoritairement", value: 7 }, { label: "Partiellement", value: 3 }, { label: "Non", value: 0 }] },
-    ],
-  },
-  {
-    category: "Sensibilisation", emoji: "📚",
-    description: "Actions d'éducation et de sensibilisation auprès des participants",
-    questions: [
-      { id: "oq7", text: "Sensibilisez-vous les participants à l'environnement et à la biodiversité ?", options: [{ label: "Oui, activement", value: 10 }, { label: "Partiellement", value: 5 }, { label: "Non", value: 0 }] },
-      { id: "oq8", text: "Fournissez-vous des conseils sur les bonnes pratiques éco-responsables ?", options: [{ label: "Oui", value: 10 }, { label: "Non", value: 0 }] },
-    ],
-  },
-  {
-    category: "Accessibilité", emoji: "♿",
-    description: "Ouverture de l'offre à tous les publics",
-    questions: [
-      { id: "oq9", text: "Votre offre est-elle accessible aux personnes à mobilité réduite ?", options: [{ label: "Oui", value: 8 }, { label: "Partiellement", value: 4 }, { label: "Non", value: 0 }] },
-      { id: "oq10", text: "Proposez-vous des tarifs adaptés (familles, étudiants, groupes…) ?", options: [{ label: "Oui", value: 7 }, { label: "Non", value: 0 }] },
-    ],
-  },
-  {
-    category: "Pratiques Responsables", emoji: "🏅",
-    description: "Engagement et encadrement éthique de l'activité",
-    questions: [
-      { id: "oq11", text: "Limitez-vous la taille des groupes pour protéger l'environnement ?", options: [{ label: "Oui", value: 5 }, { label: "Non", value: 0 }] },
-      { id: "oq12", text: "Avez-vous une politique d'annulation éco-responsable ?", options: [{ label: "Oui", value: 5 }, { label: "Non", value: 0 }] },
-    ],
-  },
-];
 
-function getOfferSustainabilityLevel(score: number) {
-  if (score >= 86) return { label: "Offre Ambassadrice Éco Voyage", color: "text-primary",      bg: "bg-primary/10",   emoji: "⭐" };
-  if (score >= 71) return { label: "Offre Éco-Responsable",         color: "text-emerald-600", bg: "bg-emerald-50",   emoji: "🌿" };
-  if (score >= 51) return { label: "Offre Engagée",                 color: "text-teal-600",    bg: "bg-teal-50",      emoji: "🤝" };
-  if (score >= 31) return { label: "Offre Sensibilisée",            color: "text-blue-600",    bg: "bg-blue-50",      emoji: "💡" };
-  return              { label: "Offre Conventionnelle",              color: "text-slate-500",   bg: "bg-slate-100",    emoji: "📋" };
-}
+
 
 type Tab = "tout" | "offres" | "projets" | "reseau" | "apropos";
 
@@ -1098,7 +1049,7 @@ export default function ProjectOwnerProfilePage() {
                   <div className="h-full bg-primary rounded-full transition-all" style={{ width: `${offer.sustainability_score}%` }} />
                 </div>
                 <span className={`mt-1 inline-block text-[10px] font-bold ${getOfferSustainabilityLevel(offer.sustainability_score).color}`}>
-                  {getOfferSustainabilityLevel(offer.sustainability_score).emoji} {getOfferSustainabilityLevel(offer.sustainability_score).label}
+                  <span className="material-symbols-outlined align-middle" style={{ fontSize: 14 }}>{getOfferSustainabilityLevel(offer.sustainability_score).icon}</span> {getOfferSustainabilityLevel(offer.sustainability_score).label}
                 </span>
               </div>
             ) : (
@@ -3372,7 +3323,9 @@ export default function ProjectOwnerProfilePage() {
             <div className="px-7 pt-7 pb-5 border-b border-slate-100 shrink-0">
               <p className="text-[10px] font-black tracking-widest text-slate-400 uppercase mb-1">Évaluation de durabilité — Offre</p>
               <h2 className="text-xl font-extrabold text-slate-800 flex items-center gap-2">
-                {oqStep < OFFER_SUSTAINABILITY_STEPS.length ? <>{OFFER_SUSTAINABILITY_STEPS[oqStep].emoji} {OFFER_SUSTAINABILITY_STEPS[oqStep].category}</> : "🎯 Résultat"}
+                {oqStep < OFFER_SUSTAINABILITY_STEPS.length
+                  ? <><span className="material-symbols-outlined align-middle text-primary" style={{ fontSize: 22 }}>{OFFER_SUSTAINABILITY_STEPS[oqStep].icon}</span> {OFFER_SUSTAINABILITY_STEPS[oqStep].category}</>
+                  : <><span className="material-symbols-outlined align-middle text-primary" style={{ fontSize: 22 }}>flag</span> Résultat</>}
               </h2>
               {oqStep < OFFER_SUSTAINABILITY_STEPS.length && (
                 <p className="text-sm text-slate-500 mt-1">{OFFER_SUSTAINABILITY_STEPS[oqStep].description}</p>
@@ -3433,7 +3386,7 @@ export default function ProjectOwnerProfilePage() {
                         <text x="70" y="65" textAnchor="middle" className="text-3xl font-black fill-slate-900" style={{ fontSize: 28, fontWeight: 900 }}>{oqScore}</text>
                         <text x="70" y="82" textAnchor="middle" className="fill-slate-400" style={{ fontSize: 12, fontWeight: 700 }}>/100</text>
                       </svg>
-                      <span className={`mt-2 text-base font-extrabold ${level.color}`}>{level.emoji} {level.label}</span>
+                      <span className={`mt-2 text-base font-extrabold ${level.color}`}><span className="material-symbols-outlined align-middle" style={{ fontSize: 18 }}>{level.icon}</span> {level.label}</span>
                       <p className="text-sm text-slate-500 mt-1 text-center">{oqScore >= 71 ? "Votre offre est éco-responsable. Excellent !" : oqScore >= 51 ? "Votre offre est sur la bonne voie. Continuez vos efforts !" : "Des améliorations sont possibles pour cette offre."}</p>
                     </div>
                     <div className="space-y-3 mb-4">
@@ -3442,7 +3395,7 @@ export default function ProjectOwnerProfilePage() {
                         const catMax = step.questions.reduce((sum, q) => sum + Math.max(...q.options.map((o) => o.value)), 0);
                         return (
                           <div key={step.category} className="flex items-center gap-3">
-                            <span className="text-base w-6 shrink-0">{step.emoji}</span>
+                            <span className="material-symbols-outlined w-6 shrink-0 text-primary" style={{ fontSize: 18 }}>{step.icon ?? "eco"}</span>
                             <div className="flex-1 min-w-0">
                               <div className="flex justify-between mb-0.5">
                                 <span className="text-xs font-bold text-slate-600 truncate">{step.category}</span>

@@ -42,6 +42,7 @@ type GuideProfile = {
   languages_spoken: string[] | null;
   years_experience: number | null;
   status: string;
+  rejection_reason?: string | null;
   sustainability_score: number | null;
   score_questionnaire: number | null;
   score_reservations: number;
@@ -119,6 +120,30 @@ export default function GuideDashboardPage() {
   const router = useRouter();
   const [user, setUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<GuideProfile | null>(null);
+
+  // Le formulaire d'offre permet d'inviter des collaborateurs : il reste fermé
+  // tant que l'administrateur n'a pas validé le profil.
+  async function blockIfNotApproved(): Promise<boolean> {
+    let status = profile?.status;
+    try {
+      const token = localStorage.getItem("access_token") || "";
+      const fresh = await apiFetch<GuideProfile>("/guide/profile", {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      status = fresh?.status;
+      setProfile((prev) => (prev ? { ...prev, ...fresh } : fresh));
+    } catch {
+      // Serveur injoignable : on s'en tient au dernier statut connu.
+    }
+
+    if (status === "active") return false;
+    alert(
+      status === "rejected"
+        ? "Votre profil a été refusé. Contactez l'équipe Éco-Voyage pour le régulariser."
+        : "Votre profil doit être validé par un administrateur avant de créer une offre. La validation intervient sous 48h.",
+    );
+    return true;
+  }
   const [activeItem, setActiveItem] = useState("Tableau de bord");
   const [showScoreDetail, setShowScoreDetail] = useState(false);
   const [offers, setOffers] = useState<Offer[]>([]);
@@ -201,6 +226,14 @@ export default function GuideDashboardPage() {
     const who        = n.data?.inviter_name ?? n.data?.invited_user_name ?? "Quelqu'un";
     const sourceOf   = isCircuit ? "du circuit" : "de l'offre";
     switch (n.type) {
+      case "profile_rejected": {
+        const deadline = n.data?.disable_at
+          ? new Date(n.data.disable_at).toLocaleString("fr-FR", { dateStyle: "long", timeStyle: "short" })
+          : null;
+        return { title: "Profil refusé", icon: "gpp_bad",
+          body: `Votre profil n'a pas été validé${n.data?.reason ? ` — motif : ${n.data.reason}` : ""}. `
+            + `Votre compte sera désactivé${deadline ? ` le ${deadline}` : ` sous ${n.data?.grace_hours ?? 24}h`}.` };
+      }
       case "collaboration_invite":
         return { title: "Invitation à collaborer", icon: "handshake",
           body: `${who} vous invite à compléter la section « ${section} » ${sourceOf} « ${resource} »` };
@@ -523,6 +556,34 @@ export default function GuideDashboardPage() {
               </div>
             )}
 
+            {/* Validation en attente — publication d'offres et de circuits bloquée */}
+            {profile?.status === "pending" && profile?.full_name && (
+              <div className="mb-6 p-5 bg-amber-50 border border-amber-200 rounded-2xl flex items-center gap-3">
+                <span className="material-symbols-outlined text-amber-500 text-2xl">schedule</span>
+                <div>
+                  <p className="font-bold text-amber-800">Profil en attente de validation</p>
+                  <p className="text-sm text-amber-600 font-medium">
+                    L&apos;équipe Éco-Voyage va examiner votre profil sous 48h. Vous pourrez publier vos offres et vos circuits dès qu&apos;il sera validé.
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {/* Profil refusé par l'administration */}
+            {profile?.status === "rejected" && (
+              <div className="mb-6 p-5 bg-red-50 border border-red-200 rounded-2xl flex items-center gap-3">
+                <span className="material-symbols-outlined text-red-500 text-2xl">cancel</span>
+                <div>
+                  <p className="font-bold text-red-800">Profil refusé</p>
+                  <p className="text-sm text-red-600 font-medium">
+                    {profile?.rejection_reason
+                      ? profile.rejection_reason
+                      : "Contactez l'équipe Éco-Voyage pour connaître le motif et régulariser votre profil."}
+                  </p>
+                </div>
+              </div>
+            )}
+
             {/* ── Stats Grid ───────────────────────────────────────────── */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
 
@@ -591,7 +652,7 @@ export default function GuideDashboardPage() {
               <div className="flex items-center justify-between mb-6">
                 <h3 className="text-xl font-bold">Mes Offres</h3>
                 <button
-                  onClick={() => setShowCreateOffer(true)}
+                  onClick={async () => { if (!(await blockIfNotApproved())) setShowCreateOffer(true); }}
                   className="flex items-center gap-2 px-5 py-2.5 bg-primary text-slate-900 font-bold rounded-xl text-sm shadow-lg shadow-primary/20 hover:-translate-y-0.5 transition-all"
                 >
                   <span className="material-symbols-outlined text-lg">add</span>
@@ -605,7 +666,7 @@ export default function GuideDashboardPage() {
                   <p className="text-slate-700 font-bold mb-1">Aucune offre publiée</p>
                   <p className="text-slate-400 text-sm mb-5">Créez votre première expérience guidée et proposez-la aux voyageurs.</p>
                   <button
-                    onClick={() => setShowCreateOffer(true)}
+                    onClick={async () => { if (!(await blockIfNotApproved())) setShowCreateOffer(true); }}
                     className="inline-flex items-center gap-2 px-5 py-2.5 bg-primary text-slate-900 rounded-xl text-sm font-bold hover:bg-primary/90 shadow-sm"
                   >
                     <span className="material-symbols-outlined text-lg">add</span>

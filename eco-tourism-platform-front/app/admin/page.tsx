@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import React, { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import dynamic from "next/dynamic";
 import { apiFetch } from "@/lib/api";
@@ -71,9 +71,87 @@ type PendingProvider = {
   languages_spoken: string[] | null;
   years_experience: number | null;
   sustainability_score: number | null;
+  // Champs de l'onboarding restés absents de la fiche
+  country: string | null;
+  language: string | null;
+  position: string | null;
+  personal_bio: string | null;
+  personal_certifications: Array<{ name: string; document_url?: string }> | null;
+  secondary_activity_types: string[] | null;
+  specialties: string[] | null;
+  photos: string[] | null;
+  videos: string[] | null;
+  history: string | null;
+  lat: number | null;
+  lng: number | null;
+  score_questionnaire: number | null;
+  score_reservations: number | null;
+  score_feedbacks: number | null;
+  // Organisation et activités jointes par le back, comme dans l'onglet « À propos »
+  org: {
+    name: string | null; logo: string | null; provider_type: string | null;
+    bio: string | null; history: string | null;
+    phone: string | null; whatsapp: string | null; email: string | null;
+    website: string | null; facebook: string | null; instagram: string | null; tiktok: string | null;
+    region: string | null; address: string | null; zone: string | null; country: string | null;
+    lat: number | null; lng: number | null;
+    photos: string[] | null; videos: string[] | null;
+    eco_labels: string[] | null;
+    certifications: Array<{ name: string; document_url?: string }> | null;
+    opening_hours: string | null;
+    sustainability_score: number | null;
+  } | null;
+  account_email: string | null;
+  member_since: string | null;
+  activities: Array<{
+    id: string; level: string; category: string;
+    subtypes: string[] | null; years_experience: number | null;
+    photos: Record<string, string[]>;
+    certifications: Array<{ name: string; document_url?: string }>;
+  }> | null;
 };
 
-type Tab = "publications" | "offers" | "providers" | "reports" | "banned";
+type PendingGuide = {
+  user_id: string;
+  full_name: string | null;
+  guide_type: string | null;
+  bio: string | null;
+  country: string | null;
+  language: string | null;
+  photo: string | null;
+  cover_photo: string | null;
+  zone: string | null;
+  telephone: string | null;
+  ville_residence: string | null;
+  specialties: string[] | null;
+  domaines: string[] | null;
+  expertises: string[] | null;
+  zones_couvertes: string[] | null;
+  villes_couvertes: string[] | null;
+  sites_maitrises: string[] | null;
+  publics_accueillis: string[] | null;
+  languages_spoken: string[] | null;
+  deplacement_possible: boolean | null;
+  years_experience: number | null;
+  experience_pro: string | null;
+  centres_interet: string | null;
+  pourquoi_moi: string | null;
+  profile_completion: number | null;
+  sustainability_score: number | null;
+  score_questionnaire: number | null;
+  score_reservations: number | null;
+  score_feedbacks: number | null;
+  created_at?: string;
+  // Compétences stockées dans MongoDB, jointes par le back
+  account_email: string | null;
+  member_since: string | null;
+  certifications: Array<{ label: string; proof: string }> | null;
+  assurance: { name: string; proof: string } | null;
+  skills_activities: string[] | null;
+  skills_landscapes: string[] | null;
+};
+
+type Tab = "publications" | "offers" | "providers" | "guides" | "reports" | "banned";
 
 type BannedUser = {
   user_id: string;
@@ -107,6 +185,7 @@ type Report = {
 
 function RejectModal({ onConfirm, onClose }: { onConfirm: (reason: string) => void; onClose: () => void }) {
   const [reason, setReason] = useState("");
+  const [submitting, setSubmitting] = useState(false);
   return (
     <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4" onClick={onClose}>
       <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md p-6 space-y-4" onClick={(e) => e.stopPropagation()}>
@@ -120,9 +199,15 @@ function RejectModal({ onConfirm, onClose }: { onConfirm: (reason: string) => vo
         />
         <div className="flex gap-3 justify-end">
           <button onClick={onClose} className="px-5 py-2.5 rounded-xl text-sm font-bold text-slate-600 hover:bg-slate-100 transition-colors">Annuler</button>
-          <button disabled={!reason.trim()} onClick={() => reason.trim() && onConfirm(reason.trim())}
+          <button
+            disabled={!reason.trim() || submitting}
+            onClick={() => {
+              if (!reason.trim() || submitting) return;
+              setSubmitting(true);
+              onConfirm(reason.trim());
+            }}
             className="px-5 py-2.5 rounded-xl text-sm font-bold bg-red-500 text-white hover:bg-red-600 transition-colors disabled:opacity-50">
-            Rejeter
+            {submitting ? "Envoi…" : "Rejeter"}
           </button>
         </div>
       </div>
@@ -142,18 +227,6 @@ function DetailField({ label, value }: { label: string; value: string | number |
   );
 }
 
-function DetailLink({ label, url }: { label: string; url: string | null | undefined }) {
-  if (!url) return null;
-  return (
-    <div>
-      <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-0.5">{label}</p>
-      <a href={url} target="_blank" rel="noopener noreferrer"
-        className="inline-flex items-center gap-1.5 text-sm font-medium text-primary hover:underline break-all">
-        {url} <ExternalLink className="w-3.5 h-3.5 shrink-0" />
-      </a>
-    </div>
-  );
-}
 
 function DetailMap({ lat, lng }: { lat: number | null; lng: number | null }) {
   if (!lat || !lng) return null;
@@ -179,19 +252,6 @@ function DetailImages({ images }: { images: string[] | null }) {
   );
 }
 
-function DetailTags({ label, tags }: { label: string; tags: string[] | null }) {
-  if (!tags?.length) return null;
-  return (
-    <div>
-      <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5">{label}</p>
-      <div className="flex flex-wrap gap-1.5">
-        {tags.map((t) => (
-          <span key={t} className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-slate-100 text-slate-700">{t}</span>
-        ))}
-      </div>
-    </div>
-  );
-}
 
 function DetailSustainability({ score }: { score: number | null }) {
   if (score === null) return null;
@@ -268,7 +328,115 @@ const PROVIDER_TYPE_LABELS: Record<string, string> = {
   guide: "Guide nature", agence: "Agence de voyage", ecolodge: "Écolodge",
   restaurant: "Restauration", artisan: "Artisan", association: "Association",
   bien_etre: "Bien-être", transport: "Transport",
+  eco_tour: "Éco-tour", hebergement: "Hébergement", artisanat: "Artisanat",
+  culture_patrimoine: "Culture & Patrimoine",
 };
+
+// Les profils stockent des codes ISO : on les affiche en clair pour l'administrateur.
+const LANGUAGE_LABELS: Record<string, string> = {
+  ar: "Arabe", fr: "Français", en: "Anglais", it: "Italien", de: "Allemand",
+  es: "Espagnol", ber: "Berbère", ru: "Russe", zh: "Chinois", ja: "Japonais",
+};
+
+/** Date lisible, pour « membre depuis ». */
+function formatMonth(value?: string | null): string | null {
+  if (!value) return null;
+  const d = new Date(value);
+  return Number.isNaN(d.getTime())
+    ? null
+    : d.toLocaleDateString("fr-FR", { month: "long", year: "numeric" });
+}
+
+/** Rend un code lisible : slug → libellé connu, sinon slug « déslugifié ». */
+function humanize(value: string, dictionary?: Record<string, string>): string {
+  if (dictionary?.[value]) return dictionary[value];
+  return value.replace(/_/g, " ").replace(/^./, (c) => c.toUpperCase());
+}
+
+type InfoField = { label: string; value?: string | number | null };
+type InfoTags  = { label: string; values?: string[] | null; dictionary?: Record<string, string> };
+type InfoLink  = { label: string; url?: string | null };
+
+/**
+ * Section d'une fiche : elle se masque d'elle-même si elle n'a rien à montrer.
+ * Piloté par les données plutôt que par les enfants JSX — un composant enfant
+ * qui rend `null` reste un élément React, donc « truthy » : le tester ne dit
+ * rien de ce qui sera réellement affiché.
+ */
+function InfoSection({ title, fields = [], tags = [], links = [], hasExtra = false, children }: {
+  title: string;
+  fields?: InfoField[];
+  tags?: InfoTags[];
+  links?: InfoLink[];
+  hasExtra?: boolean;
+  children?: React.ReactNode;
+}) {
+  const visibleFields = fields.filter((f) => f.value !== null && f.value !== undefined && f.value !== "");
+  const visibleTags   = tags.filter((tg) => tg.values && tg.values.length > 0);
+  const visibleLinks  = links.filter((l) => !!l.url);
+
+  if (!visibleFields.length && !visibleTags.length && !visibleLinks.length && !hasExtra) return null;
+
+  return (
+    <section className="rounded-2xl border border-slate-100 bg-white overflow-hidden">
+      <header className="px-5 py-3 bg-slate-50/80 border-b border-slate-100">
+        <h4 className="text-[11px] font-black tracking-widest text-slate-500 uppercase">{title}</h4>
+      </header>
+
+      <div className="p-5 space-y-4">
+        {visibleFields.length > 0 && (
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-5 gap-y-4">
+            {visibleFields.map((f) => (
+              <div key={f.label} className={f.value && String(f.value).length > 90 ? "sm:col-span-2" : ""}>
+                <p className="text-[10px] font-black tracking-widest text-slate-400 uppercase mb-1">{f.label}</p>
+                <p className="text-sm font-semibold text-slate-800 leading-relaxed">{f.value}</p>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {visibleTags.map((tg) => (
+          <div key={tg.label}>
+            <p className="text-[10px] font-black tracking-widest text-slate-400 uppercase mb-2">{tg.label}</p>
+            <div className="flex flex-wrap gap-1.5">
+              {tg.values!.map((v) => (
+                <span key={v} className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-primary/10 text-primary">
+                  {humanize(v, tg.dictionary)}
+                </span>
+              ))}
+            </div>
+          </div>
+        ))}
+
+        {visibleLinks.length > 0 && (
+          <div className="flex flex-wrap gap-2">
+            {visibleLinks.map((l) => (
+              <a key={l.label} href={l.url!} target="_blank" rel="noreferrer"
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-50 border border-slate-200 text-xs font-bold text-slate-600 hover:border-primary/50 hover:text-primary transition-colors">
+                <ExternalLink className="w-3 h-3" />{l.label}
+              </a>
+            ))}
+          </div>
+        )}
+
+        {children}
+      </div>
+    </section>
+  );
+}
+
+/** Galerie de photos, au même arrondi que le reste de la plateforme. */
+function InfoPhotos({ images }: { images: (string | null | undefined)[] }) {
+  const valid = images.filter(Boolean) as string[];
+  if (!valid.length) return null;
+  return (
+    <div className="grid grid-cols-3 gap-2">
+      {valid.map((src, i) => (
+        <img key={i} src={src} alt="" className="w-full h-28 object-cover rounded-xl border border-slate-100" />
+      ))}
+    </div>
+  );
+}
 
 function ProviderDetail({ provider, onClose, onApprove, onReject, loading }: {
   provider: PendingProvider;
@@ -277,39 +445,379 @@ function ProviderDetail({ provider, onClose, onApprove, onReject, loading }: {
   onReject: () => void;
   loading: boolean;
 }) {
-  const name = provider.full_name ?? provider.organization ?? "Prestataire";
-  const badge = provider.provider_type ? (PROVIDER_TYPE_LABELS[provider.provider_type] ?? provider.provider_type) : "Prestataire";
+  // Le nom de la personne en titre, celui de l'organisation en sous-titre :
+  // l'administrateur identifie ainsi les deux d'un coup d'œil.
+  const name = provider.full_name ?? "Prestataire";
+  const badge = provider.org?.name ?? provider.organization ?? "—";
+  const photos = [provider.photo, provider.cover_photo];
+  const hasScore = provider.sustainability_score !== null && provider.sustainability_score !== undefined;
+  const org = provider.org;
+  const activities = provider.activities ?? [];
+
   return (
     <DetailModal title={name} badge={badge} date={new Date().toISOString()} onClose={onClose} onApprove={onApprove} onReject={onReject} loading={loading}>
-      <DetailImages images={provider.photo ? [provider.photo] : null} />
-      <div className="grid grid-cols-2 gap-4">
-        <DetailField label="Région" value={provider.region} />
-        <DetailField label="Type" value={PROVIDER_TYPE_LABELS[provider.provider_type ?? ""] ?? provider.provider_type} />
-      </div>
-      <DetailField label="Organisation" value={provider.organization} />
-      <DetailField label="Adresse" value={provider.address} />
-      <DetailField label="Zone" value={provider.zone} />
-      <DetailField label="Biographie" value={provider.bio} />
-      <DetailField label="Horaires" value={provider.opening_hours} />
-      <div className="grid grid-cols-2 gap-4">
-        <DetailField label="Téléphone" value={provider.phone} />
-        <DetailField label="WhatsApp" value={provider.whatsapp} />
-      </div>
-      <DetailField label="Expérience" value={provider.years_experience ? `${provider.years_experience} ans` : null} />
-      <DetailLink label="Site web" url={provider.website} />
-      <DetailLink label="Facebook" url={provider.facebook} />
-      <DetailTags label="Activités" tags={provider.activity_types} />
-      <DetailTags label="Langues" tags={provider.languages_spoken} />
-      <DetailTags label="Labels éco" tags={provider.eco_labels} />
-      <DetailTags label="Certifications" tags={provider.certifications} />
-      <DetailSustainability score={provider.sustainability_score} />
+
+      <InfoSection title="Identité" hasExtra={photos.some(Boolean)}
+        fields={[
+          { label: "Nom du prestataire", value: provider.full_name },
+          { label: "Organisation", value: provider.org?.name ?? provider.organization },
+          { label: "E-mail du compte", value: provider.account_email },
+          { label: "Membre depuis", value: formatMonth(provider.member_since) },
+          { label: "Type d'activité", value: humanize(provider.provider_type ?? "", PROVIDER_TYPE_LABELS) },
+          { label: "Pays", value: provider.country },
+          { label: "Langue principale", value: humanize(provider.language ?? "", LANGUAGE_LABELS) },
+          { label: "Expérience", value: provider.years_experience ? `${provider.years_experience} ans` : null },
+          { label: "Présentation", value: provider.bio },
+          { label: "Historique", value: provider.history },
+        ]}>
+        <InfoPhotos images={photos} />
+      </InfoSection>
+
+      <InfoSection title="Localisation" hasExtra={!!(provider.lat && provider.lng)}
+        fields={[
+          { label: "Région", value: provider.region },
+          { label: "Zone", value: provider.zone },
+          { label: "Adresse", value: provider.address },
+          { label: "Horaires", value: provider.opening_hours },
+        ]}>
+        <DetailMap lat={provider.lat} lng={provider.lng} />
+      </InfoSection>
+
+      <InfoSection title="Activité"
+        tags={[
+          { label: "Activités principales", values: provider.activity_types },
+          { label: "Activités secondaires", values: provider.secondary_activity_types },
+          { label: "Services", values: provider.services },
+          { label: "Spécialités", values: provider.specialties },
+          { label: "Langues parlées", values: provider.languages_spoken, dictionary: LANGUAGE_LABELS },
+        ]} />
+
+      <InfoSection title="Contact"
+        fields={[
+          { label: "Téléphone", value: provider.phone },
+          { label: "WhatsApp", value: provider.whatsapp },
+        ]}
+        links={[
+          { label: "Site web", url: provider.website },
+          { label: "Facebook", url: provider.facebook },
+          { label: "Instagram", url: provider.instagram },
+        ]} />
+
+      <InfoSection title="Référent" hasExtra={!!provider.personal_certifications?.length}
+        fields={[
+          { label: "Fonction", value: provider.position },
+          { label: "Présentation", value: provider.personal_bio },
+        ]}>
+        <DetailCertifications label="Certifications du référent" certifications={provider.personal_certifications} />
+      </InfoSection>
+
+      <InfoSection title="Engagement écologique" hasExtra={hasScore}
+        tags={[{ label: "Labels éco", values: provider.eco_labels }]}>
+        <DetailSustainability score={provider.sustainability_score} />
+        <DetailScoreBreakdown
+          questionnaire={provider.score_questionnaire}
+          reservations={provider.score_reservations}
+          feedbacks={provider.score_feedbacks}
+        />
+      </InfoSection>
+
+      <InfoSection title="Médias" hasExtra={!!provider.photos?.length}
+        tags={[{ label: "Vidéos", values: provider.videos }]}>
+        <InfoPhotos images={provider.photos ?? []} />
+      </InfoSection>
+
+      {/* ── Organisation : second volet du « À propos » du prestataire ── */}
+      {org && (
+        <>
+          <InfoSection title="Organisation" hasExtra={!!org.logo}
+            fields={[
+              { label: "Nom", value: org.name },
+              { label: "Type", value: humanize(org.provider_type ?? "", PROVIDER_TYPE_LABELS) },
+              { label: "Description", value: org.bio },
+              { label: "Histoire & origine", value: org.history },
+              { label: "Horaires", value: org.opening_hours },
+            ]}>
+            <InfoPhotos images={[org.logo]} />
+          </InfoSection>
+
+          <InfoSection title="Organisation — Localisation" hasExtra={!!(org.lat && org.lng)}
+            fields={[
+              { label: "Pays", value: org.country },
+              { label: "Région", value: org.region },
+              { label: "Zone", value: org.zone },
+              { label: "Adresse", value: org.address },
+            ]}>
+            <DetailMap lat={org.lat} lng={org.lng} />
+          </InfoSection>
+
+          <InfoSection title="Organisation — Contact"
+            fields={[
+              { label: "Téléphone", value: org.phone },
+              { label: "WhatsApp", value: org.whatsapp },
+              { label: "E-mail", value: org.email },
+            ]}
+            links={[
+              { label: "Site web", url: org.website },
+              { label: "Facebook", url: org.facebook },
+              { label: "Instagram", url: org.instagram },
+              { label: "TikTok", url: org.tiktok },
+            ]} />
+
+          <InfoSection title="Organisation — Certifications & labels"
+            hasExtra={!!org.certifications?.length}
+            tags={[{ label: "Labels éco", values: org.eco_labels }]}>
+            <DetailCertifications label="Certifications de l'organisation" certifications={org.certifications} />
+          </InfoSection>
+
+          <InfoSection title="Organisation — Médias"
+            hasExtra={!!org.photos?.length}
+            tags={[{ label: "Vidéos", values: org.videos }]}>
+            <InfoPhotos images={org.photos ?? []} />
+          </InfoSection>
+        </>
+      )}
+
+      {/* ── Activités déclarées, avec leurs photos et justificatifs ── */}
+      {activities.length > 0 && (
+        <InfoSection title={`Activités proposées (${activities.length})`} hasExtra>
+          <div className="space-y-3">
+            {activities.map((act) => {
+              const photos = Object.values(act.photos ?? {}).flat().filter(Boolean);
+              return (
+                <div key={act.id} className="rounded-xl border border-slate-100 bg-slate-50 p-4 space-y-3">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="px-2.5 py-1 rounded-full text-[11px] font-black bg-primary/10 text-primary">
+                      {humanize(act.category, PROVIDER_TYPE_LABELS)}
+                    </span>
+                    <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">
+                      {act.level === "primary" ? "Principale" : "Secondaire"}
+                    </span>
+                    {act.years_experience != null && (
+                      <span className="text-[11px] font-bold text-slate-500">{act.years_experience} ans</span>
+                    )}
+                  </div>
+                  {act.subtypes?.length ? (
+                    <div className="flex flex-wrap gap-1.5">
+                      {act.subtypes.map((st) => (
+                        <span key={st} className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-white border border-slate-200 text-slate-600">
+                          {humanize(st)}
+                        </span>
+                      ))}
+                    </div>
+                  ) : null}
+                  <InfoPhotos images={photos} />
+                  <DetailCertifications label="Certifications de l'activité" certifications={act.certifications} />
+                </div>
+              );
+            })}
+          </div>
+        </InfoSection>
+      )}
+
     </DetailModal>
+  );
+}
+
+// Fiche complète d'un guide : reprend l'intégralité de son onboarding.
+function GuideDetail({ guide, onClose, onApprove, onReject, loading }: {
+  guide: PendingGuide;
+  onClose: () => void;
+  onApprove: () => void;
+  onReject: () => void;
+  loading: boolean;
+}) {
+  const photos = [guide.photo, guide.cover_photo];
+  const hasScore = guide.sustainability_score !== null && guide.sustainability_score !== undefined;
+
+  return (
+    <DetailModal
+      title={guide.full_name ?? "Guide"}
+      badge=""
+      date={guide.created_at ?? new Date().toISOString()}
+      onClose={onClose} onApprove={onApprove} onReject={onReject} loading={loading}
+    >
+      <InfoSection title="Identité" hasExtra={photos.some(Boolean)}
+        fields={[
+          { label: "Nom du guide", value: guide.full_name },
+          { label: "E-mail du compte", value: guide.account_email },
+          { label: "Membre depuis", value: formatMonth(guide.member_since) },
+          { label: "Type de guide", value: humanize(guide.guide_type ?? "") },
+          { label: "Expérience", value: guide.years_experience ? `${guide.years_experience} ans` : null },
+          { label: "Pays", value: guide.country },
+          { label: "Langue principale", value: humanize(guide.language ?? "", LANGUAGE_LABELS) },
+          { label: "Téléphone", value: guide.telephone },
+          { label: "Ville de résidence", value: guide.ville_residence },
+          { label: "Biographie", value: guide.bio },
+        ]}>
+        <InfoPhotos images={photos} />
+      </InfoSection>
+
+      <InfoSection title="Parcours"
+        fields={[
+          { label: "Parcours professionnel", value: guide.experience_pro },
+          { label: "Centres d'intérêt", value: guide.centres_interet },
+          { label: "Pourquoi moi", value: guide.pourquoi_moi },
+        ]} />
+
+      <InfoSection title="Compétences"
+        tags={[
+          { label: "Domaines", values: guide.domaines },
+          { label: "Expertises", values: guide.expertises },
+          { label: "Spécialités", values: guide.specialties },
+          { label: "Langues parlées", values: guide.languages_spoken, dictionary: LANGUAGE_LABELS },
+          { label: "Publics accueillis", values: guide.publics_accueillis },
+        ]} />
+
+      <InfoSection title="Zone d'intervention"
+        fields={[
+          { label: "Zone", value: guide.zone },
+          {
+            label: "Déplacement possible",
+            value: guide.deplacement_possible === null || guide.deplacement_possible === undefined
+              ? null
+              : guide.deplacement_possible ? "Oui" : "Non",
+          },
+        ]}
+        tags={[
+          { label: "Zones couvertes", values: guide.zones_couvertes },
+          { label: "Villes couvertes", values: guide.villes_couvertes },
+          { label: "Sites maîtrisés", values: guide.sites_maitrises },
+        ]} />
+
+      <InfoSection title="Certifications & assurance"
+        hasExtra={!!guide.certifications?.length || !!guide.assurance}>
+        <DetailCertifications
+          label="Certifications"
+          certifications={(guide.certifications ?? []).map((c) => ({ name: c.label, document_url: c.proof }))}
+        />
+        <DetailCertifications
+          label="Assurance professionnelle"
+          certifications={guide.assurance ? [{ name: guide.assurance.name, document_url: guide.assurance.proof }] : null}
+        />
+      </InfoSection>
+
+      <InfoSection title="Engagement écologique" hasExtra={hasScore}
+        tags={[
+          { label: "Activités maîtrisées", values: guide.skills_activities },
+          { label: "Paysages", values: guide.skills_landscapes },
+        ]}
+        fields={[{
+          label: "Complétion du profil",
+          value: guide.profile_completion !== null && guide.profile_completion !== undefined
+            ? `${guide.profile_completion} %` : null,
+        }]}>
+        <DetailSustainability score={guide.sustainability_score} />
+        <DetailScoreBreakdown
+          questionnaire={guide.score_questionnaire}
+          reservations={guide.score_reservations}
+          feedbacks={guide.score_feedbacks}
+        />
+      </InfoSection>
+    </DetailModal>
+  );
+}
+
+// Certifications avec leur justificatif : l'administrateur doit pouvoir
+// l'ouvrir pour vérifier, qu'il s'agisse d'un lien ou d'un scan téléversé.
+function DetailCertifications({ label = "Certifications", certifications }: {
+  label?: string;
+  certifications: Array<{ name: string; document_url?: string }> | null;
+}) {
+  const [preview, setPreview] = useState<{ name: string; url: string } | null>(null);
+  if (!certifications?.length) return null;
+
+  // Une image (URL directe ou data URI) s'affiche ; tout le reste s'ouvre à part.
+  const isImage = (url: string) =>
+    url.startsWith("data:image") || /\.(png|jpe?g|webp|gif|avif)(\?|$)/i.test(url);
+
+  return (
+    <div className="mb-4">
+      <p className="text-[11px] font-black tracking-widest text-slate-400 uppercase mb-2">{label}</p>
+      <ul className="space-y-2">
+        {certifications.map((cert, i) => (
+          <li key={i} className="flex items-center justify-between gap-3 bg-slate-50 border border-slate-100 rounded-xl px-4 py-3">
+            <div className="flex items-center gap-2 min-w-0">
+              <span className="material-symbols-outlined text-primary text-base shrink-0">workspace_premium</span>
+              <span className="text-sm font-bold text-slate-700 truncate">{cert.name}</span>
+            </div>
+            {cert.document_url ? (
+              isImage(cert.document_url) ? (
+                // Un scan s'ouvre dans une visionneuse, sans quitter la modération.
+                <button type="button"
+                  onClick={() => setPreview({ name: cert.name, url: cert.document_url! })}
+                  className="shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-primary/10 text-primary text-xs font-extrabold hover:bg-primary/20 transition-colors">
+                  <ExternalLink className="w-3 h-3" />Voir
+                </button>
+              ) : (
+                // PDF ou lien externe : le navigateur sait mieux faire que nous.
+                <a href={cert.document_url} target="_blank" rel="noreferrer"
+                  className="shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-primary/10 text-primary text-xs font-extrabold hover:bg-primary/20 transition-colors">
+                  <ExternalLink className="w-3 h-3" />Voir
+                </a>
+              )
+            ) : (
+              <span className="shrink-0 text-xs font-bold text-slate-400 italic">Aucun justificatif</span>
+            )}
+          </li>
+        ))}
+      </ul>
+
+      {preview && (
+        <div className="fixed inset-0 z-[60] bg-black/70 flex items-center justify-center p-6"
+          onClick={() => setPreview(null)}>
+          <div className="bg-white rounded-2xl overflow-hidden max-w-3xl w-full max-h-[85vh] flex flex-col"
+            onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between px-5 py-3 border-b border-slate-100">
+              <p className="text-sm font-extrabold text-slate-800">{preview.name}</p>
+              <div className="flex items-center gap-3">
+                <a href={preview.url} target="_blank" rel="noreferrer"
+                  className="text-xs font-bold text-primary hover:underline">Ouvrir dans un onglet</a>
+                <button onClick={() => setPreview(null)}
+                  className="w-7 h-7 rounded-full hover:bg-slate-100 flex items-center justify-center">
+                  <X className="w-4 h-4 text-slate-500" />
+                </button>
+              </div>
+            </div>
+            <div className="overflow-auto p-4 bg-slate-50">
+              <img src={preview.url} alt={preview.name} className="max-w-full mx-auto rounded-xl" />
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Détail des trois composantes du score de durabilité.
+function DetailScoreBreakdown({ questionnaire, reservations, feedbacks }: {
+  questionnaire: number | null | undefined;
+  reservations: number | null | undefined;
+  feedbacks: number | null | undefined;
+}) {
+  const lignes = [
+    { label: "Questionnaire", value: questionnaire },
+    { label: "Réservations", value: reservations },
+    { label: "Évaluations", value: feedbacks },
+  ].filter((l) => l.value !== null && l.value !== undefined);
+  if (!lignes.length) return null;
+  return (
+    <div className="mb-4">
+      <p className="text-[11px] font-black tracking-widest text-slate-400 uppercase mb-1.5">Détail du score</p>
+      <div className="grid grid-cols-3 gap-3">
+        {lignes.map((l) => (
+          <div key={l.label} className="bg-slate-50 rounded-xl px-3 py-2">
+            <p className="text-[10px] font-bold text-slate-400 uppercase">{l.label}</p>
+            <p className="text-sm font-extrabold text-slate-800">{l.value}</p>
+          </div>
+        ))}
+      </div>
+    </div>
   );
 }
 
 function DetailModal({ title, badge, date, onClose, onApprove, onReject, loading, children }: {
   title: string;
-  badge: string;
+  badge?: string;
   date: string;
   onClose: () => void;
   onApprove: () => void;
@@ -324,7 +832,7 @@ function DetailModal({ title, badge, date, onClose, onApprove, onReject, loading
         <div className="flex items-start justify-between p-6 border-b border-slate-100 shrink-0">
           <div>
             <div className="flex items-center gap-2 mb-1">
-              <TypeBadge label={badge} />
+              {badge ? <TypeBadge label={badge} /> : null}
               <span className="text-xs font-medium text-slate-400">
                 {new Date(date).toLocaleDateString("fr-FR", { day: "numeric", month: "long", year: "numeric" })}
               </span>
@@ -336,8 +844,8 @@ function DetailModal({ title, badge, date, onClose, onApprove, onReject, loading
           </button>
         </div>
 
-        {/* Body */}
-        <div className="overflow-y-auto flex-1 p-6 space-y-5">
+        {/* Body — fond légèrement teinté pour détacher les cartes de section */}
+        <div className="overflow-y-auto flex-1 p-6 space-y-4 bg-slate-50/60">
           {children}
         </div>
 
@@ -367,20 +875,20 @@ function TypeBadge({ label }: { label: string }) {
 
 function ContentCard({ title, badge, meta, description, date, loading, onOpen, onApprove, onReject }: {
   title: string;
-  badge: string;
+  badge?: string;
   meta: string;
   description: string | null;
   date: string;
   loading: boolean;
-  onOpen: () => void;
+  onOpen?: () => void;
   onApprove: () => void;
   onReject: () => void;
 }) {
   return (
     <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-5 flex items-start gap-5">
-      <button className="flex-1 min-w-0 text-left group" onClick={onOpen}>
+      <button className="flex-1 min-w-0 text-left group" onClick={onOpen} disabled={!onOpen}>
         <div className="flex items-center gap-2 mb-1.5">
-          <TypeBadge label={badge} />
+          {badge ? <TypeBadge label={badge} /> : null}
           <span className="text-xs font-medium text-slate-400">
             {new Date(date).toLocaleDateString("fr-FR", { day: "numeric", month: "short", year: "numeric" })}
           </span>
@@ -531,6 +1039,7 @@ export default function AdminPage() {
   const [publications, setPublications] = useState<PendingPublication[]>([]);
   const [offers, setOffers] = useState<PendingOffer[]>([]);
   const [providers, setProviders] = useState<PendingProvider[]>([]);
+  const [guides, setGuides] = useState<PendingGuide[]>([]);
   const [reports, setReports] = useState<Report[]>([]);
   const [bannedUsers, setBannedUsers] = useState<BannedUser[]>([]);
   const [loading, setLoading] = useState(true);
@@ -538,6 +1047,7 @@ export default function AdminPage() {
   const [detailPub, setDetailPub] = useState<PendingPublication | null>(null);
   const [detailOffer, setDetailOffer] = useState<PendingOffer | null>(null);
   const [detailProvider, setDetailProvider] = useState<PendingProvider | null>(null);
+  const [detailGuide, setDetailGuide] = useState<PendingGuide | null>(null);
 
   const [rejectTarget, setRejectTarget] = useState<{ type: Tab; id: string } | null>(null);
   const [resolveTarget, setResolveTarget] = useState<Report | null>(null);
@@ -559,16 +1069,18 @@ export default function AdminPage() {
     async function fetchAll() {
       setLoading(true);
       try {
-        const [pubs, offrs, provs, reps, banned] = await Promise.all([
+        const [pubs, offrs, provs, gds, reps, banned] = await Promise.all([
           apiFetch<PendingPublication[]>("/admin/publications/pending", { headers: { Authorization: `Bearer ${token}` } }),
           apiFetch<PendingOffer[]>("/admin/offers/pending", { headers: { Authorization: `Bearer ${token}` } }),
           apiFetch<PendingProvider[]>("/admin/providers/pending", { headers: { Authorization: `Bearer ${token}` } }),
+          apiFetch<PendingGuide[]>("/admin/guides/pending", { headers: { Authorization: `Bearer ${token}` } }),
           apiFetch<Report[]>("/admin/reports", { headers: { Authorization: `Bearer ${token}` } }),
           apiFetch<BannedUser[]>("/admin/users/banned", { headers: { Authorization: `Bearer ${token}` } }),
         ]);
         setPublications(pubs);
         setOffers(offrs);
         setProviders(provs);
+        setGuides(gds);
         setReports(reps);
         setBannedUsers(banned);
       } catch {}
@@ -613,6 +1125,7 @@ export default function AdminPage() {
     if (type === "publications") setPublications((p) => p.filter((x) => x.id !== id));
     if (type === "offers") setOffers((p) => p.filter((x) => x.id !== id));
     if (type === "providers") setProviders((p) => p.filter((x) => x.user_id !== id));
+    if (type === "guides") setGuides((p) => p.filter((x) => x.user_id !== id));
   }
 
   async function resolveReport(action: string, note: string, banDays?: number) {
@@ -637,6 +1150,7 @@ export default function AdminPage() {
     setDetailPub(null);
     setDetailOffer(null);
     setDetailProvider(null);
+    setDetailGuide(null);
   }
 
   async function unbanUser(userId: string) {
@@ -663,8 +1177,8 @@ export default function AdminPage() {
   }
 
   const pendingReports = reports.filter((r) => r.status === "pending");
-  const counts: Record<Tab, number> = { publications: publications.length, offers: offers.length, providers: providers.length, reports: pendingReports.length, banned: bannedUsers.length };
-  const tabLabels: Record<Tab, string> = { publications: "Lieux", offers: "Offres", providers: "Prestataires", reports: "Signalements", banned: "Bannis" };
+  const counts: Record<Tab, number> = { publications: publications.length, offers: offers.length, providers: providers.length, guides: guides.length, reports: pendingReports.length, banned: bannedUsers.length };
+  const tabLabels: Record<Tab, string> = { publications: "Lieux", offers: "Offres", providers: "Prestataires", guides: "Guides", reports: "Signalements", banned: "Bannis" };
 
   if (!token) return (
     <div className="min-h-screen bg-slate-50 flex items-center justify-center">
@@ -694,8 +1208,8 @@ export default function AdminPage() {
 
       <main className="max-w-5xl mx-auto px-6 py-8">
         {/* Stats */}
-        <div className="grid grid-cols-5 gap-4 mb-8">
-          {(["publications", "offers", "providers"] as Tab[]).map((t) => (
+        <div className="grid grid-cols-6 gap-4 mb-8">
+          {(["publications", "offers", "providers", "guides"] as Tab[]).map((t) => (
             <div key={t} className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm">
               <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-1">{tabLabels[t]}</p>
               <p className="text-3xl font-extrabold text-slate-900">{counts[t]}</p>
@@ -716,7 +1230,7 @@ export default function AdminPage() {
 
         {/* Tabs */}
         <div className="flex gap-2 mb-6 flex-wrap">
-          {(["publications", "offers", "providers", "reports", "banned"] as Tab[]).map((t) => (
+          {(["publications", "offers", "providers", "guides", "reports", "banned"] as Tab[]).map((t) => (
             <button key={t} onClick={() => setTab(t)}
               className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-bold transition-all ${
                 tab === t
@@ -784,15 +1298,32 @@ export default function AdminPage() {
               providers.length === 0 ? <Empty label="Aucun prestataire en attente" /> :
               providers.map((prov) => (
                 <ContentCard key={prov.user_id}
-                  title={prov.full_name ?? prov.organization ?? "Prestataire"}
-                  badge={PROVIDER_TYPE_LABELS[prov.provider_type ?? ""] ?? "Prestataire"}
-                  meta={[prov.region, prov.activity_types?.slice(0, 2).join(", ")].filter(Boolean).join(" · ")}
+                  title={prov.full_name ?? "Prestataire"}
+                  badge={prov.org?.name ?? prov.organization ?? "—"}
+                  meta={[prov.region, prov.account_email].filter(Boolean).join(" · ")}
                   description={prov.bio}
                   date={new Date().toISOString()}
                   loading={actionLoading === prov.user_id}
                   onOpen={() => setDetailProvider(prov)}
                   onApprove={() => approve("providers", prov.user_id)}
                   onReject={() => setRejectTarget({ type: "providers", id: prov.user_id })}
+                />
+              ))
+            )}
+
+            {tab === "guides" && (
+              guides.length === 0 ? <Empty label="Aucun guide en attente" /> :
+              guides.map((gd) => (
+                <ContentCard key={gd.user_id}
+                  title={gd.full_name ?? "Guide"}
+
+                  meta={[gd.zone, gd.ville_residence].filter(Boolean).join(" · ")}
+                  description={gd.bio}
+                  date={new Date().toISOString()}
+                  loading={actionLoading === gd.user_id}
+                  onOpen={() => setDetailGuide(gd)}
+                  onApprove={() => approve("guides", gd.user_id)}
+                  onReject={() => setRejectTarget({ type: "guides", id: gd.user_id })}
                 />
               ))
             )}
@@ -947,6 +1478,14 @@ export default function AdminPage() {
           loading={actionLoading === detailOffer.id}
         />
       )}
+      {detailGuide && (
+        <GuideDetail guide={detailGuide} onClose={closeDetail}
+          onApprove={() => approve("guides", detailGuide.user_id)}
+          onReject={() => { closeDetail(); setRejectTarget({ type: "guides", id: detailGuide.user_id }); }}
+          loading={actionLoading === detailGuide.user_id}
+        />
+      )}
+
       {detailProvider && (
         <ProviderDetail provider={detailProvider} onClose={closeDetail}
           onApprove={() => approve("providers", detailProvider.user_id)}

@@ -23,7 +23,8 @@ export class ProviderActivityService {
   ) {}
 
   // Créer une seule activité (PG + MongoDB)
-  async create(providerId: string, dto: CreateProviderActivityDto): Promise<{ activity: ProviderActivity; details: ActivityDetails }> {
+  // Renvoie l'activité aplatie, au même format que findOne / findByProvider / update.
+  async create(providerId: string, dto: CreateProviderActivityDto): Promise<any> {
     // 1. Sauver le core dans PostgreSQL
     const activity = this.pgRepo.create({
       provider_id: providerId,
@@ -47,7 +48,12 @@ export class ProviderActivityService {
       certifications: dto.certifications ?? [],
     });
 
-    return { activity: saved, details };
+    return {
+      ...saved,
+      fields: details.fields ?? {},
+      photos: details.photos ?? {},
+      certifications: details.certifications ?? [],
+    };
   }
 
   // Créer plusieurs activités en une fois (onboarding / edit profile) — remplace les existantes

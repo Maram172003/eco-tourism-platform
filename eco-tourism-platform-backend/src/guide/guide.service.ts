@@ -22,6 +22,7 @@ import { GuideMongoService } from './guide-mongo.service';
 import { NotificationService } from '../notifications/notification.service';
 import { SlotLike, overlappingDays, dispoEqual, toSlotType } from '../shared/slot.utils';
 import { CircuitService } from '../circuit/circuit.service';
+import { ProfileApprovalService } from '../common/services/profile-approval.service';
 
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -44,6 +45,8 @@ export class GuideService {
     private readonly notifService: NotificationService,
     @Inject(forwardRef(() => CircuitService))
     private readonly circuitService: CircuitService,
+
+    private readonly profileApproval: ProfileApprovalService,
   ) {}
 
   async getProfile(userId: string) {
@@ -271,6 +274,7 @@ export class GuideService {
   // ── Offres Guide ─────────────────────────────────────────────────────────────
 
   async createOffer(userId: string, dto: CreateGuideOfferDto) {
+    await this.profileApproval.assertApproved(userId, 'créer une offre');
     const profile = await this.findOrFail(userId);
     const errors: string[] = [];
 
@@ -413,6 +417,7 @@ export class GuideService {
   }
 
   async updateOffer(userId: string, offerId: string, dto: CreateGuideOfferDto) {
+    await this.profileApproval.assertApproved(userId, 'modifier une offre');
     const offer = await this.offerRepo.findOne({
       where: { id: offerId, author_id: userId, author_type: 'guide' },
     });
@@ -909,6 +914,7 @@ export class GuideService {
   // ── Brouillon & Collaborations ─────────────────────────────────────────────
 
   async saveOfferDraft(userId: string, dto: SaveOfferDraftDto): Promise<Offer> {
+    await this.profileApproval.assertApproved(userId, 'créer une offre');
     const profile = await this.findOrFail(userId);
     const tarifDraft = (dto.details as any)?.tarification ?? {};
     const priceDraft =
@@ -1023,6 +1029,8 @@ export class GuideService {
     offerId: string,
     dto: { invited_user_id: string; invited_user_type: string; invited_user_name: string; section: string; message?: string; section_context?: Record<string, any> | null },
   ): Promise<OfferCollaboration> {
+    // Un profil non validé ne doit pas pouvoir solliciter des collaborateurs.
+    await this.profileApproval.assertApproved(guideId, 'inviter un collaborateur');
     const offer = await this.offerRepo.findOne({ where: { id: offerId, author_id: guideId } });
     if (!offer) throw new NotFoundException('Offre introuvable ou non autorisée');
     // Éviter les vrais doublons (pending/accepted/completed) mais permettre la réinvitation après refus

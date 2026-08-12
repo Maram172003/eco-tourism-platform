@@ -78,6 +78,28 @@ export class MailService {
         });
     }
 
+    /** Refus d'un profil professionnel : motif + délai avant désactivation. */
+    async sendProfileRejected(email: string, name: string | null, reason: string, hoursBeforeDisable = 24) {
+        await this.transporter.sendMail({
+            from: process.env.MAIL_FROM || process.env.SMTP_USER,
+            to: email,
+            subject: 'Votre profil Éco-Voyage a été refusé',
+            html: `
+        <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto">
+          <h2 style="color:#ef4444">Profil refusé</h2>
+          ${name ? `<p>Bonjour <strong>${name}</strong>,</p>` : ''}
+          <p>Après examen, votre profil professionnel n'a pas été validé par notre équipe.</p>
+          ${reason ? `<p><strong>Motif :</strong> ${reason}</p>` : ''}
+          <p style="background:#fef2f2;border-left:4px solid #ef4444;padding:12px 16px">
+            Votre compte sera <strong>désactivé dans ${hoursBeforeDisable} heures</strong>.
+            Passé ce délai, vous ne pourrez plus vous connecter.
+          </p>
+          <p>Si vous pensez qu'il s'agit d'une erreur, contactez notre support avant l'expiration de ce délai.</p>
+          <p style="color:#888;font-size:12px;">Éco-Voyage — Service de modération</p>
+        </div>`,
+        });
+    }
+
     async sendAccountBanned(email: string, name: string | null, note: string, banDays: number = 0) {
         const durationText = banDays > 0
           ? `pour une durée de <strong>${banDays} jour${banDays > 1 ? 's' : ''}</strong>`

@@ -144,6 +144,10 @@ export class Provider {
   @Column({ type: 'text', nullable: true })
   rejection_reason!: string | null;
 
+  // Horodatage du refus : le compte est désactivé 24h après cette date.
+  @Column({ type: 'timestamp', nullable: true })
+  rejected_at!: Date | null;
+
   @CreateDateColumn()
   created_at!: Date;
 

@@ -67,6 +67,23 @@ export class AdminController {
     return this.service.rejectProvider(userId, dto.reason);
   }
 
+  // ─── Guides ───────────────────────────────────────────────────────────────
+
+  @Get('guides/pending')
+  getPendingGuides() {
+    return this.service.getPendingGuides();
+  }
+
+  @Patch('guides/:userId/approve')
+  approveGuide(@Param('userId') userId: string) {
+    return this.service.approveGuide(userId);
+  }
+
+  @Patch('guides/:userId/reject')
+  rejectGuide(@Param('userId') userId: string, @Body() dto: RejectDto) {
+    return this.service.rejectGuide(userId, dto.reason);
+  }
+
   // ─── Reports ──────────────────────────────────────────────────────────────
 
   @Get('reports')

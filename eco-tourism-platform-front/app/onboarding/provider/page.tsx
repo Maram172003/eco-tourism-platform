@@ -7,6 +7,7 @@ import { Leaf, ArrowRight, ArrowLeft, Check, X, Plus } from "lucide-react";
 import { apiFetch } from "@/lib/api";
 import { PROVIDER_SCHEMA, SUBTYPE_FIELDS, getCategoryByValue } from "@/lib/provider-schema";
 import type { FieldConfig } from "@/lib/provider-schema";
+import { getConsistentSession } from "@/lib/auth";
 
 const MapPicker = dynamic(() => import("@/components/map/MapPicker"), {
   ssr: false,
@@ -1572,7 +1573,9 @@ export default function ProviderOnboardingPage() {
   });
 
   useEffect(() => {
-    if (!localStorage.getItem("access_token")) router.push("/auth/login");
+    // Le jeton doit désigner le compte affiché, sinon l'onboarding écrirait
+    // dans le profil d'une session restée ouverte dans un autre onglet.
+    if (!getConsistentSession()) router.push("/auth/login");
   }, [router]);
 
   function validateStep(): boolean {
@@ -1637,7 +1640,9 @@ export default function ProviderOnboardingPage() {
 
       const personalCerts = data.personal_certifications
         .filter((c: any) => c.name?.trim())
-        .map((c: any) => ({ name: c.name.trim(), document_url: c.url || undefined }));
+        // Le justificatif peut être une URL saisie ou une image téléversée :
+        // ne retenir que l'URL faisait perdre silencieusement les scans déposés.
+        .map((c: any) => ({ name: c.name.trim(), document_url: c.url || c.image || undefined }));
 
       // ── 1. Provider (personne) ──────────────────────────────────────────
       await apiFetch("/providers/onboarding", {

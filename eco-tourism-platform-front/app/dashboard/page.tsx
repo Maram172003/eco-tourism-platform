@@ -80,6 +80,7 @@ type AnyProfile = {
   language?: string | null;
   profile_completion: number;
   is_onboarded: boolean;
+  rejection_reason?: string | null;
   sustainability_score: number | null;
   score_questionnaire: number | null;
   score_reservations: number;
@@ -1248,6 +1249,16 @@ export default function DashboardPage() {
       hebergement: "hébergement", restauration: "restauration",
       transport: "transport", guide: "guidage", autre: "autre",
     };
+    if (n.type === "profile_rejected") {
+      const deadline = n.data?.disable_at
+        ? new Date(n.data.disable_at).toLocaleString("fr-FR", { dateStyle: "long", timeStyle: "short" })
+        : null;
+      return {
+        title: "Profil refusé",
+        body: `Votre profil n'a pas été validé${n.data?.reason ? ` — motif : ${n.data.reason}` : ""}. `
+          + `Votre compte sera désactivé${deadline ? ` le ${deadline}` : ` sous ${n.data?.grace_hours ?? 24}h`}.`,
+      };
+    }
     if (n.type === "collaboration_invite") {
       const section = n.data.section ?? "";
       const inviter = n.data.inviter_name ?? "Un guide";
@@ -1624,6 +1635,37 @@ export default function DashboardPage() {
             {/* ── Tableau de bord ───────────────────────────────────────── */}
             {activeItem === "Tableau de bord" && (
               <>
+                {/* Profil refusé — le compte sera désactivé sous 24h */}
+                {profile?.status === "rejected" && (
+                  <div className="mb-6 p-5 bg-red-50 border border-red-200 rounded-2xl flex items-start gap-3">
+                    <span className="material-symbols-outlined text-red-500 text-2xl">gpp_bad</span>
+                    <div>
+                      <p className="font-bold text-red-800">Profil refusé</p>
+                      <p className="text-sm text-red-600 font-medium">
+                        {profile?.rejection_reason
+                          ? `Motif : ${profile.rejection_reason}`
+                          : "Aucun motif n'a été précisé."}
+                      </p>
+                      <p className="text-sm text-red-600 font-medium mt-1">
+                        Votre compte sera désactivé sous 24h. Contactez l&apos;équipe Éco-Voyage avant ce délai.
+                      </p>
+                    </div>
+                  </div>
+                )}
+
+                {/* Profil en attente de validation */}
+                {profile?.status === "pending" && (
+                  <div className="mb-6 p-5 bg-amber-50 border border-amber-200 rounded-2xl flex items-start gap-3">
+                    <span className="material-symbols-outlined text-amber-500 text-2xl">schedule</span>
+                    <div>
+                      <p className="font-bold text-amber-800">Profil en attente de validation</p>
+                      <p className="text-sm text-amber-600 font-medium">
+                        L&apos;équipe Éco-Voyage va examiner votre profil sous 48h. Vous pourrez publier vos offres et vos circuits dès qu&apos;il sera validé.
+                      </p>
+                    </div>
+                  </div>
+                )}
+
                 {/* Questionnaire banner */}
                 {score === null && (
                   <div className="mb-6 p-5 bg-primary/10 border border-primary/20 rounded-2xl flex items-center justify-between">

@@ -22,7 +22,19 @@ function notifMeta(n: Notif) {
   const name       = n.data?.invited_user_name ?? n.data?.inviter_name ?? "Quelqu'un";
   const sourceOf   = isCircuit ? "du circuit" : "de l'offre";
 
+  const disableAt = n.data?.disable_at
+    ? new Date(n.data.disable_at).toLocaleString("fr-FR", { dateStyle: "long", timeStyle: "short" })
+    : null;
+
   const map: Record<string, { icon: string; accent: string; iconBg: string; iconColor: string; title: string; body: string }> = {
+    profile_rejected: {
+      icon: "gpp_bad", accent: "bg-red-500", iconBg: "bg-red-50", iconColor: "text-red-500",
+      title: "Profil refusé",
+      body: `Votre profil professionnel n'a pas été validé par notre équipe`
+        + `${n.data?.reason ? ` — **motif : ${n.data.reason}**` : ""}. `
+        + `Votre compte sera désactivé **${disableAt ? `le ${disableAt}` : `sous ${n.data?.grace_hours ?? 24}h`}**. `
+        + `Contactez l'équipe Éco-Voyage avant ce délai.`,
+    },
     collaboration_invite: {
       icon: "handshake", accent: "bg-primary", iconBg: "bg-primary/10", iconColor: "text-primary",
       title: "Invitation à collaborer",
@@ -220,6 +232,13 @@ export default function NotificationsPage() {
   function handleClick(n: Notif) {
     if (selectMode) { toggleSelect(n.id); return; }
     if (!n.is_read) markRead(n.id);
+
+    // Le refus de profil ne pointe vers aucune ressource : on renvoie vers le
+    // tableau de bord, où le bandeau détaille le motif et le délai.
+    if (n.type === "profile_rejected") {
+      router.push("/dashboard");
+      return;
+    }
 
     const circuitId = n.data?.circuit_id as string | undefined;
     const collabId  = n.data?.collab_id  as string | undefined;
