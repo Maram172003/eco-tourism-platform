@@ -1,7 +1,9 @@
 "use client";
 
 import Link from "next/link";
+import { useEffect, useState } from "react";
 import { ArrowLeft, Leaf, Menu } from "lucide-react";
+import { getConsistentSession } from "@/lib/auth";
 
 type NavbarProps = {
   variant?: "home" | "auth";
@@ -15,6 +17,20 @@ export default function Navbar({
   backHref = "/",
 }: NavbarProps) {
   const isAuth = variant === "auth";
+  const [session, setSession] = useState<{ userId: string; role: string } | null>(null);
+
+  useEffect(() => {
+    setSession(getConsistentSession());
+  }, []);
+
+  const dashboardHref =
+    session?.role === "eco_traveler"
+      ? "/dashboard/ecovoyageur"
+      : session?.role === "guide"
+        ? "/dashboard/guide"
+        : session?.role === "provider"
+          ? "/dashboard/provider"
+          : "/dashboard";
 
   return (
     <header className="sticky top-0 z-50 w-full border-b border-slate-200 dark:border-slate-800 bg-white/80 dark:bg-background-dark/80 backdrop-blur-md px-6 md:px-20 lg:px-40 py-4">
@@ -69,27 +85,38 @@ export default function Navbar({
         )}
 
         <div className="flex items-center gap-3">
-          <Link
-            href="/auth/login"
-            className={`hidden sm:flex h-11 items-center justify-center rounded-xl px-5 text-sm font-bold transition-all ${
-              currentPage === "login"
-                ? "bg-slate-200 dark:bg-slate-700 text-slate-900 dark:text-slate-100"
-                : "bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-slate-100 hover:bg-slate-200"
-            }`}
-          >
-            Connexion
-          </Link>
+          {session ? (
+            <Link
+              href={dashboardHref}
+              className="flex h-11 items-center justify-center rounded-xl px-5 text-sm font-bold bg-primary text-slate-900 shadow-lg shadow-primary/20 hover:scale-105 transition-all"
+            >
+              Mon espace
+            </Link>
+          ) : (
+            <>
+              <Link
+                href="/auth/login"
+                className={`hidden sm:flex h-11 items-center justify-center rounded-xl px-5 text-sm font-bold transition-all ${
+                  currentPage === "login"
+                    ? "bg-slate-200 dark:bg-slate-700 text-slate-900 dark:text-slate-100"
+                    : "bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-slate-100 hover:bg-slate-200"
+                }`}
+              >
+                Connexion
+              </Link>
 
-          <Link
-            href="/auth/register"
-            className={`flex h-11 items-center justify-center rounded-xl px-6 text-sm font-bold transition-all ${
-              currentPage === "register"
-                ? "bg-primary text-slate-900 shadow-lg shadow-primary/20"
-                : "bg-primary text-slate-900 shadow-lg shadow-primary/20 hover:scale-105"
-            }`}
-          >
-            S&apos;inscrire
-          </Link>
+              <Link
+                href="/auth/register"
+                className={`flex h-11 items-center justify-center rounded-xl px-6 text-sm font-bold transition-all ${
+                  currentPage === "register"
+                    ? "bg-primary text-slate-900 shadow-lg shadow-primary/20"
+                    : "bg-primary text-slate-900 shadow-lg shadow-primary/20 hover:scale-105"
+                }`}
+              >
+                S&apos;inscrire
+              </Link>
+            </>
+          )}
 
           <button className="lg:hidden p-2 text-slate-600 dark:text-slate-400">
             <Menu className="w-6 h-6" />

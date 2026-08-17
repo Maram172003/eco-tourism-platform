@@ -172,7 +172,7 @@ export default function ProviderDashboardPage() {
     { label: "Explorer",        icon: "explore",         href: "/explorer" },
     { label: "Offres",          icon: "storefront",      section: true as const },
     { label: "Circuits",        icon: "route",           section: true as const },
-    { label: "Réservations",    icon: "event_available", href: "/reservations" },
+    { label: "Réservations",    icon: "event_available", href: "/dashboard/provider/reservations" },
     { label: "Avis",            icon: "star",            href: "/profile/provider?tab=apropos" },
     { label: "Paramètres",      icon: "settings",        href: "/dashboard/profile" },
     { label: "Messagerie",      icon: "forum",           href: "/messagerie" },
@@ -921,10 +921,22 @@ export default function ProviderDashboardPage() {
                 {/* Réservations récentes */}
                 {reservations.length > 0 && (
                   <div>
-                    <h3 className="text-xl font-bold mb-4">Réservations récentes</h3>
+                    <div className="flex items-center justify-between mb-4">
+                      <h3 className="text-xl font-bold">Réservations récentes</h3>
+                      <button
+                        onClick={() => router.push("/dashboard/provider/reservations")}
+                        className="text-xs font-bold text-primary hover:underline"
+                      >
+                        Voir tout
+                      </button>
+                    </div>
                     <div className="space-y-3">
                       {reservations.slice(0, 3).map((r) => (
-                        <div key={r.id} className="bg-white dark:bg-slate-900 rounded-2xl border border-primary/5 p-4">
+                        <div
+                          key={r.id}
+                          className="bg-white dark:bg-slate-900 rounded-2xl border border-primary/5 p-4 cursor-pointer hover:border-primary/30"
+                          onClick={() => router.push(`/dashboard/provider/reservations/${r.id}`)}
+                        >
                           <div className="flex items-start justify-between gap-3 mb-2">
                             <div className="flex-1 min-w-0">
                               <p className="font-extrabold text-slate-900 dark:text-slate-100 text-sm line-clamp-1">{r.offer?.title}</p>
@@ -948,7 +960,7 @@ export default function ProviderDashboardPage() {
                             </span>
                           </div>
                           {r.status === "pending" && (
-                            <div className="flex gap-2 mt-2">
+                            <div className="flex gap-2 mt-2" onClick={(e) => e.stopPropagation()}>
                               <button
                                 onClick={() => handleReservationAction(r.id, "confirmed")}
                                 className="flex-1 py-2 bg-primary text-slate-900 text-xs font-bold rounded-xl hover:bg-primary/90 flex items-center justify-center gap-1.5"

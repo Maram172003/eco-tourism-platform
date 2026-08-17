@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { apiFetch } from "@/lib/api";
+import { goToReservation } from "@/lib/auth";
 import {
   MapPin, Clock, Users, Star, Leaf, Search, Filter, ArrowRight,
   ChevronLeft, Tag,
@@ -91,12 +92,8 @@ export default function OffersPage() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [typeFilter, setTypeFilter] = useState("all");
-  const [user, setUser] = useState<{ role: string } | null>(null);
 
   useEffect(() => {
-    const stored = localStorage.getItem("user");
-    if (stored) setUser(JSON.parse(stored));
-
     apiFetch<Offer[]>("/offers")
       .then((data) => {
         setOffers(data);
@@ -122,7 +119,7 @@ export default function OffersPage() {
     setFiltered(result);
   }, [search, typeFilter, offers]);
 
-  const canReserve = user?.role === "eco_traveler";
+  const canReserve = true;
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-emerald-50">
@@ -191,7 +188,7 @@ export default function OffersPage() {
                 key={offer.id}
                 offer={offer}
                 canReserve={canReserve}
-                onReserve={() => router.push(`/reservations/new?offerId=${offer.id}`)}
+                onReserve={() => goToReservation(offer.id)}
                 onDetail={() => router.push(`/offers/${offer.id}`)}
               />
             ))}

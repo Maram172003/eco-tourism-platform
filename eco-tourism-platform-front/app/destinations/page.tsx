@@ -42,7 +42,6 @@ import dynamic from "next/dynamic";
 import Navbar from "@/components/home/Navbar";
 import Footer from "@/components/home/Footer";
 import { apiFetch } from "@/lib/api";
-// Fenêtres de détail, partagées avec la page d'accueil.
 import {
   OfferModal, CircuitModal, ImageGallery, seedFromId,
   OFFER_PLACEHOLDERS, PARTNER_PLACEHOLDERS,
@@ -102,7 +101,7 @@ type Offer = {
   offer_type: string | null;
   offer_subtypes: string[] | null;
   region: string | null;
-  author_type: "guide" | "project_owner";
+  author_type: "guide" | "project_owner" | "provider";
   author_name: string | null;
   author_photo: string | null;
   org_name: string | null;
@@ -119,6 +118,10 @@ type Offer = {
   sustainability_score: number | null;
   tags: string[] | null;
   details: Record<string, any> | null;
+  offer_mode?: string | null;
+  variant_pricing?: Record<string, number> | null;
+  price_display_from?: number | null;
+  capacity?: number | null;
   created_at: string;
 };
 

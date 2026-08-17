@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import { ChevronLeft, ChevronRight, Globe, X } from "lucide-react";
-import { DOMAIN_CASCADE_CONFIG } from "@/lib/domainCascadeConfig";
+import { formatSubtypeLabel, formatOfferCapacityLabel } from "@/lib/offer-variant";
 import { OFFER_DETAIL_FIELDS } from "@/lib/offer-schema";
 import { DOMAINES } from "@/lib/guideOfferConfig";
 import { TRANSPORT_ECO_SUBTYPES, TRANSPORT_STD_SUBTYPES } from "@/components/GuideOfferModal";
@@ -25,7 +25,12 @@ export type OfferFull = {
   meeting_lng?: number | null;
   max_group_size?: number | null;
   min_group_size?: number | null;
+  capacity?: number | null;
   min_age?: number | null;
+  offer_mode?: string | null;
+  offer_subtypes?: string[] | null;
+  variant_pricing?: Record<string, number> | null;
+  price_display_from?: number | null;
   cancellation_policy?: string | null;
   inclusions?: string | null;
   details: Record<string, unknown> | null;
@@ -1031,6 +1036,41 @@ export default function OfferDetailView({ offer }: { offer: OfferFull }) {
             )}
           </div>
         </section>
+          );
+        })()}
+
+        {/* ── Formules / variantes ─────────────────────────────────────────── */}
+        {(() => {
+          const pricing = offer.variant_pricing
+            ?? (d.subtypes_pricing as Record<string, number> | undefined);
+          const keys = pricing ? Object.keys(pricing) : [];
+          if (!keys.length) return null;
+          const capacityLabel = formatOfferCapacityLabel(offer);
+          const isPackage = offer.offer_mode === "package";
+          return (
+            <section>
+              <SH icon="category" title={isPackage ? "Package — formules incluses" : "Formules disponibles"} />
+              <div className="space-y-2">
+                {keys.map((key) => (
+                  <div key={key} className="flex items-center justify-between gap-3 bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3">
+                    <div>
+                      <p className="text-sm font-extrabold text-slate-800">{formatSubtypeLabel(key)}</p>
+                      {capacityLabel && (
+                        <p className="text-[11px] text-slate-400">{capacityLabel}</p>
+                      )}
+                    </div>
+                    <p className="text-sm font-black text-primary whitespace-nowrap">
+                      {Number(pricing![key]).toFixed(0)} DT
+                    </p>
+                  </div>
+                ))}
+              </div>
+              {!isPackage && (
+                <p className="text-xs text-slate-500 mt-3">
+                  Vous pouvez sélectionner une ou plusieurs formules lors de la réservation.
+                </p>
+              )}
+            </section>
           );
         })()}
 

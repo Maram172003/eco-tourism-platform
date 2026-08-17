@@ -305,6 +305,20 @@ export class GuideService {
         : null;
 
     const detailsAny = (dto.details ?? {}) as Record<string, any>;
+    const disponibilitePreview = detailsAny.disponibilite as SlotLike | undefined;
+    const availStart =
+      disponibilitePreview?.start_date
+        ? new Date(disponibilitePreview.start_date)
+        : disponibilitePreview?.dates?.[0]
+          ? new Date(disponibilitePreview.dates[0])
+          : new Date();
+    const availEnd =
+      disponibilitePreview?.end_date
+        ? new Date(disponibilitePreview.end_date)
+        : disponibilitePreview?.dates?.length
+          ? new Date(disponibilitePreview.dates[disponibilitePreview.dates.length - 1])
+          : new Date(Date.now() + 180 * 24 * 60 * 60 * 1000);
+
     const fields = {
       title: dto.titre,
       description: dto.description_courte,
@@ -322,6 +336,9 @@ export class GuideService {
       inclusions: dto.inclus_resume.join('||'),
       status: 'approved' as const,
       tags: dto.tags ?? null,
+      availability_mode: 'period' as const,
+      availability_start: availStart,
+      availability_end: availEnd,
       details: {
         description_longue: dto.description_longue,
         type_prestation: dto.type_prestation,
@@ -937,6 +954,9 @@ export class GuideService {
       offer_subtype: dto.type_guidage_offre ?? null,
       images: dto.photos ?? [],
       status: 'draft',
+      availability_mode: 'period',
+      availability_start: new Date(),
+      availability_end: new Date(Date.now() + 180 * 24 * 60 * 60 * 1000),
       details: {
         description_longue: dto.description_longue,
         type_prestation: dto.type_prestation,

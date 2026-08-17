@@ -49,7 +49,7 @@ const STATUS_CONFIG: Record<string, { label: string; color: string; icon: React.
   },
   confirmed: {
     label: "Confirmée",
-    color: "bg-emerald-100 text-emerald-700",
+    color: "bg-secondary-container text-on-secondary-container",
     icon: <CheckCircle size={12} />,
   },
   cancelled: {
@@ -123,23 +123,23 @@ export default function ReservationsPage() {
   const pendingInvitations = invitations.filter((i) => i.status === "pending");
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-emerald-50">
+    <div className="min-h-screen bg-background">
       {/* Header */}
-      <div className="bg-white border-b border-slate-100 sticky top-0 z-10 shadow-sm">
+      <div className="bg-surface border-b border-surface-container-highest sticky top-0 z-10 shadow-sm">
         <div className="max-w-3xl mx-auto px-4 py-4 flex items-center justify-between">
           <button
             onClick={() => router.back()}
-            className="flex items-center gap-1 text-slate-500 hover:text-slate-700 text-sm"
+            className="flex items-center gap-1 text-outline hover:text-on-surface text-sm"
           >
             <ChevronLeft size={18} /> Retour
           </button>
-          <h1 className="text-lg font-bold text-slate-800 flex items-center gap-2">
-            <Calendar size={20} className="text-emerald-500" />
+          <h1 className="text-lg font-extrabold text-on-surface flex items-center gap-2">
+            <Calendar size={20} className="text-primary" />
             Mes réservations
           </h1>
           <button
             onClick={() => router.push("/destinations")}
-            className="flex items-center gap-1 text-xs px-3 py-1.5 bg-emerald-500 text-white rounded-xl font-semibold hover:bg-emerald-600"
+            className="flex items-center gap-1 text-xs px-3 py-1.5 bg-primary text-slate-900 rounded-xl font-extrabold hover:bg-primary/90"
           >
             <Plus size={14} /> Nouvelle
           </button>
@@ -153,7 +153,7 @@ export default function ReservationsPage() {
             onClick={() => setTab("organized")}
             className={`flex-1 py-2 rounded-xl text-sm font-semibold transition-all ${
               tab === "organized"
-                ? "bg-emerald-500 text-white shadow-sm"
+                ? "bg-primary text-slate-900 shadow-sm"
                 : "text-slate-500 hover:text-slate-700"
             }`}
           >
@@ -163,7 +163,7 @@ export default function ReservationsPage() {
             onClick={() => setTab("invitations")}
             className={`flex-1 py-2 rounded-xl text-sm font-semibold transition-all relative ${
               tab === "invitations"
-                ? "bg-emerald-500 text-white shadow-sm"
+                ? "bg-primary text-slate-900 shadow-sm"
                 : "text-slate-500 hover:text-slate-700"
             }`}
           >
@@ -191,7 +191,7 @@ export default function ReservationsPage() {
                 <p className="text-sm mt-1">Explorez le catalogue pour réserver une expérience</p>
                 <button
                   onClick={() => router.push("/destinations")}
-                  className="mt-4 px-4 py-2 bg-emerald-500 text-white rounded-xl text-sm font-semibold flex items-center gap-2 mx-auto"
+                  className="mt-4 px-4 py-2 bg-primary text-slate-900 rounded-xl text-sm font-semibold flex items-center gap-2 mx-auto"
                 >
                   <Leaf size={15} /> Voir les destinations
                 </button>
@@ -256,12 +256,12 @@ function ReservationCard({
       onClick={() => router.push(`/dashboard/ecovoyageur/reservations/${r.id}`)}>
 
       <div className="flex gap-4 p-4">
-        <div className="w-16 h-16 rounded-xl bg-emerald-100 flex-shrink-0 overflow-hidden">
+        <div className="w-16 h-16 rounded-xl bg-primary/15 flex-shrink-0 overflow-hidden">
           {r.offer?.images?.[0] ? (
             <img src={r.offer.images[0]} alt={r.offer.title} className="w-full h-full object-cover" />
           ) : (
             <div className="w-full h-full flex items-center justify-center">
-              <Leaf size={20} className="text-emerald-400" />
+              <Leaf size={20} className="text-primary" />
             </div>
           )}
         </div>
@@ -281,7 +281,7 @@ function ReservationCard({
             {r.offer?.region && <span className="flex items-center gap-1"><MapPin size={11} />{r.offer.region}</span>}
           </div>
           {r.total_price !== null && (
-            <p className="text-emerald-600 font-bold text-sm">
+            <p className="text-secondary font-bold text-sm">
               {Number(r.total_price).toFixed(0)} TND
               {r.participant_count > 1 && (
                 <span className="text-slate-400 font-normal text-xs ml-1">
@@ -303,7 +303,7 @@ function ReservationCard({
                 key={p.id}
                 className={`text-xs px-2 py-0.5 rounded-full font-medium ${
                   p.status === "accepted"
-                    ? "bg-emerald-100 text-emerald-700"
+                    ? "bg-primary/15 text-secondary"
                     : p.status === "declined"
                     ? "bg-red-100 text-red-600"
                     : "bg-amber-100 text-amber-700"
@@ -351,12 +351,12 @@ function InvitationCard({
   return (
     <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-4">
       <div className="flex gap-4 mb-3">
-        <div className="w-14 h-14 rounded-xl bg-emerald-100 flex-shrink-0 overflow-hidden">
+        <div className="w-14 h-14 rounded-xl bg-primary/15 flex-shrink-0 overflow-hidden">
           {r.offer?.images?.[0] ? (
             <img src={r.offer.images[0]} alt={r.offer.title} className="w-full h-full object-cover" />
           ) : (
             <div className="w-full h-full flex items-center justify-center">
-              <Leaf size={18} className="text-emerald-400" />
+              <Leaf size={18} className="text-primary" />
             </div>
           )}
         </div>
@@ -365,7 +365,7 @@ function InvitationCard({
             <h3 className="font-bold text-slate-800 text-sm line-clamp-1">{r.offer?.title}</h3>
             {inv.status !== "pending" && (
               <span className={`text-xs px-2 py-0.5 rounded-full font-semibold ${
-                inv.status === "accepted" ? "bg-emerald-100 text-emerald-700" : "bg-red-100 text-red-600"
+                inv.status === "accepted" ? "bg-primary/15 text-secondary" : "bg-red-100 text-red-600"
               }`}>
                 {inv.status === "accepted" ? "Acceptée" : "Refusée"}
               </span>
@@ -376,7 +376,7 @@ function InvitationCard({
             <span className="flex items-center gap-1"><Users size={11} />{r.participant_count} personnes</span>
           </div>
           {r.price_per_person !== null && (
-            <p className="text-emerald-600 font-semibold text-sm mt-1">
+            <p className="text-secondary font-semibold text-sm mt-1">
               {Number(r.price_per_person).toFixed(0)} TND <span className="text-slate-400 font-normal text-xs">/ votre part</span>
             </p>
           )}
@@ -395,7 +395,7 @@ function InvitationCard({
           <button
             onClick={() => onRespond(inv.reservation_id, "accepted")}
             disabled={responding}
-            className="flex-1 py-2 rounded-xl bg-emerald-500 text-white text-sm font-semibold hover:bg-emerald-600 disabled:opacity-50"
+            className="flex-1 py-2 rounded-xl bg-primary text-slate-900 text-sm font-semibold hover:bg-primary/90 disabled:opacity-50"
           >
             {responding ? "…" : "Accepter"}
           </button>

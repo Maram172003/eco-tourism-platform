@@ -165,7 +165,7 @@ export default function GuideDashboardPage() {
     { label: "Explorer",        icon: "explore",         href: "/explorer" },
     { label: "Offres",          icon: "storefront",      section: true as const },
     { label: "Circuits",        icon: "route",           section: true as const },
-    { label: "Réservations",    icon: "event_available", href: "/reservations" },
+    { label: "Réservations",    icon: "event_available", href: "/dashboard/guide/reservations" },
     { label: "Avis",            icon: "star",            href: "/profile/guide?tab=apropos" },
     { label: "Paramètres",      icon: "settings",        href: "/dashboard/profile" },
     { label: "Messagerie",      icon: "forum",           href: "/messagerie" },

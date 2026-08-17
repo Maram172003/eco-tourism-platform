@@ -44,9 +44,9 @@ export class Reservation {
   @Column({ type: 'varchar', default: 'pending' })
   status!: string;
 
-  // Date souhaitée (pour on_request) ou date de la séance choisie
-  @Column({ type: 'date', nullable: true })
-  reservation_date!: Date | null;
+  // Date souhaitée (obligatoire ; pour une séance = date de la séance)
+  @Column({ type: 'date' })
+  reservation_date!: Date;
 
   // Pour hébergement : check-in / check-out
   @Column({ type: 'date', nullable: true })

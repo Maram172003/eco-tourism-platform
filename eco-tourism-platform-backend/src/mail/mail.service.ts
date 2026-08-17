@@ -160,4 +160,132 @@ export class MailService {
         </div>`,
         });
     }
+
+    async sendReservationConfirmedEmail(
+        email: string,
+        offerTitle: string,
+        details: { total: number | null; participants: number; share: number | null; url: string },
+    ) {
+        await this.transporter.sendMail({
+            from: process.env.MAIL_FROM || process.env.SMTP_USER,
+            to: email,
+            subject: `Réservation confirmée — ${offerTitle}`,
+            html: `
+        <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto">
+          <h2 style="color:#22c55e">Réservation confirmée</h2>
+          <p>Votre réservation pour <strong>${offerTitle}</strong> est confirmée.</p>
+          <p>Participants : <strong>${details.participants}</strong></p>
+          ${details.total != null ? `<p>Total : <strong>${Number(details.total).toFixed(0)} TND</strong></p>` : ''}
+          ${details.share != null ? `<p>Part par personne : <strong>${Number(details.share).toFixed(0)} TND</strong></p>` : ''}
+          <p><a href="${details.url}" style="display:inline-block;padding:12px 20px;background:#22c55e;color:#000;text-decoration:none;border-radius:8px;font-weight:bold;">Voir ma réservation</a></p>
+        </div>`,
+        });
+    }
+
+    async sendReservationPendingEmail(email: string, offerTitle: string, url: string) {
+        await this.transporter.sendMail({
+            from: process.env.MAIL_FROM || process.env.SMTP_USER,
+            to: email,
+            subject: `Réservation en attente — ${offerTitle}`,
+            html: `
+        <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto">
+          <h2 style="color:#f59e0b">Réservation en attente</h2>
+          <p>Votre demande pour <strong>${offerTitle}</strong> a bien été envoyée.</p>
+          <p>Le prestataire doit encore confirmer. Vous serez notifié(e) dès qu'une décision sera prise.</p>
+          <p><a href="${url}" style="display:inline-block;padding:12px 20px;background:#22c55e;color:#000;text-decoration:none;border-radius:8px;font-weight:bold;">Suivre ma réservation</a></p>
+        </div>`,
+        });
+    }
+
+    async sendReservationStatusEmail(
+        email: string,
+        offerTitle: string,
+        status: 'confirmed' | 'rejected' | 'cancelled',
+        reason?: string | null,
+    ) {
+        const confirmed = status === 'confirmed';
+        const cancelled = status === 'cancelled';
+        const subject = confirmed
+            ? `Réservation confirmée — ${offerTitle}`
+            : cancelled
+              ? `Réservation annulée — ${offerTitle}`
+              : `Réservation refusée — ${offerTitle}`;
+        const heading = confirmed
+            ? 'Réservation confirmée'
+            : cancelled
+              ? 'Réservation annulée'
+              : 'Réservation refusée';
+        const color = confirmed ? '#22c55e' : '#ef4444';
+        const body = confirmed
+            ? 'confirmée'
+            : cancelled
+              ? 'annulée'
+              : 'refusée';
+
+        await this.transporter.sendMail({
+            from: process.env.MAIL_FROM || process.env.SMTP_USER,
+            to: email,
+            subject,
+            html: `
+        <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto">
+          <h2 style="color:${color}">${heading}</h2>
+          <p>Votre réservation pour <strong>${offerTitle}</strong> a été ${body}.</p>
+          ${reason ? `<p><strong>Motif :</strong> ${reason}</p>` : ''}
+        </div>`,
+        });
+    }
+
+    async sendReservationCancelledEmail(
+        email: string,
+        offerTitle: string,
+        reason: string,
+        url: string,
+    ) {
+        await this.transporter.sendMail({
+            from: process.env.MAIL_FROM || process.env.SMTP_USER,
+            to: email,
+            subject: `Réservation annulée — ${offerTitle}`,
+            html: `
+        <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto">
+          <h2 style="color:#ef4444">Réservation annulée</h2>
+          <p>Votre réservation pour <strong>${offerTitle}</strong> a été annulée.</p>
+          <p><strong>Motif :</strong> ${reason}</p>
+          <p><a href="${url}" style="display:inline-block;padding:12px 20px;background:#22c55e;color:#000;text-decoration:none;border-radius:8px;font-weight:bold;">Voir ma réservation</a></p>
+        </div>`,
+        });
+    }
+
+    async sendReservationInviteEmail(
+        email: string,
+        offerTitle: string,
+        shareAmount: number | null,
+        url: string,
+    ) {
+        await this.transporter.sendMail({
+            from: process.env.MAIL_FROM || process.env.SMTP_USER,
+            to: email,
+            subject: `Invitation à une réservation — ${offerTitle}`,
+            html: `
+        <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto">
+          <h2 style="color:#22c55e">Vous êtes invité(e)</h2>
+          <p>Un éco-voyageur vous invite à rejoindre une réservation pour <strong>${offerTitle}</strong>.</p>
+          ${shareAmount != null ? `<p>Votre part estimée : <strong>${Number(shareAmount).toFixed(0)} TND</strong></p>` : ''}
+          <p><a href="${url}" style="display:inline-block;padding:12px 20px;background:#22c55e;color:#000;text-decoration:none;border-radius:8px;font-weight:bold;">Voir l'invitation</a></p>
+        </div>`,
+        });
+    }
+
+    async sendOfferDeletedToTraveler(email: string, offerTitle: string) {
+        await this.transporter.sendMail({
+            from: process.env.MAIL_FROM || process.env.SMTP_USER,
+            to: email,
+            subject: `Offre supprimée — ${offerTitle}`,
+            html: `
+        <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto">
+          <h2 style="color:#ef4444">Offre supprimée</h2>
+          <p>L'offre <strong>${offerTitle}</strong> que vous aviez réservée a été supprimée par son auteur.</p>
+          <p>Votre réservation associée est annulée.</p>
+        </div>`,
+        });
+    }
 }

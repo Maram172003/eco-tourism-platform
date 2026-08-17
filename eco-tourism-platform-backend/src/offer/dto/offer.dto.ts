@@ -49,13 +49,13 @@ export class CreateOfferDto {
   @IsString()
   availability_mode?: string;
 
-  @IsOptional()
   @IsDateString()
-  availability_start?: string;
+  @IsNotEmpty()
+  availability_start!: string;
 
-  @IsOptional()
   @IsDateString()
-  availability_end?: string;
+  @IsNotEmpty()
+  availability_end!: string;
 
   @IsOptional()
   @IsString()
