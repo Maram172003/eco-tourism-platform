@@ -27,14 +27,20 @@ interface ReservationRow {
     spots_available: number;
     max_group_size: number | null;
   } | null;
-  offer: {
+  offer?: {
     id: string;
     title: string;
     offer_type: string | null;
     region: string | null;
     images: string[] | null;
     capacity?: number | null;
-  };
+  } | null;
+  circuit?: {
+    id: string;
+    title: string;
+    cover_image?: string | null;
+    nb_jours?: number;
+  } | null;
   session: { date: string; start_time: string | null } | null;
   traveler?: {
     user_id: string;
@@ -180,15 +186,15 @@ export default function AuthorReservationsList({ role }: { role: Role }) {
                 >
                   <div className="flex gap-3">
                     <div className="w-14 h-14 rounded-xl bg-primary/10 overflow-hidden flex items-center justify-center shrink-0">
-                      {r.offer?.images?.[0] ? (
-                        <img src={r.offer.images[0]} alt="" className="w-full h-full object-cover" />
+                      {r.offer?.images?.[0] || r.circuit?.cover_image ? (
+                        <img src={(r.offer?.images?.[0] ?? r.circuit?.cover_image)!} alt="" className="w-full h-full object-cover" />
                       ) : (
                         <Leaf size={20} className="text-primary" />
                       )}
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-start justify-between gap-2">
-                        <p className="font-bold text-on-surface text-sm line-clamp-1">{r.offer?.title}</p>
+                        <p className="font-bold text-on-surface text-sm line-clamp-1">{r.offer?.title ?? r.circuit?.title}</p>
                         <span className={`flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0 ${st.bg} ${st.color}`}>
                           {st.icon} {st.label}
                         </span>

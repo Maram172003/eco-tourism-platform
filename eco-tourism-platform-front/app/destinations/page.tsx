@@ -173,6 +173,9 @@ type Circuit = {
   owner_type: string;
   author_name: string | null;
   author_photo: string | null;
+  price?: number | null;
+  price_display_from?: number | null;
+  bookable_options?: Array<{ key: string; label: string; price_per_person: number }> | null;
   created_at: string;
 };
 

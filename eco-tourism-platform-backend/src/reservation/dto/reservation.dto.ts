@@ -12,8 +12,13 @@ import {
 import { Type } from 'class-transformer';
 
 export class CreateReservationDto {
+  @IsOptional()
   @IsUUID()
-  offer_id!: string;
+  offer_id?: string;
+
+  @IsOptional()
+  @IsUUID()
+  circuit_id?: string;
 
   @IsOptional()
   @IsUUID()
@@ -46,13 +51,13 @@ export class CreateReservationDto {
   @IsEmail({}, { each: true })
   invited_emails?: string[];
 
-  /** Variant: one or more keys from offer_subtypes / subtypes_pricing. */
+  /** Variant: one or more option keys (offer subtypes or circuit bookable_options). */
   @IsOptional()
   @IsArray()
   @IsString({ each: true })
   chosen_subtypes?: string[];
 
-  /** @deprecated use chosen_subtypes — kept for backward compatibility */
+  /** @deprecated use chosen_subtypes */
   @IsOptional()
   @IsString()
   chosen_subtype?: string;
@@ -73,8 +78,13 @@ export class ConfirmReservationDto {
 }
 
 export class AvailabilityQueryDto {
+  @IsOptional()
   @IsUUID()
-  offer_id!: string;
+  offer_id?: string;
+
+  @IsOptional()
+  @IsUUID()
+  circuit_id?: string;
 
   @IsOptional()
   @IsUUID()

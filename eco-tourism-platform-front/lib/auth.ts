@@ -135,12 +135,39 @@ export function getReservationEntryPath(offerId: string, subtypes?: string[]): s
   return "/reservations";
 }
 
+/** Path to open when clicking "Réserver" on a circuit module. */
+export function getCircuitReservationEntryPath(circuitId: string, subtypes?: string[]): string {
+  const subsQ =
+    subtypes?.length
+      ? `&subtypes=${encodeURIComponent([...subtypes].sort().join(","))}`
+      : "";
+  const entryPath = `/reservations/entry?circuitId=${circuitId}${subsQ}`;
+  const session = getConsistentSession();
+  if (!session) {
+    return `/auth/login?redirect=${encodeURIComponent(entryPath)}`;
+  }
+  if (session.role === "eco_traveler") {
+    return `/reservations/new?circuitId=${circuitId}${subsQ}`;
+  }
+  if (session.role === "guide") return "/dashboard/guide/reservations";
+  if (session.role === "provider") return "/dashboard/provider/reservations";
+  return "/reservations";
+}
+
 /** Navigate to reservation entry (hard redirect). */
 export function goToReservation(offerId: string, subtypes?: string | string[]) {
   const list = typeof subtypes === "string"
     ? (subtypes ? [subtypes] : [])
     : (subtypes ?? []);
   window.location.assign(getReservationEntryPath(offerId, list.length ? list : undefined));
+}
+
+/** Navigate to circuit reservation entry (hard redirect). */
+export function goToCircuitReservation(circuitId: string, subtypes?: string | string[]) {
+  const list = typeof subtypes === "string"
+    ? (subtypes ? [subtypes] : [])
+    : (subtypes ?? []);
+  window.location.assign(getCircuitReservationEntryPath(circuitId, list.length ? list : undefined));
 }
 
 /** After login, route booking entry by role (list for guide/provider). */
@@ -154,6 +181,7 @@ export function resolvePostLoginRedirect(
   const isBookingOrEntry =
     redirectUrl.startsWith("/reservations/new") ||
     redirectUrl.includes("/reservations/new?") ||
+    redirectUrl.includes("circuitId=") ||
     redirectUrl.startsWith("/reservations/entry") ||
     redirectUrl.includes("/reservations/entry?");
 

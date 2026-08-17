@@ -6,6 +6,16 @@ import { apiFetch } from "@/lib/api";
 import { getConsistentSession } from "@/lib/auth";
 import { formatSubtypeLabel, formatOfferCapacityLabel, getBookingUnitPrice, hasSelectableFormulas, isPackageOffer, defaultPackageSubtypes, parseSubtypesParam } from "@/lib/offer-variant";
 import {
+  type CircuitBooking,
+  defaultPackageOptions,
+  formatCircuitCapacityLabel,
+  getCircuitBookingUnitPrice,
+  hasSelectableCircuitFormulas,
+  isPackageCircuit,
+  parseCircuitSubtypesParam,
+  resolveCircuitDateMode,
+} from "@/lib/circuit-booking";
+import {
   Calendar, Users, User, UserPlus, X, ChevronLeft, ChevronRight,
   Leaf, Clock, MapPin, AlertCircle, CheckCircle, Search, Check,
   CreditCard, Zap, Package,
@@ -134,7 +144,13 @@ const STEP_LABELS: Record<StepKind, string> = {
   paiement: "Paiement",
 };
 
-function buildStepKinds(offer: Offer | null): StepKind[] {
+function buildStepKinds(offer: Offer | null, circuit?: CircuitBooking | null): StepKind[] {
+  if (circuit) {
+    if (hasSelectableCircuitFormulas(circuit)) {
+      return ["formula", "creneau", "participants", "paiement"];
+    }
+    return ["creneau", "participants", "paiement"];
+  }
   if (hasSelectableFormulas(offer)) {
     return ["formula", "creneau", "participants", "paiement"];
   }
@@ -162,11 +178,15 @@ function NewReservationContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const offerId = searchParams.get("offerId");
+  const circuitId = searchParams.get("circuitId");
   const subtypesFromUrl = parseSubtypesParam(searchParams.get("subtypes") ?? searchParams.get("subtype"));
+  const circuitSubtypesFromUrl = parseCircuitSubtypesParam(searchParams.get("subtypes") ?? searchParams.get("subtype"));
+  const isCircuit = !!circuitId && !offerId;
 
   const [authOk, setAuthOk] = useState(false);
   const [step, setStep] = useState(0);
   const [offer, setOffer] = useState<Offer | null>(null);
+  const [circuit, setCircuit] = useState<CircuitBooking | null>(null);
   const [chosenSubtypes, setChosenSubtypes] = useState<string[]>([]);
   const [sessions, setSessions] = useState<OfferSession[]>([]);
   const [loadingOffer, setLoadingOffer] = useState(true);
@@ -192,8 +212,12 @@ function NewReservationContent() {
   const [success, setSuccess] = useState(false);
   const [successMessage, setSuccessMessage] = useState("");
 
-  const dateMode: DateMode = offer ? resolveDateMode(offer) : { kind: "none" };
-  const stepKinds = buildStepKinds(offer);
+  const dateMode: DateMode = isCircuit && circuit
+    ? resolveCircuitDateMode(circuit)
+    : offer
+      ? resolveDateMode(offer)
+      : { kind: "none" };
+  const stepKinds = buildStepKinds(offer, circuit);
   const stepLabels = stepKinds.map((k) => STEP_LABELS[k]);
   const currentKind = stepKinds[step] ?? "creneau";
   const effectiveDate =
@@ -206,9 +230,11 @@ function NewReservationContent() {
   useEffect(() => {
     const session = getConsistentSession();
     if (!session) {
-      const redirect = offerId
-        ? `/reservations/new?offerId=${offerId}`
-        : "/reservations/new";
+      const redirect = circuitId
+        ? `/reservations/new?circuitId=${circuitId}`
+        : offerId
+          ? `/reservations/new?offerId=${offerId}`
+          : "/reservations/new";
       window.location.replace(`/auth/login?redirect=${encodeURIComponent(redirect)}`);
       return;
     }
@@ -223,10 +249,37 @@ function NewReservationContent() {
       return;
     }
     setAuthOk(true);
-  }, [offerId]);
+  }, [offerId, circuitId]);
 
   useEffect(() => {
-    if (!authOk || !offerId) return;
+    if (!authOk || !circuitId || offerId) return;
+    apiFetch<CircuitBooking>(`/circuits/${circuitId}/public-detail`)
+      .then((c) => {
+        setCircuit(c);
+        if (isPackageCircuit(c)) {
+          setChosenSubtypes(defaultPackageOptions(c));
+        } else if (c.circuit_mode === "variant") {
+          const required = (c.bookable_options ?? []).filter((o) => o.required).map((o) => o.key);
+          const fromUrl = circuitSubtypesFromUrl.filter((k) =>
+            (c.bookable_options ?? []).some((o) => o.key === k),
+          );
+          setChosenSubtypes([...new Set([...required, ...fromUrl])].sort());
+        } else if (circuitSubtypesFromUrl.length) {
+          const valid = circuitSubtypesFromUrl.filter((k) =>
+            (c.bookable_options ?? []).some((o) => o.key === k),
+          );
+          if (valid.length) setChosenSubtypes(valid);
+        }
+        const dm = resolveCircuitDateMode(c);
+        if (dm.kind === "fixed") setSelectedDate(dm.date);
+        else setSelectedDate("");
+      })
+      .catch(() => setError("Circuit introuvable."))
+      .finally(() => setLoadingOffer(false));
+  }, [authOk, circuitId, offerId, circuitSubtypesFromUrl.join(",")]);
+
+  useEffect(() => {
+    if (!authOk || !offerId || circuitId) return;
     apiFetch<Offer>(`/offers/${offerId}`)
       .then((o) => {
         setOffer(o);
@@ -278,6 +331,18 @@ function NewReservationContent() {
 
   // Nombre de places dispo selon la date/séance
   useEffect(() => {
+    if (isCircuit) {
+      if (!circuitId || !circuit) return;
+      if (!effectiveDate) {
+        setSpotsAvailable(null);
+        return;
+      }
+      const params = new URLSearchParams({ circuit_id: circuitId, date: effectiveDate });
+      apiFetch<{ spots_available: number }>(`/reservations/availability?${params}`)
+        .then((a) => setSpotsAvailable(a.spots_available))
+        .catch(() => setSpotsAvailable(circuit.max_group_size ?? circuit.capacity ?? 99));
+      return;
+    }
     if (!offerId || !offer) return;
     if (dateMode.kind === "sessions" && !selectedSessionId) {
       setSpotsAvailable(null);
@@ -300,14 +365,21 @@ function NewReservationContent() {
           setSpotsAvailable(offer.max_group_size ?? offer.capacity ?? 99);
         }
       });
-  }, [offerId, offer, selectedSessionId, effectiveDate, dateMode.kind, sessions]);
+  }, [isCircuit, circuitId, circuit, offerId, offer, selectedSessionId, effectiveDate, dateMode.kind, sessions]);
 
   // ─── Calculs prix ───────────────────────────────────────────────────────────
   const realParticipantCount =
     reservationType === "group" ? 1 + invitedUsers.length : participantCount;
-  const pricePerUnit =
-    offer != null ? getBookingUnitPrice(offer, chosenSubtypes) : null;
-  const capacityLabel = offer ? formatOfferCapacityLabel(offer) : null;
+  const pricePerUnit = isCircuit && circuit
+    ? getCircuitBookingUnitPrice(circuit, chosenSubtypes)
+    : offer != null
+      ? getBookingUnitPrice(offer, chosenSubtypes)
+      : null;
+  const capacityLabel = isCircuit && circuit
+    ? formatCircuitCapacityLabel(circuit)
+    : offer
+      ? formatOfferCapacityLabel(offer)
+      : null;
 
   function toggleSubtype(key: string) {
     setChosenSubtypes((prev) =>
@@ -319,15 +391,17 @@ function NewReservationContent() {
     totalPrice !== null && realParticipantCount > 0
       ? Math.round((totalPrice / realParticipantCount) * 100) / 100
       : null;
-  const depositPct = offer?.deposit_percentage ?? 0;
+  const depositPct = (isCircuit ? circuit?.deposit_percentage : offer?.deposit_percentage) ?? 0;
   const depositAmount = totalPrice !== null && depositPct > 0 ? (totalPrice * depositPct) / 100 : null;
   const remainingAmount = totalPrice !== null && depositAmount !== null ? totalPrice - depositAmount : null;
-  const maxSpots = spotsAvailable ?? offer?.max_group_size ?? offer?.capacity ?? 99;
+  const maxSpots = spotsAvailable ?? (isCircuit
+    ? (circuit?.max_group_size ?? circuit?.capacity ?? 99)
+    : (offer?.max_group_size ?? offer?.capacity ?? 99));
   const remainingAfterParty = Math.max(0, maxSpots - realParticipantCount);
 
   // ─── Validation par étape ───────────────────────────────────────────────────
   function canNext() {
-    if (!offer) return false;
+    if (!offer && !circuit) return false;
     if (currentKind === "formula") return chosenSubtypes.length > 0;
     if (currentKind === "creneau") {
       if (dateMode.kind === "sessions") return !!selectedSessionId;
@@ -359,7 +433,7 @@ function NewReservationContent() {
       const res = await apiFetch<{ message?: string; confirmation_mode?: string }>("/reservations", {
         method: "POST",
         body: JSON.stringify({
-          offer_id: offerId,
+          ...(isCircuit ? { circuit_id: circuitId } : { offer_id: offerId }),
           session_id: selectedSessionId ?? undefined,
           reservation_date: effectiveDate || undefined,
           reservation_type: reservationType,
@@ -369,9 +443,12 @@ function NewReservationContent() {
           ...(chosenSubtypes.length ? { chosen_subtypes: chosenSubtypes } : {}),
         }),
       });
+      const instant = isCircuit
+        ? circuit?.confirmation_mode === "instant"
+        : offer?.confirmation_mode === "instant";
       setSuccessMessage(
         res.message ??
-          (offer?.confirmation_mode === "instant"
+          (instant
             ? "Votre réservation est confirmée."
             : "Votre réservation est en attente de confirmation."),
       );
@@ -384,8 +461,8 @@ function NewReservationContent() {
     }
   }
 
-  if (!offerId) {
-    return <div className="min-h-screen flex items-center justify-center text-slate-500">Aucune offre sélectionnée.</div>;
+  if (!offerId && !circuitId) {
+    return <div className="min-h-screen flex items-center justify-center text-slate-500">Aucune offre ou circuit sélectionné.</div>;
   }
 
   if (!authOk) {
@@ -434,26 +511,32 @@ function NewReservationContent() {
         {/* Fiche offre */}
         {loadingOffer ? (
           <div className="h-28 rounded-2xl bg-slate-100 animate-pulse" />
-        ) : offer ? (
+        ) : (offer || circuit) ? (
           <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-4 flex gap-4">
             <div className="w-16 h-16 rounded-xl bg-primary/5 flex-shrink-0 flex items-center justify-center text-3xl">
-              {offer.images?.[0]
+              {offer?.images?.[0]
                 ? <img src={offer.images[0]} alt={offer.title} className="w-full h-full object-cover rounded-xl" />
-                : TYPE_ICONS[offer.offer_type ?? ""] ?? "🌿"
+                : circuit?.cover_image
+                  ? <img src={circuit.cover_image} alt={circuit.title} className="w-full h-full object-cover rounded-xl" />
+                  : isCircuit ? "🗺️" : TYPE_ICONS[offer?.offer_type ?? ""] ?? "🌿"
               }
             </div>
             <div className="flex-1 min-w-0">
-              <h2 className="font-bold text-slate-800 text-sm line-clamp-1">{offer.title}</h2>
+              <h2 className="font-bold text-slate-800 text-sm line-clamp-1">{offer?.title ?? circuit?.title}</h2>
               <div className="flex flex-wrap gap-2 mt-1 text-xs text-slate-500">
-                {offer.region && <span className="flex items-center gap-1"><MapPin size={10} />{offer.region}</span>}
-                {offer.duration && <span className="flex items-center gap-1"><Clock size={10} />{offer.duration}</span>}
-                {offer.fulfillment_mode && (
+                {offer?.region && <span className="flex items-center gap-1"><MapPin size={10} />{offer.region}</span>}
+                {circuit?.nb_jours && <span className="flex items-center gap-1"><Clock size={10} />{circuit.nb_jours} jour{circuit.nb_jours > 1 ? "s" : ""}</span>}
+                {offer?.duration && <span className="flex items-center gap-1"><Clock size={10} />{offer.duration}</span>}
+                {offer?.fulfillment_mode && (
                   <span className="bg-primary/15 text-secondary rounded-full px-2 py-0.5">
                     {FULFILLMENT_LABELS[offer.fulfillment_mode]}
                   </span>
                 )}
+                {isCircuit && (
+                  <span className="bg-primary/15 text-secondary rounded-full px-2 py-0.5">Circuit</span>
+                )}
               </div>
-              {offer.confirmation_mode === "instant" && (
+              {(offer?.confirmation_mode === "instant" || circuit?.confirmation_mode === "instant") && (
                 <span className="inline-flex items-center gap-1 text-xs text-amber-600 bg-amber-50 rounded-full px-2 py-0.5 mt-1">
                   <Zap size={10} /> Confirmation instantanée
                 </span>
@@ -471,16 +554,70 @@ function NewReservationContent() {
               <p className="font-bold text-on-primary-container text-lg">Réservation envoyée !</p>
               <p className="text-sm text-secondary mt-1">
                 {successMessage ||
-                  (offer?.confirmation_mode === "instant"
+                  ((isCircuit ? circuit?.confirmation_mode : offer?.confirmation_mode) === "instant"
                     ? "Votre réservation est confirmée automatiquement."
                     : "Le prestataire va confirmer votre réservation sous peu.")}
               </p>
             </div>
           </div>
-        ) : offer ? (
+        ) : (offer || circuit) ? (
           <>
             {/* ─── Formule (variant) ─── */}
-            {currentKind === "formula" && offer.variant_pricing && (
+            {currentKind === "formula" && isCircuit && circuit?.bookable_options && (
+              <div className="space-y-4">
+                <div className="bg-surface rounded-2xl shadow-sm border border-surface-container-highest p-5">
+                  <h3 className="font-semibold text-on-surface mb-3 flex items-center gap-2">
+                    <Package size={16} className="text-primary" /> Choisissez une ou plusieurs étapes
+                  </h3>
+                  <p className="text-xs text-outline mb-2">
+                    Sélectionnez les blocs du circuit. Les étapes obligatoires sont pré-cochées.
+                    {capacityLabel ? ` (${capacityLabel.toLowerCase()}).` : "."}
+                  </p>
+                  {capacityLabel && (
+                    <p className="text-xs font-semibold text-secondary mb-4">{capacityLabel}</p>
+                  )}
+                  <div className="space-y-2">
+                    {(circuit.bookable_options ?? []).map((opt) => {
+                      const selected = chosenSubtypes.includes(opt.key);
+                      const locked = opt.required;
+                      return (
+                        <button
+                          key={opt.key}
+                          type="button"
+                          disabled={locked}
+                          onClick={() => !locked && toggleSubtype(opt.key)}
+                          className={`w-full text-left px-4 py-3 rounded-xl border-2 transition-all flex items-center justify-between gap-3
+                            ${selected
+                              ? "border-primary bg-primary/5"
+                              : "border-surface-container-highest bg-surface hover:border-primary/40"}
+                            ${locked ? "opacity-80" : ""}`}
+                        >
+                          <div className="flex items-center gap-3 min-w-0">
+                            <div className={`w-5 h-5 rounded-md border-2 flex items-center justify-center shrink-0 ${selected ? "border-primary bg-primary" : "border-slate-300"}`}>
+                              {selected && <Check size={12} className="text-slate-900" />}
+                            </div>
+                            <div className="min-w-0">
+                              <span className="font-semibold text-on-surface text-sm block">{opt.label}</span>
+                              {locked && <span className="text-[11px] text-outline">Obligatoire</span>}
+                            </div>
+                          </div>
+                          <span className="text-sm font-bold text-secondary whitespace-nowrap">
+                            {opt.price_per_person.toFixed(0)} TND
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                  {chosenSubtypes.length > 1 && pricePerUnit !== null && (
+                    <p className="text-xs text-secondary font-semibold mt-3">
+                      Total : {pricePerUnit.toFixed(0)} TND / personne
+                    </p>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {currentKind === "formula" && !isCircuit && offer?.variant_pricing && (
               <div className="space-y-4">
                 <div className="bg-surface rounded-2xl shadow-sm border border-surface-container-highest p-5">
                   <h3 className="font-semibold text-on-surface mb-3 flex items-center gap-2">
@@ -538,7 +675,16 @@ function NewReservationContent() {
             {/* ─── Créneau ─── */}
             {currentKind === "creneau" && (
               <div className="space-y-4">
-                {isPackageOffer(offer) && offer.variant_pricing && (
+                {isCircuit && isPackageCircuit(circuit) && circuit?.bookable_options && (
+                  <div className="bg-primary/5 border border-primary/20 rounded-2xl p-4 text-sm text-secondary">
+                    <p className="font-bold text-on-primary-container mb-1">Circuit tout inclus</p>
+                    <p className="text-xs">
+                      Étapes incluses : {(circuit.bookable_options ?? []).map((o) => o.label).join(", ")}.
+                      {capacityLabel && ` ${capacityLabel}.`}
+                    </p>
+                  </div>
+                )}
+                {!isCircuit && isPackageOffer(offer) && offer?.variant_pricing && (
                   <div className="bg-primary/5 border border-primary/20 rounded-2xl p-4 text-sm text-secondary">
                     <p className="font-bold text-on-primary-container mb-1">Package tout inclus</p>
                     <p className="text-xs">
@@ -599,7 +745,7 @@ function NewReservationContent() {
                 {dateMode.kind === "fixed" && (
                   <div className="bg-surface rounded-2xl shadow-sm border border-surface-container-highest p-5">
                     <h3 className="font-semibold text-on-surface mb-3 flex items-center gap-2">
-                      <Calendar size={16} className="text-primary" /> Date de l&apos;offre
+                      <Calendar size={16} className="text-primary" /> {isCircuit ? "Date de départ" : "Date de l'offre"}
                     </h3>
                     <p className="text-xs text-outline mb-3">
                       Une seule date est prévue — elle est fixe, vous ne pouvez pas en choisir une autre.

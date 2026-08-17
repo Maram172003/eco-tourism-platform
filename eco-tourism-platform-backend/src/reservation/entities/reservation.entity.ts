@@ -10,6 +10,7 @@ import {
 } from 'typeorm';
 import { Offer } from '../../offer/entities/offer.entity';
 import { OfferSession } from '../../offer/entities/offer-session.entity';
+import { Circuit } from '../../circuit/entities/circuit.entity';
 import { ReservationParticipant } from './reservation-participant.entity';
 
 @Entity('reservations')
@@ -17,12 +18,19 @@ export class Reservation {
   @PrimaryGeneratedColumn('uuid')
   id!: string;
 
-  @Column('uuid')
-  offer_id!: string;
+  @Column({ type: 'uuid', nullable: true })
+  offer_id!: string | null;
 
-  @ManyToOne(() => Offer, { onDelete: 'CASCADE', eager: false })
+  @ManyToOne(() => Offer, { onDelete: 'CASCADE', eager: false, nullable: true })
   @JoinColumn({ name: 'offer_id' })
-  offer!: Offer;
+  offer!: Offer | null;
+
+  @Column({ type: 'uuid', nullable: true })
+  circuit_id!: string | null;
+
+  @ManyToOne(() => Circuit, { onDelete: 'CASCADE', eager: false, nullable: true })
+  @JoinColumn({ name: 'circuit_id' })
+  circuit!: Circuit | null;
 
   // Séance spécifique (scheduled / recurring — null pour instant_stock / on_request)
   @Column({ type: 'uuid', nullable: true })
@@ -48,7 +56,7 @@ export class Reservation {
   @Column({ type: 'date' })
   reservation_date!: Date;
 
-  // Pour hébergement : check-in / check-out
+  // Pour hébergement / circuit multi-jours : check-in / check-out
   @Column({ type: 'date', nullable: true })
   arrival_date!: Date | null;
 
@@ -59,7 +67,7 @@ export class Reservation {
   @Column({ type: 'varchar', nullable: true })
   experience_time!: string | null;
 
-  // Sous-type(s) choisi(s) par le voyageur (offres multi-subtypes)
+  // Sous-type(s) ou option(s) choisie(s) (offres / circuits)
   @Column({ type: 'jsonb', nullable: true })
   chosen_subtypes!: string[] | null;
 
@@ -78,7 +86,7 @@ export class Reservation {
   @Column({ type: 'decimal', precision: 10, scale: 2, nullable: true })
   total_price!: number | null;
 
-  // Montant de l'acompte (deposit_percentage de l'offre * total_price / 100)
+  // Montant de l'acompte (deposit_percentage * total_price / 100)
   @Column({ type: 'decimal', precision: 10, scale: 2, nullable: true })
   deposit_amount!: number | null;
 

@@ -23,6 +23,10 @@ import {
   toSlotType,
   deriveEtapeAvailFromCircuitAvail,
 } from '../shared/slot.utils';
+import {
+  buildBookableOptions,
+  enrichCircuitWithBookingFields,
+} from './circuit-pricing.util';
 
 type CircuitEtapeRaw = {
   id: string;
@@ -165,7 +169,10 @@ export class CircuitService {
           author_photo = (provider as any)?.photo ?? null;
         }
 
-        return { ...circuit, etapes, hebergement: enrichedHeberg, author_name, author_photo };
+        return enrichCircuitWithBookingFields(
+          { ...circuit, etapes, hebergement: enrichedHeberg, author_name, author_photo },
+          collabs,
+        );
       }),
     );
   }
@@ -199,7 +206,50 @@ export class CircuitService {
     const enrichedHeberg = hebergCollab && heberg?.etape
       ? { ...heberg, etape: { ...heberg.etape, collab_contribution: hebergCollab.contribution_data ?? null, collab_status: hebergCollab.status ?? null } }
       : heberg;
-    return { ...circuit, etapes, hebergement: enrichedHeberg };
+    return enrichCircuitWithBookingFields({ ...circuit, etapes, hebergement: enrichedHeberg }, collabs);
+  }
+
+  async getAvailability(circuitId: string, date?: string) {
+    const circuit = await this.repo.findOne({ where: { id: circuitId, status: 'approved' } });
+    if (!circuit) throw new NotFoundException('Circuit introuvable ou non publié.');
+    const collabs = await this.collabRepo.find({ where: { circuit_id: circuitId } });
+    const enriched = enrichCircuitWithBookingFields(circuit, collabs);
+    const spotsTotal = enriched.capacity ?? enriched.max_group_size ?? null;
+    const spotsTaken = await this.countHeldSpots(circuitId, date);
+    const spotsAvailable = spotsTotal === null ? 99 : Math.max(0, spotsTotal - spotsTaken);
+    return {
+      spots_total: spotsTotal,
+      spots_taken: spotsTaken,
+      spots_available: spotsAvailable,
+      max_group_size: enriched.max_group_size ?? null,
+    };
+  }
+
+  private async countHeldSpots(circuitId: string, date?: string): Promise<number> {
+    const qb = this.repo.manager
+      .createQueryBuilder()
+      .select('COALESCE(SUM(r.participant_count), 0)', 'sum')
+      .from('reservations', 'r')
+      .where('r.circuit_id = :circuitId', { circuitId })
+      .andWhere("r.status = 'confirmed'");
+
+    if (date) {
+      qb.andWhere('CAST(r.reservation_date AS date) = CAST(:date AS date)', {
+        date: String(date).slice(0, 10),
+      });
+    }
+    const raw = await qb.getRawOne();
+    return Number(raw?.sum ?? 0);
+  }
+
+  private async persistBookableOptions(circuitId: string): Promise<void> {
+    const circuit = await this.repo.findOne({ where: { id: circuitId } });
+    if (!circuit) return;
+    const collabs = await this.collabRepo.find({ where: { circuit_id: circuitId } });
+    const options = buildBookableOptions(circuit, collabs);
+    if (options.length) {
+      await this.repo.update({ id: circuitId }, { bookable_options: options } as any);
+    }
   }
 
   async findOne(id: string): Promise<Circuit> {
@@ -553,6 +603,7 @@ export class CircuitService {
     if (circuit.status !== 'attente_publication') {
       throw new BadRequestException('Le circuit n\'est pas en attente de publication');
     }
+    await this.persistBookableOptions(circuitId);
     await this.repo.update({ id: circuitId }, { status: 'approved' } as any);
   }
 
@@ -567,6 +618,7 @@ export class CircuitService {
     const activeCollabs = allCollabs.filter((c) => c.status !== 'declined');
     const allCompleted = activeCollabs.length > 0 && activeCollabs.every((c) => c.status === 'completed');
     if (allCompleted && circuit.status !== 'attente_publication') {
+      await this.persistBookableOptions(circuitId);
       await this.repo.update({ id: circuitId }, { status: 'attente_publication' } as any);
     } else if (!allCompleted && circuit.status === 'attente_publication') {
       // Rétrogradation : un collaborateur n'a plus complété → revenir en brouillon

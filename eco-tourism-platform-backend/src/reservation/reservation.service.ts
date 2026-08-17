@@ -27,6 +27,7 @@ import {
   resolveBookingUnitPrice,
   sortSubtypeKeys,
 } from '../offer/offer-variant.util';
+import { ReservationCircuitService } from './reservation-circuit.service';
 
 /** Statuses that occupy capacity (pending does NOT hold seats). */
 const HELD_STATUSES = ['confirmed'];
@@ -56,15 +57,22 @@ export class ReservationService {
     private readonly userRepo: Repository<User>,
     private readonly mailService: MailService,
     private readonly notifService: NotificationService,
+    private readonly circuitBooking: ReservationCircuitService,
   ) {}
 
-  /** Nombre de places disponibles (solo et groupe) — seules les réservations confirmées comptent. */
+  /** Nombre de places disponibles — offre ou circuit. */
   async getAvailability(query: AvailabilityQueryDto): Promise<{
     spots_total: number | null;
     spots_taken: number;
     spots_available: number;
     max_group_size: number | null;
   }> {
+    if (query.circuit_id) {
+      return this.circuitBooking.getAvailability(query.circuit_id, query.date);
+    }
+    if (!query.offer_id) {
+      throw new BadRequestException('offer_id ou circuit_id requis.');
+    }
     const offer = await this.offerRepo.findOne({ where: { id: query.offer_id } });
     if (!offer) throw new NotFoundException('Offre introuvable.');
 
@@ -119,6 +127,22 @@ export class ReservationService {
   }
 
   async create(organizerId: string, dto: CreateReservationDto): Promise<any> {
+    if (dto.circuit_id) {
+      const saved = await this.circuitBooking.create(organizerId, dto);
+      const enriched = await this.enrichReservation(await this.findOneRaw(saved.id));
+      const circuit = enriched.circuit;
+      return {
+        ...enriched,
+        confirmation_mode: circuit?.confirmation_mode ?? 'manual',
+        message:
+          saved.status === 'confirmed'
+            ? 'Votre réservation est confirmée.'
+            : 'Votre réservation est en attente de confirmation.',
+      };
+    }
+    if (!dto.offer_id) {
+      throw new BadRequestException('offer_id ou circuit_id requis.');
+    }
     const offer = await this.offerRepo.findOne({ where: { id: dto.offer_id } });
     if (!offer) throw new NotFoundException('Offre introuvable.');
     if (offer.status !== 'approved') {
@@ -233,7 +257,7 @@ export class ReservationService {
 
     await this.assertNoDuplicateReservation(
       organizerId,
-      dto.offer_id,
+      dto.offer_id!,
       reservationDateStr,
       dto.session_id ?? null,
       chosenSubtypes,
@@ -366,13 +390,13 @@ export class ReservationService {
   async findMine(userId: string): Promise<{ organized: any[]; invited: any[] }> {
     const organized = await this.reservationRepo.find({
       where: { organizer_id: userId },
-      relations: ['offer', 'session', 'participants'],
+      relations: ['offer', 'circuit', 'session', 'participants'],
       order: { created_at: 'DESC' },
     });
 
     const invited = await this.participantRepo.find({
       where: { user_id: userId },
-      relations: ['reservation', 'reservation.offer', 'reservation.session'],
+      relations: ['reservation', 'reservation.offer', 'reservation.circuit', 'reservation.session'],
       order: { invited_at: 'DESC' },
     });
 
@@ -388,22 +412,38 @@ export class ReservationService {
   }
 
   async findForAuthor(authorId: string): Promise<any[]> {
-    const list = await this.reservationRepo
+    const offerList = await this.reservationRepo
       .createQueryBuilder('r')
       .innerJoin('r.offer', 'o')
       .where('o.author_id = :authorId', { authorId })
       .leftJoinAndSelect('r.offer', 'offer')
+      .leftJoinAndSelect('r.circuit', 'circuit')
       .leftJoinAndSelect('r.session', 'session')
       .leftJoinAndSelect('r.participants', 'participants')
       .orderBy('r.created_at', 'DESC')
       .getMany();
-    return Promise.all(list.map((r) => this.enrichReservation(r)));
+
+    const circuitList = await this.reservationRepo
+      .createQueryBuilder('r')
+      .innerJoin('r.circuit', 'c')
+      .where('c.provider_id = :authorId', { authorId })
+      .leftJoinAndSelect('r.offer', 'offer')
+      .leftJoinAndSelect('r.circuit', 'circuit')
+      .leftJoinAndSelect('r.session', 'session')
+      .leftJoinAndSelect('r.participants', 'participants')
+      .orderBy('r.created_at', 'DESC')
+      .getMany();
+
+    const merged = [...offerList, ...circuitList].sort(
+      (a, b) => b.created_at.getTime() - a.created_at.getTime(),
+    );
+    return Promise.all(merged.map((r) => this.enrichReservation(r)));
   }
 
   async findPendingInvitations(userId: string): Promise<any[]> {
     const list = await this.participantRepo.find({
       where: { user_id: userId, status: 'pending' },
-      relations: ['reservation', 'reservation.offer', 'reservation.session'],
+      relations: ['reservation', 'reservation.offer', 'reservation.circuit', 'reservation.session'],
       order: { invited_at: 'DESC' },
     });
     return Promise.all(
@@ -424,7 +464,18 @@ export class ReservationService {
     dto: ConfirmReservationDto,
   ): Promise<any> {
     const reservation = await this.findOneRaw(reservationId);
-    const offer = await this.offerRepo.findOne({ where: { id: reservation.offer_id } });
+    if (reservation.circuit_id) {
+      const status = dto.status === 'confirmed' ? 'confirmed' : 'rejected';
+      await this.circuitBooking.confirmReservation(
+        authorId,
+        reservation,
+        status,
+        dto.cancellation_reason,
+      );
+      return this.enrichReservation(await this.findOneRaw(reservationId));
+    }
+
+    const offer = await this.offerRepo.findOne({ where: { id: reservation.offer_id! } });
     if (!offer || offer.author_id !== authorId) {
       throw new ForbiddenException("Vous n'êtes pas l'auteur de cette offre.");
     }
@@ -440,7 +491,7 @@ export class ReservationService {
           ? String(reservation.session.date).slice(0, 10)
           : undefined;
       const availability = await this.getAvailability({
-        offer_id: reservation.offer_id,
+        offer_id: reservation.offer_id!,
         session_id: reservation.session_id ?? undefined,
         date: reservation.session_id ? undefined : dateStr,
       });
@@ -455,7 +506,7 @@ export class ReservationService {
       await this.claimSpots(reservation, offer);
 
       await this.sweepPendingOverCapacity(
-        reservation.offer_id,
+        reservation.offer_id!,
         reservation.session_id,
         reservation.session_id ? undefined : dateStr,
       );
@@ -549,7 +600,9 @@ export class ReservationService {
     reservation.status = 'cancelled';
     await this.reservationRepo.save(reservation);
 
-    const offer = await this.offerRepo.findOne({ where: { id: reservation.offer_id } });
+    const offer = reservation.offer_id
+      ? await this.offerRepo.findOne({ where: { id: reservation.offer_id } })
+      : null;
     if (offer) {
       // Was pending → no seats held. (If ever cancelling confirmed, release would be needed.)
       await this.notifService
@@ -601,7 +654,7 @@ export class ReservationService {
   private async findOneRaw(id: string): Promise<Reservation> {
     const reservation = await this.reservationRepo.findOne({
       where: { id },
-      relations: ['offer', 'session', 'participants'],
+      relations: ['offer', 'circuit', 'session', 'participants'],
     });
     if (!reservation) throw new NotFoundException('Réservation introuvable.');
     return reservation;
@@ -844,6 +897,7 @@ export class ReservationService {
 
   private async checkAndConfirm(reservationId: string): Promise<void> {
     const reservation = await this.findOneRaw(reservationId);
+    if (!reservation.offer_id) return;
     const offer = await this.offerRepo.findOne({ where: { id: reservation.offer_id } });
     if (!offer || offer.confirmation_mode !== 'instant') return;
     if (reservation.status !== 'pending') return;
@@ -942,6 +996,7 @@ export class ReservationService {
     } | null = null;
     let can_confirm = false;
 
+    const circuit = reservation.circuit;
     if (offer?.id) {
       try {
         const dateStr = reservation.reservation_date
@@ -960,6 +1015,43 @@ export class ReservationService {
       } catch {
         availability = null;
       }
+    } else if (circuit?.id) {
+      try {
+        const dateStr = reservation.reservation_date
+          ? String(reservation.reservation_date).slice(0, 10)
+          : undefined;
+        availability = await this.getAvailability({
+          circuit_id: circuit.id,
+          date: dateStr,
+        });
+        can_confirm =
+          reservation.status === 'pending' &&
+          reservation.participant_count <= this.maxAcceptableParticipants(availability);
+      } catch {
+        availability = null;
+      }
+    }
+
+    if (!provider && circuit?.provider_id) {
+      const guide = await this.guideRepo.findOne({ where: { user_id: circuit.provider_id } });
+      const prov = await this.providerRepo.findOne({ where: { user_id: circuit.provider_id } });
+      if (guide) {
+        provider = {
+          user_id: guide.user_id,
+          full_name: guide.full_name,
+          organization: null,
+          phone: guide.telephone,
+          photo: guide.photo,
+        };
+      } else if (prov) {
+        provider = {
+          user_id: prov.user_id,
+          full_name: prov.full_name,
+          organization: prov.organization,
+          phone: prov.phone,
+          photo: prov.photo,
+        };
+      }
     }
 
     return {
@@ -977,6 +1069,13 @@ export class ReservationService {
             max_group_size: offer.max_group_size ?? null,
           }
         : offer,
+      circuit: circuit
+        ? {
+            ...circuit,
+            capacity: circuit.capacity ?? null,
+            max_group_size: circuit.max_group_size ?? null,
+          }
+        : circuit,
     };
   }
 

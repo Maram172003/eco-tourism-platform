@@ -25,7 +25,7 @@ interface Reservation {
   chosen_subtypes?: string[] | null;
   created_at: string;
   payment_status: string | null;
-  offer: {
+  offer?: {
     id: string;
     title: string;
     offer_type: string | null;
@@ -34,7 +34,13 @@ interface Reservation {
     images: string[] | null;
     confirmation_mode: string | null;
     meeting_point: string | null;
-  };
+  } | null;
+  circuit?: {
+    id: string;
+    title: string;
+    nb_jours?: number;
+    cover_image?: string | null;
+  } | null;
   session: {
     id: string;
     date: string;
@@ -211,32 +217,43 @@ export default function ReservationDetailPage() {
           </div>
         )}
 
-        {/* Offre */}
+        {/* Offre ou circuit */}
+        {(reservation.offer || reservation.circuit) && (
         <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
           <div className="h-32 bg-gradient-to-br from-emerald-100 to-teal-200 relative">
-            {reservation.offer.images?.[0] ? (
+            {reservation.offer?.images?.[0] ? (
               <img src={reservation.offer.images[0]} alt="" className="w-full h-full object-cover" />
+            ) : reservation.circuit?.cover_image ? (
+              <img src={reservation.circuit.cover_image} alt="" className="w-full h-full object-cover" />
             ) : (
               <div className="w-full h-full flex items-center justify-center text-5xl">
-                {TYPE_ICONS[reservation.offer.offer_type ?? ""] ?? "🌿"}
+                {reservation.circuit ? "🗺️" : TYPE_ICONS[reservation.offer?.offer_type ?? ""] ?? "🌿"}
               </div>
             )}
           </div>
           <div className="p-4">
-            <button onClick={() => router.push(`/offers/${reservation.offer.id}`)}
-              className="font-bold text-slate-800 text-lg hover:text-emerald-600 transition-colors text-left">
-              {reservation.offer.title}
-            </button>
+            {reservation.offer ? (
+              <button onClick={() => router.push(`/offers/${reservation.offer!.id}`)}
+                className="font-bold text-slate-800 text-lg hover:text-emerald-600 transition-colors text-left">
+                {reservation.offer.title}
+              </button>
+            ) : (
+              <p className="font-bold text-slate-800 text-lg">{reservation.circuit!.title}</p>
+            )}
             <div className="flex flex-wrap gap-2 mt-2 text-xs text-slate-500">
-              {reservation.offer.region && (
+              {reservation.offer?.region && (
                 <span className="flex items-center gap-1"><MapPin size={10} /> {reservation.offer.region}</span>
               )}
-              {reservation.offer.duration && (
+              {reservation.offer?.duration && (
                 <span className="flex items-center gap-1"><Clock size={10} /> {reservation.offer.duration}</span>
+              )}
+              {reservation.circuit?.nb_jours && (
+                <span className="flex items-center gap-1"><Clock size={10} /> {reservation.circuit.nb_jours} jour{reservation.circuit.nb_jours > 1 ? "s" : ""}</span>
               )}
             </div>
           </div>
         </div>
+        )}
 
         {reservation.chosen_subtypes && reservation.chosen_subtypes.length > 0 && (
           <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-5">
@@ -244,7 +261,11 @@ export default function ReservationDetailPage() {
               <Package size={16} className="text-emerald-500" /> Formule
             </h3>
             <p className="text-sm font-medium text-slate-700">
-              {reservation.chosen_subtypes.map((k) => formatSubtypeLabel(k)).join(", ")}
+              {reservation.chosen_subtypes.map((k) =>
+                reservation.circuit
+                  ? k.replace(/^etape:/, "").replace(/^hebergement:/, "Hébergement — ").replace(/_/g, " ")
+                  : formatSubtypeLabel(k),
+              ).join(", ")}
             </p>
           </div>
         )}
@@ -282,7 +303,7 @@ export default function ReservationDetailPage() {
             ) : (
               <p className="text-slate-400 text-sm">Date à confirmer avec le prestataire</p>
             )}
-            {reservation.offer.meeting_point && (
+            {reservation.offer?.meeting_point && (
               <div className="flex justify-between py-1">
                 <span className="text-slate-500">Point de rendez-vous</span>
                 <span className="font-medium text-slate-800 text-right max-w-52">{reservation.offer.meeting_point}</span>

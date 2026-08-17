@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Req } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query, Req } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { Roles } from '../common/decorators/roles.decorator';
 import { Role } from '../common/enums/roles.enum';
@@ -39,6 +39,12 @@ export class CircuitController {
   @Get('public/:userId')
   findPublishedByUser(@Param('userId') userId: string) {
     return this.service.findPublishedByUser(userId);
+  }
+
+  @Public()
+  @Get(':id/availability')
+  getAvailability(@Param('id') id: string, @Query('date') date?: string) {
+    return this.service.getAvailability(id, date);
   }
 
   // Ouvert aux visiteurs : `all-public` renvoie déjà ces mêmes circuits enrichis
