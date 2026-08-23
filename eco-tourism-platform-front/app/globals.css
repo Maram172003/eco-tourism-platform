@@ -53,6 +53,17 @@
     overflow-x: hidden;
   }
 
+  /* Défilement glissé vers les ancres de l'en-tête, sauf réglage système contraire. */
+  html {
+    scroll-behavior: smooth;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    html {
+      scroll-behavior: auto;
+    }
+  }
+
   body {
     @apply bg-background text-on-surface font-sans antialiased;
     font-family: "Manrope", sans-serif;

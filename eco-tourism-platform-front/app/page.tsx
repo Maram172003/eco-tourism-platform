@@ -4,6 +4,7 @@ import Hero from "@/components/home/Hero";
 import HowItWorks from "@/components/home/HowItWorks";
 import Navbar from "@/components/home/Navbar";
 import Newsletter from "@/components/home/Newsletter";
+import PlacesMap from "@/components/home/PlacesMap";
 
 
 export default function HomePage() {
@@ -13,6 +14,7 @@ export default function HomePage() {
       <main className="flex-1">
         <Hero />
         <HowItWorks />
+        <PlacesMap />
         <FeaturedExperiences />
         <Newsletter />
       </main>

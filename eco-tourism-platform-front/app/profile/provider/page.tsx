@@ -32,6 +32,8 @@ import { Bool, PrestSubBlock, InviteButton, SectionLockedBanner, TRANSPORT_ECO_S
 import { HebergBlock, HebergData, EMPTY_HEBERG } from "@/components/guide/offer/ProviderServiceBlock";
 import TaxonomyTagPicker from "@/components/common/TaxonomyTagPicker";
 import { OFFER_SUSTAINABILITY_STEPS, CIRCUIT_SUSTAINABILITY_STEPS, getOfferSustainabilityLevel, getCircuitSustainabilityLevel } from "@/lib/constants/sustainability";
+import SustainabilityBadge from "@/components/common/SustainabilityBadge";
+import BadgeLabel from "@/components/common/BadgeLabel";
 
 const MapPicker = dynamic(
   () => import("@/components/map/MapPicker"),
@@ -420,6 +422,8 @@ type MyCollab = {
   circuit_cover?: string | null;
   circuit_status?: string | null;
   circuit_nb_jours?: number | null;
+  circuit_sustainability_score?: number | null;
+  offer_sustainability_score?: number | null;
   circuit_description?: string | null;
   circuit_nb_etapes?: number | null;
   circuit_etapes_preview?: { jour: number | null; titre: string | null; destination: string | null; categorie: string | null; subtypes: string[]; etape_mode?: string | null; expertises?: string[]; heure_debut?: string | null; heure_fin?: string | null }[];
@@ -1047,7 +1051,17 @@ function EditActivityFields({ categoryValue, subtypeValues, setSubtypes, dynFiel
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
-export default function ProviderProfilePage() {
+/**
+ * Page de profil du prestataire. Montée telle quelle dans le tableau de bord
+ * (`embedded`), elle n'affiche que l'onglet demandé — les formulaires d'offre
+ * et de circuit viennent avec.
+ */
+export default function ProviderProfilePage({ embedded = false, forcedTab, openEditOnMount = false }: {
+  embedded?: boolean;
+  forcedTab?: Tab;
+  /** Page Paramètres : n'affiche que le formulaire de modification, en flux. */
+  openEditOnMount?: boolean;
+} = {}) {
   const router = useRouter();
   const searchParams = useSearchParams();
 
@@ -1059,7 +1073,9 @@ export default function ProviderProfilePage() {
   const [activityFilter, setActivityFilter] = useState<string | null>(null);
   const [token,     setToken]     = useState("");
   const [loading,   setLoading]   = useState(true);
-  const [activeTab, setActiveTab] = useState<Tab>("tout");
+  // L'onglet imposé s'applique dès le premier rendu : passer par un effet
+  // affichait d'abord « tout » — soit le profil entier — avant de basculer.
+  const [activeTab, setActiveTab] = useState<Tab>(forcedTab ?? "tout");
   const [collaborations, setCollaborations] = useState<MyCollab[]>([]);
   const [collabLoading, setCollabLoading] = useState(false);
   const [openCollab, setOpenCollab] = useState<MyCollab | null>(null);
@@ -1354,6 +1370,8 @@ export default function ProviderProfilePage() {
   const [editOrgLogo,       setEditOrgLogo]       = useState<{file?: File; preview: string} | null>(null);
   const [editProfileSaving, setEditProfileSaving] = useState(false);
   const [editProfileError,  setEditProfileError]  = useState("");
+  /** Mode Paramètres : on confirme sans refermer, le formulaire EST la page. */
+  const [editProfileSaved, setEditProfileSaved] = useState(false);
   const [editStep,          setEditStep]          = useState(1);
   const [editData,          setEditData]          = useState<{
     personal_name: string; personal_role: string; personal_bio: string;
@@ -1387,11 +1405,12 @@ export default function ProviderProfilePage() {
 
   // Lire le tab depuis l'URL (?tab=collaborations)
   useEffect(() => {
+    if (forcedTab) { setActiveTab(forcedTab); return; }
     const tab = searchParams.get("tab");
     if (tab && ["tout","offres","activites","circuits","reseau","apropos","collaborations"].includes(tab)) {
       setActiveTab(tab as Tab);
     }
-  }, [searchParams]);
+  }, [searchParams, forcedTab]);
 
   useEffect(() => {
     async function init() {
@@ -1780,7 +1799,14 @@ export default function ProviderProfilePage() {
       entity_photos: isGuidage ? {} : finalEntityPhotos,
       etape_mode: isCircuitHeberg ? "service" : etapeMode,
       guidage_data: isGuidage ? etapeGuidageData : undefined,
-      author_type: isGuidage ? "guide" : etapeAuthorType,
+      // Un collaborateur sélectionné signifie que l'étape n'est pas assurée par
+      // soi-même. Le toggle n'apparaît pas quand la catégorie sort des activités
+      // déclarées (hébergement de circuit) : author_type restait « self ».
+      author_type: isGuidage
+        ? "guide"
+        : etapeCollabSelected
+          ? (etapeCollabSelected.type === "guide" ? "guide" : "provider")
+          : etapeAuthorType,
       collaborator_id: etapeCollabSelected?.user_id ?? null,
       collaborator_name: etapeCollabSelected?.name ?? null,
       collaborator_type: isGuidage ? "guide" : (etapeCollabSelected?.type ?? null),
@@ -1841,19 +1867,32 @@ export default function ProviderProfilePage() {
         setCircuits((prev) => [{ ...created, created_at: typeof created.created_at === 'string' ? created.created_at : new Date(created.created_at).toISOString() }, ...prev]);
         savedCircuitId = created.id;
       }
-      // Inviter automatiquement les collaborateurs des étapes non-self
-      const etapesWithCollab = circuitEtapes.filter((e) => e.author_type && e.author_type !== "self" && e.collaborator_id);
-      for (const etape of etapesWithCollab) {
+      // Inviter automatiquement les collaborateurs non-self.
+      // L'hébergement vit hors de circuitEtapes : sans cela, le prestataire
+      // choisi ne recevait jamais son invitation. Il est repéré par la clé
+      // « hebergement », qu'attend CircuitDetailView pour afficher son
+      // formulaire de contribution.
+      const hasCollab = (e: CircuitEtape | null): e is CircuitEtape =>
+        !!e && !!e.author_type && e.author_type !== "self" && !!e.collaborator_id;
+
+      const collabTargets: { etape: CircuitEtape; section: string; etapeKey: string }[] = [
+        ...circuitEtapes.filter(hasCollab).map((e) => ({ etape: e, section: e.categorie, etapeKey: e.id })),
+        ...(hasCollab(circuitHebergEtape)
+          ? [{ etape: circuitHebergEtape, section: "hebergement", etapeKey: "hebergement" }]
+          : []),
+      ];
+
+      for (const { etape, section, etapeKey } of collabTargets) {
         try {
           await apiFetch(`/circuits/${savedCircuitId}/collaborations`, {
             method: "POST",
             headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
             body: JSON.stringify({
-              etape_id: etape.id,
+              etape_id: etapeKey,
               invited_user_id: etape.collaborator_id,
               invited_user_type: etape.collaborator_type ?? etape.author_type,
               invited_user_name: etape.collaborator_name,
-              section: etape.categorie,
+              section,
             }),
           });
         } catch { /* invite non bloquante */ }
@@ -2917,6 +2956,15 @@ export default function ProviderProfilePage() {
 
   // ── Edit profile modal ─────────────────────────────────────────────────────
 
+  // Le formulaire ne peut s'ouvrir qu'une fois le profil chargé : il pré-remplit
+  // ses champs à partir de celui-ci.
+  const editDejaOuvert = useRef(false);
+  useEffect(() => {
+    if (!openEditOnMount || editDejaOuvert.current || !profile) return;
+    editDejaOuvert.current = true;
+    openEditProfile();
+  }, [openEditOnMount, profile]);
+
   function openEditProfile() {
     if (!profile) return;
 
@@ -2988,7 +3036,21 @@ export default function ProviderProfilePage() {
     setEditProfileOpen(true);
   }
 
+  /**
+   * Fin d'édition. En mode Paramètres le formulaire occupe toute la page :
+   * le refermer laisserait un écran vide, on affiche donc une confirmation.
+   */
+  function terminerEdition() {
+    if (openEditOnMount) {
+      setEditProfileSaved(true);
+      setTimeout(() => setEditProfileSaved(false), 4000);
+      return;
+    }
+    setEditProfileOpen(false);
+  }
+
   function closeEditProfile() {
+    if (openEditOnMount) { setEditProfileError(""); return; }
     setEditProfileOpen(false);
     setEditProfileError("");
   }
@@ -3051,7 +3113,10 @@ export default function ProviderProfilePage() {
         const orgPhotos = editData.photos.filter(Boolean);
         const orgVideos = editData.video_urls.filter(Boolean);
         const orgCerts  = editData.org_certifications.filter((c) => c.name.trim()).map((c) => ({ name: c.name.trim(), document_url: c.url || c.image || undefined }));
-        await apiFetch(`/organizations/${org.id}`, {
+        // `PATCH /organizations/:id` n'existe pas côté API : seul `/me` est exposé.
+        // L'ancien appel renvoyait 404, avalé par un `.catch()` — l'organisation
+        // n'était donc jamais enregistrée.
+        await apiFetch(`/organizations/me`, {
           method: "PATCH",
           headers: { Authorization: `Bearer ${token}` },
           body: JSON.stringify({
@@ -3075,7 +3140,7 @@ export default function ProviderProfilePage() {
             videos:    orgVideos.length ? orgVideos   : undefined,
             certifications: orgCerts.length ? orgCerts : undefined,
           }),
-        }).catch(() => {});
+        });
         setOrg((prev) => prev ? { ...prev, logo: logoUrl ?? prev.logo } : prev);
       }
 
@@ -3121,7 +3186,7 @@ export default function ProviderProfilePage() {
         }).catch(() => {});
       }
 
-      setEditProfileOpen(false);
+      terminerEdition();
     } catch (err: any) {
       setEditProfileError(err.message || "Erreur lors de la sauvegarde.");
     } finally {
@@ -3133,7 +3198,7 @@ export default function ProviderProfilePage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-slate-50 flex items-center justify-center">
+      <div className={`flex items-center justify-center ${embedded ? "py-24" : "min-h-screen bg-slate-50"}`}>
         <div className="w-10 h-10 rounded-full border-4 border-primary border-t-transparent animate-spin" />
       </div>
     );
@@ -3343,18 +3408,7 @@ export default function ProviderProfilePage() {
               </div>
             </div>
             {offer.sustainability_score !== null ? (
-              <div className="mt-3 mb-1">
-                <div className="flex items-center justify-between mb-1">
-                  <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Durabilité</span>
-                  <span className="text-[10px] font-black text-primary">{offer.sustainability_score}/100</span>
-                </div>
-                <div className="w-full h-1.5 bg-slate-100 rounded-full overflow-hidden">
-                  <div className="h-full bg-primary rounded-full transition-all" style={{ width: `${offer.sustainability_score}%` }} />
-                </div>
-                <span className={`mt-1 inline-block text-[10px] font-bold ${getOfferSustainabilityLevel(offer.sustainability_score).color}`}>
-                  <span className="material-symbols-outlined align-middle" style={{ fontSize: 14 }}>{getOfferSustainabilityLevel(offer.sustainability_score).icon}</span> {getOfferSustainabilityLevel(offer.sustainability_score).label}
-                </span>
-              </div>
+              <SustainabilityBadge score={offer.sustainability_score} kind="offer" className="mt-3 mb-1" />
             ) : (
               <button
                 onClick={(e) => { e.stopPropagation(); openSustainabilityQuestionnaire("offer", offer.id); }}
@@ -4673,8 +4727,10 @@ export default function ProviderProfilePage() {
                             className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary placeholder:text-slate-300" />
                         </div>}
 
-                  {/* Carte — cachée si le collaborateur gère la localisation */}
-                  {(!showCollabSearch || isCircuitHebergSlot) ? (
+                  {/* Carte — cachée dès qu'un collaborateur prend la localisation en charge.
+                      Pour l'hébergement de circuit, la recherche de collaborateur est
+                      proposée d'emblée : seule la sélection effective fait foi. */}
+                  {(isCircuitHebergSlot ? !etapeCollabSelected : !showCollabSearch) ? (
                     <div>
                       <label className="text-[10px] font-bold text-slate-400 uppercase mb-2 block">
                         Localisation sur la carte *
@@ -6105,10 +6161,10 @@ export default function ProviderProfilePage() {
         </div>
       </div>
     )}
-    <div className="min-h-screen bg-slate-50/70 pb-20" onClick={() => setNetMenuId(null)}>
+    <div className={embedded ? "pb-4" : "min-h-screen bg-slate-50/70 pb-20"} onClick={() => setNetMenuId(null)}>
 
       {/* ══ TOP NAV ══════════════════════════════════════════════════════════ */}
-      <div className="sticky top-0 z-40 bg-white/80 backdrop-blur-md border-b border-slate-200 px-6 py-3">
+      <div className={`sticky top-0 z-40 bg-white/80 backdrop-blur-md border-b border-slate-200 px-6 py-3${embedded ? " hidden" : ""}`}>
         <div className="max-w-6xl mx-auto flex items-center justify-between">
           <button
             onClick={() => router.push("/dashboard/provider")}
@@ -6129,10 +6185,15 @@ export default function ProviderProfilePage() {
         const set = (patch: Partial<typeof editData>) => setEditData((d) => ({ ...d, ...patch }));
 
         return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-          <div className="bg-white rounded-3xl w-full max-w-2xl shadow-2xl relative overflow-hidden flex flex-col max-h-[92vh]">
+        <div className={openEditOnMount ? "w-full" : "fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4"}>
+          <div className={`bg-white rounded-3xl w-full relative overflow-hidden flex flex-col ${openEditOnMount ? "border border-slate-100" : "max-w-2xl shadow-2xl max-h-[92vh]"}`}>
+            {editProfileSaved && (
+              <div className="mx-6 mt-5 rounded-xl bg-emerald-50 border border-emerald-100 px-4 py-2.5 text-xs font-bold text-emerald-700 flex items-center gap-2">
+                <Check size={14} />Modifications enregistrées.
+              </div>
+            )}
             <button onClick={closeEditProfile}
-              className="absolute top-4 right-4 z-20 w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-500 flex items-center justify-center transition-colors">
+              className={`absolute top-4 right-4 z-20 w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-500 flex items-center justify-center transition-colors${openEditOnMount ? " hidden" : ""}`}>
               <X size={16} />
             </button>
 
@@ -6516,9 +6577,12 @@ export default function ProviderProfilePage() {
 
             {/* Footer */}
             <div className="px-8 py-5 border-t border-slate-100 bg-slate-50/80 flex items-center justify-between gap-3 shrink-0">
+              {/* À l'étape 1 ce bouton n'est qu'« Annuler » : inutile en mode Paramètres.
+                  Aux étapes suivantes il sert de « Retour » et reste indispensable. */}
               <button type="button"
                 onClick={editStep === 1 ? closeEditProfile : () => setEditStep((s) => s - 1)}
-                className="px-5 py-2.5 border border-slate-200 text-slate-600 bg-white rounded-2xl text-xs font-bold hover:bg-slate-50 transition-colors">
+                className={`px-5 py-2.5 border border-slate-200 text-slate-600 bg-white rounded-2xl text-xs font-bold hover:bg-slate-50 transition-colors${
+                  openEditOnMount && editStep === 1 ? " invisible" : ""}`}>
                 {editStep === 1 ? "Annuler" : "← Retour"}
               </button>
               {editStep < 3 ? (
@@ -8710,10 +8774,10 @@ export default function ProviderProfilePage() {
         );
       })()}
 
-      <div className="w-full max-w-6xl mx-auto px-4 sm:px-6 pt-6">
+      <div className={openEditOnMount ? "hidden" : embedded ? "w-full" : "w-full max-w-6xl mx-auto px-4 sm:px-6 pt-6"}>
 
         {/* ══ PROFILE HEADER CARD ═══════════════════════════════════════════ */}
-        <div className="relative w-full overflow-hidden bg-white shadow-sm rounded-3xl border border-slate-100/80 mb-6">
+        <div className={`relative w-full overflow-hidden bg-white shadow-sm rounded-3xl border border-slate-100/80 mb-6${embedded ? " hidden" : ""}`}>
           {profile.cover_photo
             ? <div className="relative h-48 md:h-64 lg:h-72 w-full overflow-hidden"><img src={profile.cover_photo} alt="" className="w-full h-full object-cover" /></div>
             : <BotanicalCover />
@@ -8728,10 +8792,7 @@ export default function ProviderProfilePage() {
                     <AvatarImg />
                   </div>
                 </div>
-                <div className="bg-primary text-white text-[10px] font-extrabold px-2.5 py-0.5 rounded-full flex items-center gap-1 shadow-md uppercase tracking-wider border border-white">
-                  <span className="material-symbols-outlined text-yellow-300" style={{ fontSize: 10 }}>star</span>
-                  {scoreLabel(profile.sustainability_score)}
-                </div>
+                <BadgeLabel role="provider" />
               </div>
 
               {/* Name + buttons row */}
@@ -8772,7 +8833,7 @@ export default function ProviderProfilePage() {
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
 
           {/* ── LEFT SIDEBAR ──────────────────────────────────────────────── */}
-          <div className="lg:col-span-4 lg:sticky lg:top-6 space-y-6">
+          <div className={`lg:col-span-4 lg:sticky lg:top-6 space-y-6${embedded ? " hidden" : ""}`}>
 
             <div className="bg-white p-6 rounded-3xl border border-slate-100/80 shadow-sm">
               <div className="flex items-center gap-2.5 mb-5">
@@ -8955,8 +9016,8 @@ export default function ProviderProfilePage() {
           </div>
 
           {/* ── RIGHT COLUMN ──────────────────────────────────────────────── */}
-          <div className="lg:col-span-8 space-y-6">
-            <div className="bg-slate-100 p-1.5 rounded-2xl flex flex-wrap gap-1 border border-slate-200/50">
+          <div className={`space-y-6${embedded ? " col-span-full" : " lg:col-span-8"}`}>
+            <div className={`bg-slate-100 p-1.5 rounded-2xl flex-wrap gap-1 border border-slate-200/50${embedded ? " hidden" : " flex"}`}>
               {[
                 { key: "tout",           label: "Tout",           Icon: LayoutGrid },
                 { key: "offres",         label: "Offres",         Icon: Tag },
@@ -9131,6 +9192,7 @@ export default function ProviderProfilePage() {
                                     {c.circuit_description && <p className="text-xs text-slate-500 mt-1 line-clamp-2">{c.circuit_description}</p>}
                                     <div className="flex flex-wrap gap-2 mt-3">
                                       {c.circuit_nb_jours && <span className="flex items-center gap-1 text-[10px] font-black tracking-widest uppercase text-primary bg-primary/10 px-2.5 py-1 rounded-xl"><Calendar size={10} />{c.circuit_nb_jours} jour{c.circuit_nb_jours > 1 ? "s" : ""}</span>}
+                                      <SustainabilityBadge score={c.source_type === "circuit" ? c.circuit_sustainability_score : c.offer_sustainability_score} kind={c.source_type === "circuit" ? "circuit" : "offer"} />
                                       {c.circuit_nb_etapes != null && c.circuit_nb_etapes > 0 && <span className="flex items-center gap-1 text-[10px] font-black tracking-widest uppercase text-slate-500 bg-slate-100 px-2.5 py-1 rounded-xl"><MapPin size={10} />{c.circuit_nb_etapes} étape{c.circuit_nb_etapes > 1 ? "s" : ""}</span>}
                                     </div>
                                     {(c.circuit_etapes_preview ?? []).length > 0 && (
@@ -9168,7 +9230,10 @@ export default function ProviderProfilePage() {
                                       <h3 className="text-lg md:text-xl font-extrabold text-slate-800 tracking-tight leading-tight mb-2">{displayTitle}</h3>
                                       {c.offer_description && <p className="text-slate-500 text-sm leading-relaxed mb-3 line-clamp-2">{c.offer_description}</p>}
                                       {c.message && <p className="text-slate-400 text-xs leading-relaxed mb-3 line-clamp-2 italic border-l-2 border-slate-200 pl-3">&ldquo;{c.message}&rdquo;</p>}
-                                      <div className="flex flex-wrap gap-2.5 mb-4"><span className={`flex items-center gap-1.5 text-[11px] font-extrabold tracking-wider px-3 py-1 rounded-xl text-white bg-gradient-to-r ${sm.grad} uppercase`}><span className="material-symbols-outlined text-sm">{sm.icon}</span>{sm.label}</span></div>
+                                      <div className="flex flex-wrap items-center gap-2.5 mb-4">
+                                        <span className={`flex items-center gap-1.5 text-[11px] font-extrabold tracking-wider px-3 py-1 rounded-xl text-white bg-gradient-to-r ${sm.grad} uppercase`}><span className="material-symbols-outlined text-sm">{sm.icon}</span>{sm.label}</span>
+                                        <SustainabilityBadge score={c.offer_sustainability_score} kind="offer" />
+                                      </div>
                                     </div>
                                     <div className="flex items-center justify-between border-t border-slate-50 pt-4 mt-3">
                                       <p className="text-[11px] font-bold text-slate-400">{new Date(c.created_at).toLocaleDateString("fr-FR", { day: "numeric", month: "long", year: "numeric" })}</p>
@@ -9440,6 +9505,26 @@ export default function ProviderProfilePage() {
                                   <span key={l} className="text-[10px] font-bold text-slate-500 bg-slate-50 border border-slate-100 px-2 py-1 rounded-xl">{l}</span>
                                 ))}
                               </div>
+                              {circuit.sustainability_score !== null && circuit.sustainability_score !== undefined ? (
+                                (() => {
+                                  const lvl = getCircuitSustainabilityLevel(circuit.sustainability_score!);
+                                  return (
+                                    <div className={`mt-3 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl ${lvl.bg} ${lvl.color}`}>
+                                      <span className="material-symbols-outlined" style={{ fontSize: 14 }}>{lvl.icon}</span>
+                                      <span className="text-[11px] font-extrabold">{lvl.label}</span>
+                                      <span className="text-[11px] font-bold opacity-70">{circuit.sustainability_score}/100</span>
+                                    </div>
+                                  );
+                                })()
+                              ) : (
+                                <button
+                                  onClick={(e) => { e.stopPropagation(); openSustainabilityQuestionnaire("circuit", circuit.id); }}
+                                  className="mt-3 w-full border border-dashed border-primary/40 text-primary text-[11px] font-bold py-1.5 rounded-xl hover:bg-primary/5 transition-colors flex items-center justify-center gap-1.5"
+                                >
+                                  <span className="material-symbols-outlined" style={{ fontSize: 14 }}>eco</span>
+                                  Évaluer la durabilité
+                                </button>
+                              )}
                               {/* Étapes preview */}
                               <div className="mt-3 space-y-1">
                                 {circuit.etapes.slice(0, 3).map((etape, i) => {
@@ -10295,6 +10380,7 @@ export default function ProviderProfilePage() {
                                 )}
                                 <div className={`absolute top-2 left-2 text-[10px] font-black tracking-widest uppercase px-2.5 py-1 rounded-xl shadow border flex items-center gap-1 ${st.cls}`}>
                                   <span className="material-symbols-outlined text-xs">{st.icon}</span>{st.label}
+                                  <SustainabilityBadge score={c.source_type === "circuit" ? c.circuit_sustainability_score : c.offer_sustainability_score} kind={c.source_type === "circuit" ? "circuit" : "offer"} />
                                 </div>
                               </div>
                               <div className="flex-1 flex flex-col justify-between p-6 md:p-8">
@@ -10310,6 +10396,7 @@ export default function ProviderProfilePage() {
                                     <span className={`flex items-center gap-1.5 text-[11px] font-extrabold tracking-wider px-3 py-1 rounded-xl text-white bg-gradient-to-r ${sm.grad} uppercase`}>
                                       <span className="material-symbols-outlined text-sm">{sm.icon}</span>{sm.label}
                                     </span>
+                                    <SustainabilityBadge score={c.offer_sustainability_score} kind="offer" />
                                   </div>
                                 </div>
                                 <div className="flex items-center justify-between border-t border-slate-50 pt-4 mt-3">

@@ -5,9 +5,11 @@ import { useRouter } from "next/navigation";
 import { Leaf, Plus, MapPin, ArrowRight } from "lucide-react";
 import { logoutUser } from "@/lib/auth";
 import { apiFetch } from "@/lib/api";
+import BadgeGrid from "@/components/common/BadgeGrid";
 import SharedAddPublicationModal from "@/components/publication/AddPublicationModal";
 import ViewPublicationModal from "@/components/publication/ViewPublicationModal";
 import PubInteractions from "@/components/PubInteractions";
+import BadgeChip from "@/components/common/BadgeChip";
 
 type Publication = {
   id: string;
@@ -89,30 +91,6 @@ function getBarColor(score: number | null): string {
 }
 
 // ─── Config des badges (tous les badges possibles de la plateforme) ────────────
-
-const BADGE_CONFIG = [
-  {
-    label: "Explorateur Durable",
-    icon: "explore",
-    description: "Onboarding complété",
-  },
-  {
-    label: "Ambassadeur ",
-    icon: "stars",
-    description: "Score ≥ 80%",
-  },
-  {
-    label: "Contributeur Communautaire",
-    icon: "groups",
-    description: "3 plans partagés",
-  },
-  {
-    label: "Protecteur de la Nature",
-    icon: "eco",
-    description: "10 réservations durables",
-  },
-
-];
 
 // ─── Composant Score Décomposé ────────────────────────────────────────────────
 
@@ -207,6 +185,12 @@ export default function EcoVoyageurDashboardPage() {
     try {
       const parsedUser: User = JSON.parse(storedUser);
       if (parsedUser.role !== "eco_traveler") { router.push("/auth/login"); return; }
+
+      // Version antérieure du tableau de bord : `/dashboard` porte désormais
+      // les expériences et les lieux. On y renvoie plutôt que d'afficher un
+      // second écran incomplet. Ses sous-pages de réservations restent en place.
+      router.replace("/dashboard");
+      return;
       setUser(parsedUser);
 
       apiFetch<EcoProfile>("/eco-traveler/profile", {
@@ -237,7 +221,6 @@ export default function EcoVoyageurDashboardPage() {
 
   const score = profile?.sustainability_score ?? null;
   const scoreWidth = score !== null ? `${score}%` : "0%";
-  const obtainedBadgeLabels = new Set((profile?.badges ?? []).map((b) => b.label));
 
   return (
     <div className="bg-background-light dark:bg-background-dark text-slate-900 dark:text-slate-100 min-h-screen">
@@ -309,14 +292,9 @@ export default function EcoVoyageurDashboardPage() {
           <header className="h-24 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md border-b border-primary/10 px-10 flex items-center justify-between sticky top-0 z-10">
             <div className="flex items-center gap-12 shrink-0">
               <h2 className="text-2xl font-bold whitespace-nowrap">
-                Bonjour, {profile?.full_name || user?.full_name || "Voyageur"} 👋
+                Bonjour, {profile?.full_name || user?.full_name || "Voyageur"}
               </h2>
-              <div className="flex items-center bg-slate-100 dark:bg-slate-800 rounded-full px-5 py-2 gap-2 whitespace-nowrap">
-                <span className="material-symbols-outlined text-primary text-base">verified_user</span>
-                <span className="text-sm font-semibold">
-                  {score !== null ? getScoreLabel(score) : "Nouveau voyageur"}
-                </span>
-              </div>
+              <BadgeChip role="eco_traveler" fallback={score !== null ? getScoreLabel(score) : "Nouveau voyageur"} />
             </div>
 
             <div className="flex items-center gap-6 flex-1 justify-end">
@@ -661,69 +639,10 @@ export default function EcoVoyageurDashboardPage() {
                 <h3 className="text-xl font-bold mb-6">Mes Badges</h3>
                 <div className="bg-white dark:bg-slate-900 rounded-2xl p-6 border border-primary/10">
 
-                  <div className="grid grid-cols-2 gap-4">
-                    {BADGE_CONFIG.map((config) => {
-                      const obtained = obtainedBadgeLabels.has(config.label);
-                      const obtainedData = profile?.badges.find((b) => b.label === config.label);
+                  <BadgeGrid role="eco_traveler" details={false} />
+                  <a href="/dashboard/profile?onglet=badges" className="mt-3 inline-flex items-center gap-1 text-[11px] font-bold text-primary hover:underline">Voir le détail des paliers →</a>
 
-                      return (
-                        <div
-                          key={config.label}
-                          title={obtained && obtainedData
-                            ? `Obtenu le ${new Date(obtainedData.obtained_at).toLocaleDateString("fr-FR")}`
-                            : config.description}
-                          className={`flex flex-col items-center text-center p-4 rounded-xl border-2 transition-all
-                            ${obtained
-                              ? "bg-slate-50 dark:bg-slate-800 border-primary/20"
-                              : "bg-slate-100/50 dark:bg-slate-800/50 border-dashed border-slate-200 dark:border-slate-700"
-                            }`}
-                        >
-                          <div className="size-16 flex items-center justify-center mb-2">
-                            <span
-                              className={`material-symbols-outlined text-4xl transition-all
-                                ${obtained ? "text-primary" : "text-slate-300"}`}
-                              style={obtained ? { fontVariationSettings: '"FILL" 1' } : {}}
-                            >
-                              {config.icon}
-                            </span>
-                          </div>
-                          <p className={`text-xs font-bold ${obtained ? "text-slate-700" : "text-slate-300"}`}>
-                            {config.label}
-                          </p>
-                          <p className={`text-[10px] font-bold uppercase mt-1
-                            ${obtained ? "text-green-500" : "text-slate-300"}`}>
-                            {obtained ? "Débloqué" : "Verrouillé"}
-                          </p>
-                          {/* Condition pour débloquer */}
-                          {!obtained && (
-                            <p className="text-[9px] text-slate-300 mt-1 italic">{config.description}</p>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-
-                  {/* Stats engagement MongoDB */}
-                  <div className="mt-5 pt-4 border-t border-slate-100 dark:border-slate-800 grid grid-cols-3 gap-2 text-center">
-                    <div>
-                      <p className="text-lg font-extrabold text-slate-800 dark:text-slate-100">
-                        {profile?.feedback_given ?? 0}
-                      </p>
-                      <p className="text-[10px] text-slate-400 font-bold uppercase">Feedbacks</p>
-                    </div>
-                    <div>
-                      <p className="text-lg font-extrabold text-slate-800 dark:text-slate-100">
-                        {profile?.plans_shared ?? 0}
-                      </p>
-                      <p className="text-[10px] text-slate-400 font-bold uppercase">Plans</p>
-                    </div>
-                    <div>
-                      <p className="text-lg font-extrabold text-slate-800 dark:text-slate-100">
-                        {profile?.reservations_made ?? 0}
-                      </p>
-                      <p className="text-[10px] text-slate-400 font-bold uppercase">Réservations</p>
-                    </div>
-                  </div>
+                  
 
                 </div>
               </div>

@@ -15,6 +15,8 @@ import MessagerieWidget from "@/components/MessagerieWidget";
 import PubInteractions from "@/components/PubInteractions";
 import PlaceContributions, { type TopPhotoData, type TopDescData } from "@/components/PlaceContributions";
 import { MACRO_CATEGORIES, TAXONOMY_TAGS as ALL_TAXONOMY_TAGS } from "@/lib/constants/taxonomy-tags";
+import { monTableauDeBord } from "@/lib/dashboard-path";
+import BadgeLabel from "@/components/common/BadgeLabel";
 
 const MapPicker = dynamic(
   () => import("@/components/map/MapPicker"),
@@ -205,7 +207,15 @@ function BotanicalCover() {
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
-export default function EcoTravelerProfilePage() {
+/**
+ * Page de profil de l'éco-voyageur. Montée dans la page Paramètres
+ * (`embedded` + `openEditOnMount`) pour y fournir son formulaire.
+ */
+export default function EcoTravelerProfilePage({ embedded = false, forcedTab, openEditOnMount = false }: {
+  embedded?: boolean;
+  forcedTab?: Tab;
+  openEditOnMount?: boolean;
+} = {}) {
   const router = useRouter();
 
   const [profile,       setProfile]       = useState<EcoTravelerProfile | null>(null);
@@ -216,7 +226,7 @@ export default function EcoTravelerProfilePage() {
   const [topDescs,      setTopDescs]      = useState<Record<string, TopDescData  | null>>({});
   const [token,        setToken]        = useState("");
   const [loading,      setLoading]      = useState(true);
-  const [activeTab,    setActiveTab]    = useState<Tab>("tout");
+  const [activeTab,    setActiveTab]    = useState<Tab>(forcedTab ?? "tout");
 
   // ── Add publication modal ────────────────────────────────────────────────
   const [addPubOpen,   setAddPubOpen]   = useState(false);
@@ -284,6 +294,8 @@ export default function EcoTravelerProfilePage() {
   const [editGoals,         setEditGoals]         = useState<string[]>([]);
   const [editProfileSaving, setEditProfileSaving] = useState(false);
   const [editProfileError,  setEditProfileError]  = useState("");
+  /** Mode Paramètres : on confirme sans refermer, le formulaire EST la page. */
+  const [editProfileSaved, setEditProfileSaved] = useState(false);
 
   // ── Init ─────────────────────────────────────────────────────────────────
 
@@ -308,7 +320,7 @@ export default function EcoTravelerProfilePage() {
           apiFetch<FollowUser[]>("/follows/followers/profiles", { headers: { Authorization: `Bearer ${tkn}` } }).catch(() => []),
         ]).then(([f, r, fwing, fwers]) => { setFriends(f); setFriendRequests(r); setFollowings(fwing as FollowUser[]); setFollowers(fwers as FollowUser[]); setSocialLoaded(true); });
       } catch {
-        router.push("/dashboard");
+        router.push(monTableauDeBord());
       } finally {
         setLoading(false);
       }
@@ -507,6 +519,13 @@ export default function EcoTravelerProfilePage() {
 
   // ── Edit profile ─────────────────────────────────────────────────────────
 
+  const editDejaOuvert = useRef(false);
+  useEffect(() => {
+    if (!openEditOnMount || editDejaOuvert.current || !profile) return;
+    editDejaOuvert.current = true;
+    openEditProfile();
+  }, [openEditOnMount, profile]);
+
   function openEditProfile() {
     if (!profile) return;
     setEditProfileForm({
@@ -528,7 +547,23 @@ export default function EcoTravelerProfilePage() {
     setEditProfileOpen(true);
   }
 
-  function closeEditProfile() { setEditProfileOpen(false); setEditProfileError(""); }
+  /**
+   * Fin d'édition. En mode Paramètres le formulaire occupe toute la page :
+   * le refermer laisserait un écran vide, on affiche donc une confirmation.
+   */
+  function terminerEdition() {
+    if (openEditOnMount) {
+      setEditProfileSaved(true);
+      setTimeout(() => setEditProfileSaved(false), 4000);
+      return;
+    }
+    setEditProfileOpen(false);
+  }
+
+  function closeEditProfile() {
+    if (openEditOnMount) { setEditProfileError(""); return; }
+    setEditProfileOpen(false); setEditProfileError("");
+  }
 
   async function handleSaveProfile(e: React.SyntheticEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -542,6 +577,8 @@ export default function EcoTravelerProfilePage() {
       if (editProfileCover?.file) coverUrl = await uploadImage(editProfileCover.file);
       else if (editProfileCover === null) coverUrl = undefined;
 
+      // Les quatre PATCH ne sont plus silencieux : un échec doit remonter,
+      // sinon l'écran affiche « enregistré » alors que rien n'a été gardé.
       const [updated] = await Promise.all([
         apiFetch<EcoTravelerProfile>("/eco-traveler/profile", {
           method: "POST", headers: { Authorization: `Bearer ${token}` },
@@ -557,19 +594,19 @@ export default function EcoTravelerProfilePage() {
         apiFetch("/eco-traveler/traveler-types", {
           method: "PATCH", headers: { Authorization: `Bearer ${token}` },
           body: JSON.stringify({ traveler_types: editTravTypes }),
-        }).catch(() => {}),
+        }),
         apiFetch("/eco-traveler/motivations", {
           method: "PATCH", headers: { Authorization: `Bearer ${token}` },
           body: JSON.stringify({ motivations: editMotivations, sustainability_values: editSustValues }),
-        }).catch(() => {}),
+        }),
         apiFetch("/eco-traveler/interests", {
           method: "PATCH", headers: { Authorization: `Bearer ${token}` },
           body: JSON.stringify({ interests: editInterests, landscapes: editLandscapes }),
-        }).catch(() => {}),
+        }),
         apiFetch("/eco-traveler/goals", {
           method: "PATCH", headers: { Authorization: `Bearer ${token}` },
           body: JSON.stringify({ sustainability_goals: editGoals }),
-        }).catch(() => {}),
+        }),
       ]);
 
       setProfile((prev) => prev ? {
@@ -582,7 +619,7 @@ export default function EcoTravelerProfilePage() {
         landscapes: editLandscapes,
         sustainability_goals: editGoals,
       } : prev);
-      setEditProfileOpen(false);
+      terminerEdition();
     } catch (err: any) {
       setEditProfileError(err.message || "Erreur lors de la sauvegarde.");
     } finally { setEditProfileSaving(false); }
@@ -870,9 +907,9 @@ export default function EcoTravelerProfilePage() {
       )}
 
       {/* ══ TOP NAV ══════════════════════════════════════════════════════════ */}
-      <div className="sticky top-0 z-40 bg-white/80 backdrop-blur-md border-b border-slate-200 px-6 py-3">
+      <div className={`sticky top-0 z-40 bg-white/80 backdrop-blur-md border-b border-slate-200 px-6 py-3${embedded ? " hidden" : ""}`}>
         <div className="max-w-6xl mx-auto flex items-center justify-between">
-          <button onClick={() => router.push("/dashboard")}
+          <button onClick={() => router.push(monTableauDeBord())}
             className="flex items-center gap-2 rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100 transition-all">
             <ArrowLeft size={16} />Retour
           </button>
@@ -885,10 +922,15 @@ export default function EcoTravelerProfilePage() {
 
       {/* ══ EDIT PROFILE MODAL ═══════════════════════════════════════════════ */}
       {editProfileOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-          <div className="bg-white rounded-3xl w-full max-w-lg shadow-2xl relative overflow-hidden flex flex-col max-h-[92vh]">
+        <div className={openEditOnMount ? "w-full" : "fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4"}>
+          <div className={`bg-white rounded-3xl w-full relative overflow-hidden flex flex-col ${openEditOnMount ? "border border-slate-100" : "max-w-lg shadow-2xl max-h-[92vh]"}`}>
+            {editProfileSaved && (
+              <div className="mx-6 mt-5 rounded-xl bg-emerald-50 border border-emerald-100 px-4 py-2.5 text-xs font-bold text-emerald-700 flex items-center gap-2">
+                <Check size={14} />Modifications enregistrées.
+              </div>
+            )}
             <button onClick={closeEditProfile}
-              className="absolute top-4 right-4 z-20 w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-500 flex items-center justify-center transition-colors">
+              className={`absolute top-4 right-4 z-20 w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-500 flex items-center justify-center transition-colors${openEditOnMount ? " hidden" : ""}`}>
               <X size={16} />
             </button>
             <div className="px-8 pt-8 pb-5 border-b border-slate-100 shrink-0">
@@ -1206,10 +1248,13 @@ export default function EcoTravelerProfilePage() {
             </div>
 
             <div className="px-8 py-5 border-t border-slate-100 bg-slate-50/80 flex items-center justify-end gap-3 shrink-0">
-              <button type="button" onClick={closeEditProfile}
-                className="px-5 py-2.5 border border-slate-200 text-slate-600 bg-white rounded-2xl text-xs font-bold hover:bg-slate-50 transition-colors">
-                Annuler
-              </button>
+              {/* Rien à annuler en mode Paramètres : le formulaire est la page. */}
+              {!openEditOnMount && (
+                <button type="button" onClick={closeEditProfile}
+                  className="px-5 py-2.5 border border-slate-200 text-slate-600 bg-white rounded-2xl text-xs font-bold hover:bg-slate-50 transition-colors">
+                  Annuler
+                </button>
+              )}
               <button type="submit" form="edit-profile-form" disabled={editProfileSaving}
                 className="flex items-center gap-2 px-6 py-2.5 bg-primary hover:bg-primary/90 text-white font-extrabold rounded-2xl text-xs shadow-sm hover:shadow transition-all active:scale-95 disabled:opacity-60">
                 {editProfileSaving
@@ -1669,7 +1714,7 @@ export default function EcoTravelerProfilePage() {
       )}
 
       {/* ══ MAIN CONTENT ═════════════════════════════════════════════════════ */}
-      <div className="w-full max-w-6xl mx-auto px-4 sm:px-6 pt-6">
+      <div className={openEditOnMount ? "hidden" : embedded ? "w-full" : "w-full max-w-6xl mx-auto px-4 sm:px-6 pt-6"}>
 
         {/* ── Profile Header Card ──────────────────────────────────────────── */}
         <div className="relative w-full overflow-hidden bg-white shadow-sm rounded-3xl border border-slate-100/80 mb-6">
@@ -1689,10 +1734,7 @@ export default function EcoTravelerProfilePage() {
                       <AvatarImg />
                     </div>
                   </div>
-                  <div className="bg-primary text-white text-[10px] font-extrabold px-3 py-1 rounded-full flex items-center gap-1 shadow-md uppercase tracking-wider border border-white">
-                    <span className="material-symbols-outlined text-yellow-300" style={{ fontSize: 11 }}>star</span>
-                    {scoreLabel(profile.sustainability_score)}
-                  </div>
+                  <BadgeLabel role="eco_traveler" taille={11} />
                 </div>
                 <div className="text-center sm:text-left pb-1 min-w-0">
                   <div className="flex items-center justify-center sm:justify-start gap-2">
@@ -1736,7 +1778,7 @@ export default function EcoTravelerProfilePage() {
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
 
           {/* ── LEFT SIDEBAR ── */}
-          <div className="lg:col-span-4 lg:sticky lg:top-6 space-y-6">
+          <div className={`lg:col-span-4 lg:sticky lg:top-6 space-y-6${embedded ? " hidden" : ""}`}>
 
             {/* Informations */}
             <div className="bg-white p-6 rounded-3xl border border-slate-100/80 shadow-sm">
@@ -1861,7 +1903,7 @@ export default function EcoTravelerProfilePage() {
           </div>
 
           {/* ── RIGHT COLUMN ── */}
-          <div className="lg:col-span-8 space-y-6">
+          <div className={`space-y-6${embedded ? " col-span-full" : " lg:col-span-8"}`}>
 
             {/* Tabs */}
             <div className="bg-slate-100 p-1.5 rounded-2xl flex flex-wrap gap-1 border border-slate-200/50">

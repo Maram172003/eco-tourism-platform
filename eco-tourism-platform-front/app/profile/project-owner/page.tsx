@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { useRouter } from "next/navigation";
 import dynamic from "next/dynamic";
 import {
@@ -13,6 +13,8 @@ import { apiFetch } from "@/lib/api";
 import MessagerieWidget from "@/components/MessagerieWidget";
 import PubInteractions from "@/components/PubInteractions";
 import { OFFER_SUSTAINABILITY_STEPS, getOfferSustainabilityLevel } from "@/lib/constants/sustainability";
+import SustainabilityBadge from "@/components/common/SustainabilityBadge";
+import { monTableauDeBord } from "@/lib/dashboard-path";
 
 const MapPicker = dynamic(
   () => import("@/components/map/MapPicker"),
@@ -289,14 +291,23 @@ function BotanicalCover() {
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
-export default function ProjectOwnerProfilePage() {
+/**
+ * Page de profil du porteur de projet. Montée telle quelle dans le tableau de
+ * bord (`embedded`), elle n'affiche que l'onglet demandé.
+ */
+export default function ProjectOwnerProfilePage({ embedded = false, forcedTab, openEditOnMount = false }: {
+  embedded?: boolean;
+  forcedTab?: Tab;
+  /** Page Paramètres : n'affiche que le formulaire de modification, en flux. */
+  openEditOnMount?: boolean;
+} = {}) {
   const router = useRouter();
 
   const [profile,   setProfile]   = useState<OwnerProfile | null>(null);
   const [offers,    setOffers]    = useState<Offer[]>([]);
   const [token,     setToken]     = useState("");
   const [loading,   setLoading]   = useState(true);
-  const [activeTab, setActiveTab] = useState<Tab>("tout");
+  const [activeTab, setActiveTab] = useState<Tab>(forcedTab ?? "tout");
   type NetUser = { user_id: string; full_name: string; photo: string | null; _type: string; sub?: string | null };
   const [following,  setFollowing]  = useState<NetUser[]>([]);
   const [followers,  setFollowers]  = useState<NetUser[]>([]);
@@ -387,6 +398,8 @@ export default function ProjectOwnerProfilePage() {
   const [editProfileCover,  setEditProfileCover]  = useState<{ file?: File; preview: string } | null>(null);
   const [editProfileSaving, setEditProfileSaving] = useState(false);
   const [editProfileError,  setEditProfileError]  = useState("");
+  /** Mode Paramètres : on confirme sans refermer, le formulaire EST la page. */
+  const [editProfileSaved, setEditProfileSaved] = useState(false);
 
   useEffect(() => {
     async function init() {
@@ -416,7 +429,7 @@ export default function ProjectOwnerProfilePage() {
           setFollowing(fwing); setFollowers(fwers); setNetLoaded(true);
         });
       } catch {
-        router.push("/dashboard");
+        router.push(monTableauDeBord());
       } finally {
         setLoading(false);
       }
@@ -887,6 +900,15 @@ export default function ProjectOwnerProfilePage() {
 
   // ── Edit profile modal ─────────────────────────────────────────────────────
 
+  // Le formulaire ne peut s'ouvrir qu'une fois le profil chargé : il pré-remplit
+  // ses champs à partir de celui-ci.
+  const editDejaOuvert = useRef(false);
+  useEffect(() => {
+    if (!openEditOnMount || editDejaOuvert.current || !profile) return;
+    editDejaOuvert.current = true;
+    openEditProfile();
+  }, [openEditOnMount, profile]);
+
   function openEditProfile() {
     if (!profile) return;
     setEditProfileForm({
@@ -904,7 +926,21 @@ export default function ProjectOwnerProfilePage() {
     setEditProfileOpen(true);
   }
 
+  /**
+   * Fin d'édition. En mode Paramètres le formulaire occupe toute la page :
+   * le refermer laisserait un écran vide, on affiche donc une confirmation.
+   */
+  function terminerEdition() {
+    if (openEditOnMount) {
+      setEditProfileSaved(true);
+      setTimeout(() => setEditProfileSaved(false), 4000);
+      return;
+    }
+    setEditProfileOpen(false);
+  }
+
   function closeEditProfile() {
+    if (openEditOnMount) { setEditProfileError(""); return; }
     setEditProfileOpen(false);
     setEditProfileError("");
   }
@@ -942,7 +978,7 @@ export default function ProjectOwnerProfilePage() {
         }),
       });
       setProfile((prev) => prev ? { ...prev, ...updated } : prev);
-      setEditProfileOpen(false);
+      terminerEdition();
     } catch (err: any) {
       setEditProfileError(err.message || "Erreur lors de la sauvegarde.");
     } finally {
@@ -1040,18 +1076,7 @@ export default function ProjectOwnerProfilePage() {
               </div>
             </div>
             {offer.sustainability_score !== null ? (
-              <div className="mt-3 mb-1">
-                <div className="flex items-center justify-between mb-1">
-                  <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Durabilité</span>
-                  <span className="text-[10px] font-black text-primary">{offer.sustainability_score}/100</span>
-                </div>
-                <div className="w-full h-1.5 bg-slate-100 rounded-full overflow-hidden">
-                  <div className="h-full bg-primary rounded-full transition-all" style={{ width: `${offer.sustainability_score}%` }} />
-                </div>
-                <span className={`mt-1 inline-block text-[10px] font-bold ${getOfferSustainabilityLevel(offer.sustainability_score).color}`}>
-                  <span className="material-symbols-outlined align-middle" style={{ fontSize: 14 }}>{getOfferSustainabilityLevel(offer.sustainability_score).icon}</span> {getOfferSustainabilityLevel(offer.sustainability_score).label}
-                </span>
-              </div>
+              <SustainabilityBadge score={offer.sustainability_score} kind="offer" className="mt-3 mb-1" />
             ) : (
               <button
                 onClick={(e) => { e.stopPropagation(); setOqOfferId(offer.id); setOqStep(0); setOqAnswers({}); setOqOpen(true); }}
@@ -1219,10 +1244,10 @@ export default function ProjectOwnerProfilePage() {
     <div className="min-h-screen bg-slate-50/70 pb-20" onClick={() => setNetMenuId(null)}>
 
       {/* ══ TOP NAV ══════════════════════════════════════════════════════════ */}
-      <div className="sticky top-0 z-40 bg-white/80 backdrop-blur-md border-b border-slate-200 px-6 py-3">
+      <div className={`sticky top-0 z-40 bg-white/80 backdrop-blur-md border-b border-slate-200 px-6 py-3${embedded ? " hidden" : ""}`}>
         <div className="max-w-6xl mx-auto flex items-center justify-between">
           <button
-            onClick={() => router.push("/dashboard")}
+            onClick={() => router.push(monTableauDeBord())}
             className="flex items-center gap-2 rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100 transition-all"
           >
             <ArrowLeft size={16} />
@@ -1237,10 +1262,15 @@ export default function ProjectOwnerProfilePage() {
 
       {/* ══ EDIT PROFILE MODAL ═══════════════════════════════════════════════ */}
       {editProfileOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-          <div className="bg-white rounded-3xl w-full max-w-lg shadow-2xl relative overflow-hidden flex flex-col max-h-[92vh]">
+        <div className={openEditOnMount ? "w-full" : "fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4"}>
+          <div className={`bg-white rounded-3xl w-full relative overflow-hidden flex flex-col ${openEditOnMount ? "border border-slate-100" : "max-w-lg shadow-2xl max-h-[92vh]"}`}>
+            {editProfileSaved && (
+              <div className="mx-6 mt-5 rounded-xl bg-emerald-50 border border-emerald-100 px-4 py-2.5 text-xs font-bold text-emerald-700 flex items-center gap-2">
+                <Check size={14} />Modifications enregistrées.
+              </div>
+            )}
             <button onClick={closeEditProfile}
-              className="absolute top-4 right-4 z-20 w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-500 flex items-center justify-center transition-colors">
+              className={`absolute top-4 right-4 z-20 w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-500 flex items-center justify-center transition-colors${openEditOnMount ? " hidden" : ""}`}>
               <X size={16} />
             </button>
 
@@ -1443,10 +1473,13 @@ export default function ProjectOwnerProfilePage() {
 
             {/* Footer */}
             <div className="px-8 py-5 border-t border-slate-100 bg-slate-50/80 flex items-center justify-end gap-3 shrink-0">
-              <button type="button" onClick={closeEditProfile}
-                className="px-5 py-2.5 border border-slate-200 text-slate-600 bg-white rounded-2xl text-xs font-bold hover:bg-slate-50 transition-colors">
-                Annuler
-              </button>
+              {/* Rien à annuler en mode Paramètres : le formulaire est la page. */}
+              {!openEditOnMount && (
+                <button type="button" onClick={closeEditProfile}
+                  className="px-5 py-2.5 border border-slate-200 text-slate-600 bg-white rounded-2xl text-xs font-bold hover:bg-slate-50 transition-colors">
+                  Annuler
+                </button>
+              )}
               <button type="submit" form="edit-profile-form" disabled={editProfileSaving}
                 className="flex items-center gap-2 px-6 py-2.5 bg-primary hover:bg-primary/90 text-white font-extrabold rounded-2xl text-xs shadow-sm hover:shadow transition-all active:scale-95 disabled:opacity-60">
                 {editProfileSaving
@@ -2664,7 +2697,7 @@ export default function ProjectOwnerProfilePage() {
         </div>
       )}
 
-      <div className="w-full max-w-6xl mx-auto px-4 sm:px-6 pt-6">
+      <div className={openEditOnMount ? "hidden" : embedded ? "w-full" : "w-full max-w-6xl mx-auto px-4 sm:px-6 pt-6"}>
 
         {/* ══ PROFILE HEADER CARD ═══════════════════════════════════════════ */}
         <div className="relative w-full overflow-hidden bg-white shadow-sm rounded-3xl border border-slate-100/80 mb-6">
@@ -2719,7 +2752,7 @@ export default function ProjectOwnerProfilePage() {
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
 
           {/* ── LEFT SIDEBAR ──────────────────────────────────────────────── */}
-          <div className="lg:col-span-4 lg:sticky lg:top-6 space-y-6">
+          <div className={`lg:col-span-4 lg:sticky lg:top-6 space-y-6${embedded ? " hidden" : ""}`}>
             <div className="bg-white p-6 rounded-3xl border border-slate-100/80 shadow-sm">
               <div className="flex items-center gap-2.5 mb-5">
                 <div className="w-8 h-8 rounded-full bg-emerald-100 flex items-center justify-center text-primary">
@@ -2794,8 +2827,8 @@ export default function ProjectOwnerProfilePage() {
           </div>
 
           {/* ── RIGHT COLUMN ──────────────────────────────────────────────── */}
-          <div className="lg:col-span-8 space-y-6">
-            <div className="bg-slate-100 p-1.5 rounded-2xl flex flex-wrap gap-1 border border-slate-200/50">
+          <div className={`space-y-6${embedded ? " col-span-full" : " lg:col-span-8"}`}>
+            <div className={`bg-slate-100 p-1.5 rounded-2xl flex-wrap gap-1 border border-slate-200/50${embedded ? " hidden" : " flex"}`}>
               {[
                 { key: "tout",    label: "Tout",     Icon: LayoutGrid },
                 { key: "offres",  label: "Offres",   Icon: Tag },

@@ -22,7 +22,10 @@ import MessagerieWidget from "@/components/MessagerieWidget";
 import PubInteractions from "@/components/PubInteractions";
 import GuideOfferModal from "@/components/GuideOfferModal";
 import GuideCircuitModal from "@/components/guide/circuit/GuideCircuitModal";
-import { OFFER_SUSTAINABILITY_STEPS, getOfferSustainabilityLevel } from "@/lib/constants/sustainability";
+import { OFFER_SUSTAINABILITY_STEPS, CIRCUIT_SUSTAINABILITY_STEPS, getOfferSustainabilityLevel, getCircuitSustainabilityLevel } from "@/lib/constants/sustainability";
+import SustainabilityBadge from "@/components/common/SustainabilityBadge";
+import { monTableauDeBord } from "@/lib/dashboard-path";
+import BadgeLabel from "@/components/common/BadgeLabel";
 
 const MapPicker = dynamic(() => import("@/components/map/MapPicker"),
   { ssr: false, loading: () => <div className="h-[268px] rounded-2xl bg-slate-100 animate-pulse" /> }
@@ -388,6 +391,8 @@ type MyCollab = {
   circuit_cover?: string | null;
   circuit_status?: string | null;
   circuit_nb_jours?: number | null;
+  circuit_sustainability_score?: number | null;
+  offer_sustainability_score?: number | null;
   circuit_description?: string | null;
   circuit_nb_etapes?: number | null;
   circuit_etapes_preview?: { jour: number | null; titre: string | null; destination: string | null; categorie: string | null; subtypes: string[]; etape_mode?: string | null; expertises?: string[]; heure_debut?: string | null; heure_fin?: string | null }[];
@@ -454,7 +459,16 @@ function scrollToElement(id: string, onDone: () => void) {
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
-export default function GuideProfilePage() {
+/**
+ * Page de profil du guide. Montée telle quelle dans le tableau de bord
+ * (`embedded`), elle n'affiche que l'onglet demandé.
+ */
+export default function GuideProfilePage({ embedded = false, forcedTab, openEditOnMount = false }: {
+  embedded?: boolean;
+  forcedTab?: Tab;
+  /** Page Paramètres : n'affiche que le formulaire de modification, en flux. */
+  openEditOnMount?: boolean;
+} = {}) {
   const router = useRouter();
   const searchParams = useSearchParams();
 
@@ -488,7 +502,9 @@ export default function GuideProfilePage() {
   const [offers,    setOffers]    = useState<Offer[]>([]);
   const [token,     setToken]     = useState("");
   const [loading,   setLoading]   = useState(true);
-  const [activeTab, setActiveTab] = useState<Tab>("tout");
+  // L'onglet imposé s'applique dès le premier rendu : passer par un effet
+  // affichait d'abord « tout » — soit le profil entier — avant de basculer.
+  const [activeTab, setActiveTab] = useState<Tab>(forcedTab ?? "tout");
   const [collaborations, setCollaborations] = useState<MyCollab[]>([]);
   const [collabLoading, setCollabLoading] = useState(false);
   const [openCollab, setOpenCollab] = useState<MyCollab | null>(null);
@@ -535,6 +551,9 @@ export default function GuideProfilePage() {
   const [editImages,     setEditImages]     = useState<{ src: string; file?: File }[]>([]);
   const [showCreateOffer, setShowCreateOffer] = useState(false);
   const [oqOpen,    setOqOpen]    = useState(false);
+  // Un seul questionnaire pour l'offre et le circuit : seuls le barème et le
+  // point d'enregistrement changent.
+  const [oqKind,    setOqKind]    = useState<"offer" | "circuit">("offer");
   const [oqOfferId, setOqOfferId] = useState("");
   const [oqStep,    setOqStep]    = useState(0);
   const [oqAnswers, setOqAnswers] = useState<Record<string, number>>({});
@@ -565,6 +584,8 @@ export default function GuideProfilePage() {
   const [editPublicsAccueillis, setEditPublicsAccueillis] = useState<string[]>([]);
   const [editProfileSaving,     setEditProfileSaving]     = useState(false);
   const [editProfileError,      setEditProfileError]      = useState("");
+  /** Mode Paramètres : on confirme sans refermer, le formulaire EST la page. */
+  const [editProfileSaved, setEditProfileSaved] = useState(false);
 
   // ── Confirmation publication ─────────────────────────────────────────────
   const [publishOfferModal,    setPublishOfferModal]    = useState<{ offer: Offer; detail: OfferFull | null } | null>(null);
@@ -582,11 +603,12 @@ export default function GuideProfilePage() {
 
 
   useEffect(() => {
+    if (forcedTab) { setActiveTab(forcedTab); return; }
     const tab = searchParams.get("tab");
     if (tab && ["tout","offres","reseau","apropos","agenda","collaborations","circuits"].includes(tab)) {
       setActiveTab(tab as Tab);
     }
-  }, [searchParams]);
+  }, [searchParams, forcedTab]);
 
   useEffect(() => {
     if ((activeTab !== "collaborations" && activeTab !== "tout") || !token) return;
@@ -658,7 +680,7 @@ export default function GuideProfilePage() {
           setFollowing(fwing); setFollowers(fwers); setFollowRequests(reqs); setNetLoaded(true);
         });
       } catch {
-        router.push("/dashboard");
+        router.push(monTableauDeBord());
       } finally {
         setLoading(false);
       }
@@ -750,18 +772,39 @@ export default function GuideProfilePage() {
     const score = Object.values(oqAnswers).reduce((s, v) => s + v, 0);
     setOqSaving(true);
     try {
-      const updated = await apiFetch<Offer>(`/offers/${oqOfferId}/sustainability`, {
+      const endpoint = oqKind === "circuit"
+        ? `/circuits/${oqOfferId}/sustainability`
+        : `/offers/${oqOfferId}/sustainability`;
+      const updated = await apiFetch<{ sustainability_score: number | null }>(endpoint, {
         method: "PATCH",
         headers: { Authorization: `Bearer ${token}` },
         body: JSON.stringify({ score }),
       });
-      setOffers((prev) => prev.map((o) => o.id === oqOfferId ? { ...o, sustainability_score: updated.sustainability_score } : o));
-      if (viewOffer?.id === oqOfferId) setViewOffer((v) => v ? { ...v, sustainability_score: updated.sustainability_score } : v);
+
+      if (oqKind === "circuit") {
+        setGuideCircuits((prev) => prev.map((c) => c.id === oqOfferId
+          ? { ...c, sustainability_score: updated.sustainability_score } : c));
+      } else {
+        setOffers((prev) => prev.map((o) => o.id === oqOfferId
+          ? { ...o, sustainability_score: updated.sustainability_score } : o));
+        if (viewOffer?.id === oqOfferId) {
+          setViewOffer((v) => v ? { ...v, sustainability_score: updated.sustainability_score } : v);
+        }
+      }
     } catch {
       // silent — score shown, user closes manually
     } finally {
       setOqSaving(false);
     }
+  }
+
+  /** Ouvre le questionnaire, pour une offre ou pour un circuit. */
+  function openSustainabilityQuestionnaire(kind: "offer" | "circuit", id: string) {
+    setOqKind(kind);
+    setOqOfferId(id);
+    setOqStep(0);
+    setOqAnswers({});
+    setOqOpen(true);
   }
 
   // ── Offer detail / edit modal ──────────────────────────────────────────────
@@ -865,6 +908,15 @@ export default function GuideProfilePage() {
 
   // ── Edit profile ─────────────────────────────────────────────────────────
 
+  // Le formulaire ne peut s'ouvrir qu'une fois le profil chargé : il pré-remplit
+  // ses champs à partir de celui-ci.
+  const editDejaOuvert = useRef(false);
+  useEffect(() => {
+    if (!openEditOnMount || editDejaOuvert.current || !profile) return;
+    editDejaOuvert.current = true;
+    openEditProfile();
+  }, [openEditOnMount, profile]);
+
   function openEditProfile() {
     if (!profile) return;
     setEditProfileForm({
@@ -894,7 +946,23 @@ export default function GuideProfilePage() {
     setEditProfileOpen(true);
   }
 
-  function closeEditProfile() { setEditProfileOpen(false); setEditProfileError(""); }
+  /**
+   * Fin d'édition. En mode Paramètres le formulaire occupe toute la page :
+   * le refermer laisserait un écran vide, on affiche donc une confirmation.
+   */
+  function terminerEdition() {
+    if (openEditOnMount) {
+      setEditProfileSaved(true);
+      setTimeout(() => setEditProfileSaved(false), 4000);
+      return;
+    }
+    setEditProfileOpen(false);
+  }
+
+  function closeEditProfile() {
+    if (openEditOnMount) { setEditProfileError(""); return; }
+    setEditProfileOpen(false); setEditProfileError("");
+  }
 
   function toggleDomaineEdit(v: string) {
     if (editDomaines.includes(v)) {
@@ -985,7 +1053,7 @@ export default function GuideProfilePage() {
         deplacement_possible:  editDeplacementPossible,
         publics_accueillis:    editPublicsAccueillis,
       } : prev);
-      setEditProfileOpen(false);
+      terminerEdition();
     } catch (err: any) {
       setEditProfileError(err.message || "Erreur lors de la sauvegarde.");
     } finally { setEditProfileSaving(false); }
@@ -995,7 +1063,7 @@ export default function GuideProfilePage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-slate-50 flex items-center justify-center">
+      <div className={`flex items-center justify-center ${embedded ? "py-24" : "min-h-screen bg-slate-50"}`}>
         <div className="w-10 h-10 rounded-full border-4 border-primary border-t-transparent animate-spin" />
       </div>
     );
@@ -1052,21 +1120,10 @@ export default function GuideProfilePage() {
                 </span>
               </div>
               {offer.sustainability_score !== null ? (
-                <div className="mb-1">
-                  <div className="flex items-center justify-between mb-1">
-                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Durabilité</span>
-                    <span className="text-[10px] font-black text-primary">{offer.sustainability_score}/100</span>
-                  </div>
-                  <div className="w-full h-1.5 bg-slate-100 rounded-full overflow-hidden">
-                    <div className="h-full bg-primary rounded-full transition-all" style={{ width: `${offer.sustainability_score}%` }} />
-                  </div>
-                  <span className={`mt-1 inline-block text-[10px] font-bold ${getOfferSustainabilityLevel(offer.sustainability_score).color}`}>
-                    <span className="material-symbols-outlined align-middle" style={{ fontSize: 14 }}>{getOfferSustainabilityLevel(offer.sustainability_score).icon}</span> {getOfferSustainabilityLevel(offer.sustainability_score).label}
-                  </span>
-                </div>
+                <SustainabilityBadge score={offer.sustainability_score} kind="offer" className="mb-1" />
               ) : (
                 <button
-                  onClick={(e) => { e.stopPropagation(); setOqOfferId(offer.id); setOqStep(0); setOqAnswers({}); setOqOpen(true); }}
+                  onClick={(e) => { e.stopPropagation(); openSustainabilityQuestionnaire("offer", offer.id); }}
                   className="w-full border border-dashed border-primary/40 text-primary text-[11px] font-bold py-1.5 rounded-xl hover:bg-primary/5 transition-colors mb-1"
                 >
                   🌿 Évaluer la durabilité
@@ -1221,12 +1278,12 @@ export default function GuideProfilePage() {
         </div>
       </div>
     )}
-    <div className="min-h-screen bg-slate-50/70 pb-20" onClick={() => setNetMenuId(null)}>
+    <div className={embedded ? "pb-4" : "min-h-screen bg-slate-50/70 pb-20"} onClick={() => setNetMenuId(null)}>
 
       {/* ══ TOP NAV ══════════════════════════════════════════════════════════ */}
-      <div className="sticky top-0 z-40 bg-white/80 backdrop-blur-md border-b border-slate-200 px-6 py-3">
+      <div className={`sticky top-0 z-40 bg-white/80 backdrop-blur-md border-b border-slate-200 px-6 py-3${embedded ? " hidden" : ""}`}>
         <div className="max-w-6xl mx-auto flex items-center justify-between">
-          <button onClick={() => router.push("/dashboard")}
+          <button onClick={() => router.push(monTableauDeBord())}
             className="flex items-center gap-2 rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100 transition-all">
             <ArrowLeft size={16} />Retour
           </button>
@@ -1239,10 +1296,15 @@ export default function GuideProfilePage() {
 
       {/* ══ EDIT PROFILE MODAL ═══════════════════════════════════════════════ */}
       {editProfileOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-          <div className="bg-white rounded-3xl w-full max-w-lg shadow-2xl relative overflow-hidden flex flex-col max-h-[92vh]">
+        <div className={openEditOnMount ? "w-full" : "fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4"}>
+          <div className={`bg-white rounded-3xl w-full relative overflow-hidden flex flex-col ${openEditOnMount ? "border border-slate-100" : "max-w-lg shadow-2xl max-h-[92vh]"}`}>
+            {editProfileSaved && (
+              <div className="mx-6 mt-5 rounded-xl bg-emerald-50 border border-emerald-100 px-4 py-2.5 text-xs font-bold text-emerald-700 flex items-center gap-2">
+                <Check size={14} />Modifications enregistrées.
+              </div>
+            )}
             <button onClick={closeEditProfile}
-              className="absolute top-4 right-4 z-20 w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-500 flex items-center justify-center transition-colors">
+              className={`absolute top-4 right-4 z-20 w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-500 flex items-center justify-center transition-colors${openEditOnMount ? " hidden" : ""}`}>
               <X size={16} />
             </button>
             <div className="px-8 pt-8 pb-5 border-b border-slate-100 shrink-0">
@@ -1677,10 +1739,13 @@ export default function GuideProfilePage() {
             </div>
 
             <div className="px-8 py-5 border-t border-slate-100 bg-slate-50/80 flex items-center justify-end gap-3 shrink-0">
-              <button type="button" onClick={closeEditProfile}
-                className="px-5 py-2.5 border border-slate-200 text-slate-600 bg-white rounded-2xl text-xs font-bold hover:bg-slate-50 transition-colors">
-                Annuler
-              </button>
+              {/* Rien à annuler en mode Paramètres : le formulaire est la page. */}
+              {!openEditOnMount && (
+                <button type="button" onClick={closeEditProfile}
+                  className="px-5 py-2.5 border border-slate-200 text-slate-600 bg-white rounded-2xl text-xs font-bold hover:bg-slate-50 transition-colors">
+                  Annuler
+                </button>
+              )}
               <button type="submit" form="edit-profile-form" disabled={editProfileSaving}
                 className="flex items-center gap-2 px-6 py-2.5 bg-primary hover:bg-primary/90 text-white font-extrabold rounded-2xl text-xs shadow-sm hover:shadow transition-all active:scale-95 disabled:opacity-60">
                 {editProfileSaving
@@ -1914,10 +1979,10 @@ export default function GuideProfilePage() {
       })()}
 
       {/* ══ MAIN CONTENT ═════════════════════════════════════════════════════ */}
-      <div className="w-full max-w-6xl mx-auto px-4 sm:px-6 pt-6">
+      <div className={openEditOnMount ? "hidden" : embedded ? "w-full" : "w-full max-w-6xl mx-auto px-4 sm:px-6 pt-6"}>
 
         {/* ── PROFILE HEADER ────────────────────────────────────────────────── */}
-        <div className="relative w-full overflow-hidden bg-white shadow-sm rounded-3xl border border-slate-100/80 mb-6">
+        <div className={`relative w-full overflow-hidden bg-white shadow-sm rounded-3xl border border-slate-100/80 mb-6${embedded ? " hidden" : ""}`}>
           {profile.cover_photo
             ? <div className="relative h-48 md:h-64 lg:h-72 w-full overflow-hidden"><img src={profile.cover_photo} alt="" className="w-full h-full object-cover" /></div>
             : <BotanicalCover />
@@ -1932,10 +1997,7 @@ export default function GuideProfilePage() {
                       <AvatarImg />
                     </div>
                   </div>
-                  <div className="bg-primary text-white text-[10px] font-extrabold px-3 py-1 rounded-full flex items-center gap-1 shadow-md uppercase tracking-wider border border-white">
-                    <span className="material-symbols-outlined text-yellow-300" style={{ fontSize: 11 }}>star</span>
-                    {scoreLabel(profile.sustainability_score)}
-                  </div>
+                  <BadgeLabel role="guide" taille={11} />
                 </div>
                 <div className="text-center sm:text-left pt-3 sm:pt-0 pb-1">
                   <div className="flex items-center justify-center sm:justify-start gap-2">
@@ -1969,7 +2031,7 @@ export default function GuideProfilePage() {
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
 
           {/* ── LEFT SIDEBAR ────────────────────────────────────────────────── */}
-          <div className="lg:col-span-4 lg:sticky lg:top-6 space-y-6">
+          <div className={`lg:col-span-4 lg:sticky lg:top-6 space-y-6${embedded ? " hidden" : ""}`}>
 
             <div className="bg-white p-6 rounded-3xl border border-slate-100/80 shadow-sm">
               <div className="flex items-center gap-2.5 mb-5">
@@ -2064,8 +2126,8 @@ export default function GuideProfilePage() {
           </div>
 
           {/* ── RIGHT COLUMN ────────────────────────────────────────────────── */}
-          <div className="lg:col-span-8 space-y-6">
-            <div className="bg-slate-100 p-1.5 rounded-2xl flex flex-wrap gap-1 border border-slate-200/50">
+          <div className={`space-y-6${embedded ? " col-span-full" : " lg:col-span-8"}`}>
+            <div className={`bg-slate-100 p-1.5 rounded-2xl flex-wrap gap-1 border border-slate-200/50${embedded ? " hidden" : " flex"}`}>
               {[
                 { key: "tout",           label: "Tout",           Icon: LayoutGrid },
                 { key: "offres",         label: "Offres",         Icon: Tag },
@@ -2146,6 +2208,26 @@ export default function GuideProfilePage() {
                                       <MapPin size={10} />{etapes.length} étape{etapes.length !== 1 ? "s" : ""}
                                     </span>
                                   </div>
+                                  {circuit.sustainability_score !== null && circuit.sustainability_score !== undefined ? (
+                                    (() => {
+                                      const lvl = getCircuitSustainabilityLevel(circuit.sustainability_score);
+                                      return (
+                                        <div className={`mt-3 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl ${lvl.bg} ${lvl.color}`}>
+                                          <span className="material-symbols-outlined" style={{ fontSize: 14 }}>{lvl.icon}</span>
+                                          <span className="text-[11px] font-extrabold">{lvl.label}</span>
+                                          <span className="text-[11px] font-bold opacity-70">{circuit.sustainability_score}/100</span>
+                                        </div>
+                                      );
+                                    })()
+                                  ) : (
+                                    <button
+                                      onClick={(e) => { e.stopPropagation(); openSustainabilityQuestionnaire("circuit", circuit.id); }}
+                                      className="mt-3 w-full border border-dashed border-primary/40 text-primary text-[11px] font-bold py-1.5 rounded-xl hover:bg-primary/5 transition-colors flex items-center justify-center gap-1.5"
+                                    >
+                                      <span className="material-symbols-outlined" style={{ fontSize: 14 }}>eco</span>
+                                      Évaluer la durabilité
+                                    </button>
+                                  )}
                                   <div className="mt-3 space-y-1">
                                     {etapes.slice(0, 3).map((etape: any) => {
                                       const eCat = PROVIDER_SCHEMA.find((c) => c.value === etape.categorie);
@@ -2221,6 +2303,7 @@ export default function GuideProfilePage() {
                                     {c.circuit_description && <p className="text-xs text-slate-500 mt-1 line-clamp-2">{c.circuit_description}</p>}
                                     <div className="flex flex-wrap gap-2 mt-3">
                                       {c.circuit_nb_jours && <span className="flex items-center gap-1 text-[10px] font-black tracking-widest uppercase text-primary bg-primary/10 px-2.5 py-1 rounded-xl"><Calendar size={10} />{c.circuit_nb_jours} jour{c.circuit_nb_jours > 1 ? "s" : ""}</span>}
+                                      <SustainabilityBadge score={c.source_type === "circuit" ? c.circuit_sustainability_score : c.offer_sustainability_score} kind={c.source_type === "circuit" ? "circuit" : "offer"} />
                                       {c.circuit_nb_etapes != null && c.circuit_nb_etapes > 0 && <span className="flex items-center gap-1 text-[10px] font-black tracking-widest uppercase text-slate-500 bg-slate-100 px-2.5 py-1 rounded-xl"><MapPin size={10} />{c.circuit_nb_etapes} étape{c.circuit_nb_etapes > 1 ? "s" : ""}</span>}
                                     </div>
                                     {c.message && <p className="mt-2 text-slate-400 text-xs leading-relaxed line-clamp-1 italic border-l-2 border-slate-200 pl-2">&ldquo;{c.message}&rdquo;</p>}
@@ -2238,7 +2321,10 @@ export default function GuideProfilePage() {
                                       <h3 className="text-lg md:text-xl font-extrabold text-slate-800 tracking-tight leading-tight mb-2">{displayTitle}</h3>
                                       {c.offer_description && <p className="text-slate-500 text-sm leading-relaxed mb-3 line-clamp-2">{c.offer_description}</p>}
                                       {c.message && <p className="text-slate-400 text-xs leading-relaxed mb-3 line-clamp-2 italic border-l-2 border-slate-200 pl-3">&ldquo;{c.message}&rdquo;</p>}
-                                      <div className="flex flex-wrap gap-2.5 mb-4"><span className={`flex items-center gap-1.5 text-[11px] font-extrabold tracking-wider px-3 py-1 rounded-xl text-white bg-gradient-to-r ${sm.grad} uppercase`}><span className="material-symbols-outlined text-sm">{sm.icon}</span>{sm.label}</span></div>
+                                      <div className="flex flex-wrap items-center gap-2.5 mb-4">
+                                        <span className={`flex items-center gap-1.5 text-[11px] font-extrabold tracking-wider px-3 py-1 rounded-xl text-white bg-gradient-to-r ${sm.grad} uppercase`}><span className="material-symbols-outlined text-sm">{sm.icon}</span>{sm.label}</span>
+                                        <SustainabilityBadge score={c.offer_sustainability_score} kind="offer" />
+                                      </div>
                                     </div>
                                     <div className="flex items-center justify-between border-t border-slate-50 pt-4 mt-3">
                                       <p className="text-[11px] font-bold text-slate-400">{new Date(c.created_at).toLocaleDateString("fr-FR", { day: "numeric", month: "long", year: "numeric" })}</p>
@@ -2970,6 +3056,7 @@ export default function GuideProfilePage() {
                                 )}
                                 <div className={`absolute top-2 left-2 text-[10px] font-black tracking-widest uppercase px-2.5 py-1 rounded-xl shadow border flex items-center gap-1 ${st.cls}`}>
                                   <span className="material-symbols-outlined text-xs">{st.icon}</span>{st.label}
+                                  <SustainabilityBadge score={c.source_type === "circuit" ? c.circuit_sustainability_score : c.offer_sustainability_score} kind={c.source_type === "circuit" ? "circuit" : "offer"} />
                                 </div>
                               </div>
                               <div className="flex-1 flex flex-col justify-between p-6 md:p-8">
@@ -2985,6 +3072,7 @@ export default function GuideProfilePage() {
                                     <span className={`flex items-center gap-1.5 text-[11px] font-extrabold tracking-wider px-3 py-1 rounded-xl text-white bg-gradient-to-r ${sm.grad} uppercase`}>
                                       <span className="material-symbols-outlined text-sm">{sm.icon}</span>{sm.label}
                                     </span>
+                                    <SustainabilityBadge score={c.offer_sustainability_score} kind="offer" />
                                   </div>
                                 </div>
                                 <div className="flex items-center justify-between border-t border-slate-50 pt-4 mt-3">
@@ -3385,6 +3473,26 @@ export default function GuideProfilePage() {
                                   <MapPin size={10} />{etapes.length} étape{etapes.length !== 1 ? "s" : ""}
                                 </span>
                               </div>
+                                  {circuit.sustainability_score !== null && circuit.sustainability_score !== undefined ? (
+                                    (() => {
+                                      const lvl = getCircuitSustainabilityLevel(circuit.sustainability_score);
+                                      return (
+                                        <div className={`mt-3 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl ${lvl.bg} ${lvl.color}`}>
+                                          <span className="material-symbols-outlined" style={{ fontSize: 14 }}>{lvl.icon}</span>
+                                          <span className="text-[11px] font-extrabold">{lvl.label}</span>
+                                          <span className="text-[11px] font-bold opacity-70">{circuit.sustainability_score}/100</span>
+                                        </div>
+                                      );
+                                    })()
+                                  ) : (
+                                    <button
+                                      onClick={(e) => { e.stopPropagation(); openSustainabilityQuestionnaire("circuit", circuit.id); }}
+                                      className="mt-3 w-full border border-dashed border-primary/40 text-primary text-[11px] font-bold py-1.5 rounded-xl hover:bg-primary/5 transition-colors flex items-center justify-center gap-1.5"
+                                    >
+                                      <span className="material-symbols-outlined" style={{ fontSize: 14 }}>eco</span>
+                                      Évaluer la durabilité
+                                    </button>
+                                  )}
                               {/* Étapes preview */}
                               <div className="mt-3 space-y-1">
                                 {etapes.slice(0, 3).map((etape: any) => {
@@ -3579,34 +3687,35 @@ export default function GuideProfilePage() {
     {/* ══ OFFER SUSTAINABILITY QUESTIONNAIRE ═══════════════════════════════ */}
     {oqOpen && (() => {
       const oqScore = Object.values(oqAnswers).reduce((s, v) => s + v, 0);
-      const oqCurrentStep = OFFER_SUSTAINABILITY_STEPS[oqStep];
+      const oqSteps = oqKind === "circuit" ? CIRCUIT_SUSTAINABILITY_STEPS : OFFER_SUSTAINABILITY_STEPS;
+      const oqCurrentStep = oqSteps[oqStep];
       const oqStepAnswered = oqCurrentStep ? oqCurrentStep.questions.every((q) => q.id in oqAnswers) : false;
       return (
         <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
           <div className="bg-white rounded-3xl w-full max-w-lg shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
             <div className="px-7 pt-7 pb-5 border-b border-slate-100 shrink-0">
-              <p className="text-[10px] font-black tracking-widest text-slate-400 uppercase mb-1">Évaluation de durabilité — Offre</p>
+              <p className="text-[10px] font-black tracking-widest text-slate-400 uppercase mb-1">Évaluation de durabilité — {oqKind === "circuit" ? "Circuit" : "Offre"}</p>
               <h2 className="text-xl font-extrabold text-slate-800 flex items-center gap-2">
-                {oqStep < OFFER_SUSTAINABILITY_STEPS.length
-                  ? <><span className="material-symbols-outlined align-middle text-primary" style={{ fontSize: 22 }}>{OFFER_SUSTAINABILITY_STEPS[oqStep].icon}</span> {OFFER_SUSTAINABILITY_STEPS[oqStep].category}</>
+                {oqStep < oqSteps.length
+                  ? <><span className="material-symbols-outlined align-middle text-primary" style={{ fontSize: 22 }}>{oqSteps[oqStep].icon}</span> {oqSteps[oqStep].category}</>
                   : <><span className="material-symbols-outlined align-middle text-primary" style={{ fontSize: 22 }}>flag</span> Résultat</>}
               </h2>
-              {oqStep < OFFER_SUSTAINABILITY_STEPS.length && (
-                <p className="text-sm text-slate-500 mt-1">{OFFER_SUSTAINABILITY_STEPS[oqStep].description}</p>
+              {oqStep < oqSteps.length && (
+                <p className="text-sm text-slate-500 mt-1">{oqSteps[oqStep].description}</p>
               )}
               <div className="flex gap-1.5 mt-4">
-                {OFFER_SUSTAINABILITY_STEPS.map((_, i) => (
+                {oqSteps.map((_, i) => (
                   <div key={i} className={`h-1.5 flex-1 rounded-full transition-all duration-300 ${i < oqStep ? "bg-primary" : i === oqStep ? "bg-primary/60" : "bg-slate-100"}`} />
                 ))}
               </div>
               <p className="text-[10px] font-bold text-slate-400 mt-1.5">
-                {oqStep < OFFER_SUSTAINABILITY_STEPS.length ? `Étape ${oqStep + 1} / ${OFFER_SUSTAINABILITY_STEPS.length}` : "Toutes les étapes complétées"}
+                {oqStep < oqSteps.length ? `Étape ${oqStep + 1} / ${oqSteps.length}` : "Toutes les étapes complétées"}
               </p>
             </div>
             <div className="overflow-y-auto flex-1 px-7 py-5">
-              {oqStep < OFFER_SUSTAINABILITY_STEPS.length ? (
+              {oqStep < oqSteps.length ? (
                 <div className="space-y-5">
-                  {OFFER_SUSTAINABILITY_STEPS[oqStep].questions.map((q) => (
+                  {oqSteps[oqStep].questions.map((q) => (
                     <div key={q.id}>
                       <p className="text-sm font-bold text-slate-700 mb-2">{q.text}</p>
                       <div className="space-y-2">
@@ -3626,11 +3735,11 @@ export default function GuideProfilePage() {
                       </button>
                     )}
                     <button
-                      onClick={() => { if (oqStep === OFFER_SUSTAINABILITY_STEPS.length - 1) { setOqStep((s) => s + 1); submitOfferQuestionnaire(); } else { setOqStep((s) => s + 1); } }}
+                      onClick={() => { if (oqStep === oqSteps.length - 1) { setOqStep((s) => s + 1); submitOfferQuestionnaire(); } else { setOqStep((s) => s + 1); } }}
                       disabled={!oqStepAnswered}
                       className={`flex-1 py-3 font-extrabold rounded-xl flex items-center justify-center gap-2 transition-all ${oqStepAnswered ? "bg-primary text-slate-900 hover:bg-primary/90" : "bg-slate-100 text-slate-400 cursor-not-allowed"}`}
                     >
-                      {oqStep === OFFER_SUSTAINABILITY_STEPS.length - 1 ? "Voir mon score" : "Suivant"}<ChevronRight size={16} />
+                      {oqStep === oqSteps.length - 1 ? "Voir mon score" : "Suivant"}<ChevronRight size={16} />
                     </button>
                   </div>
                 </div>
@@ -3652,7 +3761,7 @@ export default function GuideProfilePage() {
                       <p className="text-sm text-slate-500 mt-1 text-center">{oqScore >= 71 ? "Votre offre est éco-responsable. Excellent !" : oqScore >= 51 ? "Votre offre est sur la bonne voie. Continuez vos efforts !" : "Des améliorations sont possibles pour cette offre."}</p>
                     </div>
                     <div className="space-y-3 mb-4">
-                      {OFFER_SUSTAINABILITY_STEPS.map((step) => {
+                      {oqSteps.map((step) => {
                         const catScore = step.questions.reduce((sum, q) => sum + (oqAnswers[q.id] ?? 0), 0);
                         const catMax = step.questions.reduce((sum, q) => sum + Math.max(...q.options.map((o) => o.value)), 0);
                         return (

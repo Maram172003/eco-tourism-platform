@@ -4,6 +4,7 @@ import { useEffect, useState, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { Leaf } from "lucide-react";
 import { apiFetch } from "@/lib/api";
+import { monTableauDeBord } from "@/lib/dashboard-path";
 
 type Notif = { id: string; type: string; data: Record<string, any>; is_read: boolean; created_at: string };
 type Filter = "unread" | "read";
@@ -236,7 +237,7 @@ export default function NotificationsPage() {
     // Le refus de profil ne pointe vers aucune ressource : on renvoie vers le
     // tableau de bord, où le bandeau détaille le motif et le délai.
     if (n.type === "profile_rejected") {
-      router.push("/dashboard");
+      router.push(monTableauDeBord());
       return;
     }
 

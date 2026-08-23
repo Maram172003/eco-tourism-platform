@@ -1095,6 +1095,8 @@ export class CircuitService {
           circuit_cover: circuit?.cover_image ?? null,
           circuit_status: circuitStatus,
           circuit_nb_jours: circuit?.nb_jours ?? null,
+          // Le collaborateur voit le score du circuit auquel il contribue.
+          circuit_sustainability_score: circuit?.sustainability_score ?? null,
           circuit_description: circuit?.description ?? null,
           circuit_nb_etapes: etapes.length,
           circuit_etapes_preview: etapesPreview,

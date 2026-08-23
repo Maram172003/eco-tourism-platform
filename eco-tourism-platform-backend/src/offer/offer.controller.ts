@@ -66,15 +66,19 @@ export class OfferController {
     return this.service.findById(id);
   }
 
+  // Les guides créent aussi des offres (via /guide/offers) : ils doivent pouvoir
+  // les évaluer. La propriété reste vérifiée dans le service.
   @ApiBearerAuth('bearer')
-  @Roles(Role.PROVIDER)
+  @Roles(Role.PROVIDER, Role.GUIDE)
   @Patch(':id/sustainability')
   updateSustainability(@Req() req: any, @Param('id') id: string, @Body() dto: OfferSustainabilityDto) {
     return this.service.updateOfferSustainability(req.user.sub, id, dto);
   }
 
+  // Le profil guide édite ses offres par cette route : la propriété est
+  // contrôlée dans le service, le rôle seul ne doit pas la fermer.
   @ApiBearerAuth('bearer')
-  @Roles(Role.PROVIDER)
+  @Roles(Role.PROVIDER, Role.GUIDE)
   @Patch(':id')
   update(@Req() req: any, @Param('id') id: string, @Body() dto: UpdateOfferDto) {
     return this.service.update(req.user.sub, id, dto);

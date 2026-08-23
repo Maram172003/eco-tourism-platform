@@ -219,6 +219,49 @@ export class AuthService {
         return { message: 'Mot de passe réinitialisé avec succès.' };
     }
 
+    /**
+     * Changement de mot de passe par un utilisateur connecté.
+     * L'ancien mot de passe est exigé : un jeton volé ne doit pas suffire à
+     * verrouiller le compte de son propriétaire.
+     */
+    /**
+     * Contrôle du mot de passe actuel, partagé par les deux étapes du
+     * changement : la vérification préalable et la modification elle-même.
+     * Renvoie l'utilisateur pour éviter de le relire ensuite.
+     */
+    private async controlerMotDePasseActuel(userId: string, currentPassword: string) {
+        const user = await this.usersService.findById(userId);
+        if (!user) throw new BadRequestException('Compte introuvable.');
+
+        if (!user.password) {
+            throw new BadRequestException(
+                "Ce compte utilise une connexion externe : son mot de passe se change chez le fournisseur d'identité.",
+            );
+        }
+
+        const valide = await bcrypt.compare(currentPassword, user.password);
+        if (!valide) throw new BadRequestException('Mot de passe actuel incorrect.');
+
+        return user;
+    }
+
+    /** Étape 1 : l'utilisateur prouve qu'il connaît son mot de passe actuel. */
+    async verifyCurrentPassword(userId: string, currentPassword: string) {
+        await this.controlerMotDePasseActuel(userId, currentPassword);
+        return { verified: true };
+    }
+
+    async changePassword(userId: string, currentPassword: string, newPassword: string) {
+        const user = await this.controlerMotDePasseActuel(userId, currentPassword);
+
+        if (currentPassword === newPassword) {
+            throw new BadRequestException("Le nouveau mot de passe doit différer de l'ancien.");
+        }
+
+        await this.usersService.updatePassword(user.id, await bcrypt.hash(newPassword, 10));
+        return { message: 'Mot de passe modifié avec succès.' };
+    }
+
     async googleLogin(googleUser: any) {
         let user = await this.usersService.findByEmail(googleUser.email);
 
@@ -252,13 +295,20 @@ export class AuthService {
     private getDashboardPathByRole(role: Role): string {
         switch (role) {
             case Role.ECO_TRAVELER:
-                return '/dashboard/ecovoyageur';
+                // `/dashboard` est le tableau de bord de l'éco-voyageur : il
+                // porte ses expériences et ses lieux, que `/dashboard/ecovoyageur`
+                // — une version antérieure — n'affiche pas.
+                return '/dashboard';
             case Role.PROVIDER:
                 return '/dashboard/provider';
             case Role.ADMIN:
                 return '/dashboard/admin';
             case Role.GUIDE:
                 return '/dashboard/guide';
+            case Role.PROJECT:
+                // Le porteur de projet a sa propre page ; le repli générique
+                // l'envoyait sur `/dashboard`, incohérent avec sa navigation.
+                return '/dashboard/project-owner';
             default:
                 return '/dashboard';
         }

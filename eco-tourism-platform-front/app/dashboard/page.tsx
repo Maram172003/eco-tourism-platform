@@ -6,11 +6,17 @@ import dynamic from "next/dynamic";
 import { Leaf, Plus, X, Check, MapPin, ArrowRight } from "lucide-react";
 import { logoutUser } from "@/lib/auth";
 import { apiFetch } from "@/lib/api";
+import BadgeGrid from "@/components/common/BadgeGrid";
+import { ECHELLE_PAR_ROLE } from "@/lib/constants/badges";
+import { cheminTableauDeBord } from "@/lib/dashboard-path";
 import OfferDetailView, { type OfferFull } from "@/components/offer/OfferDetailView";
 import CollaborationModal from "@/components/CollaborationModal";
 import SharedAddPublicationModal from "@/components/publication/AddPublicationModal";
 import ViewPublicationModal from "@/components/publication/ViewPublicationModal";
 import PubInteractions from "@/components/PubInteractions";
+import GuideProfilePage from "@/app/profile/guide/page";
+import ProjectOwnerProfilePage from "@/app/profile/project-owner/page";
+import BadgeChip from "@/components/common/BadgeChip";
 
 const MapPicker = dynamic(
   () => import("@/components/map/MapPicker"),
@@ -1003,6 +1009,13 @@ export default function DashboardPage() {
       try {
         const parsedUser = JSON.parse(storedUser) as { role: string };
         if (parsedUser.role === "admin") { router.push("/admin"); return; }
+
+        // Chaque rôle a désormais son propre tableau de bord. On n'atterrit ici
+        // que par un lien ancien, un signet ou l'historique : on renvoie vers
+        // le bon écran plutôt que d'afficher une seconde version générique.
+        const dedie = cheminTableauDeBord(parsedUser.role);
+        if (dedie !== "/dashboard") { router.replace(dedie); return; }
+
         const userRole = parsedUser.role as Role;
         if (!["eco_traveler", "guide", "project"].includes(userRole)) {
           router.push("/auth/login"); return;
@@ -1087,26 +1100,26 @@ export default function DashboardPage() {
         { label: "Lieux",           icon: "location_on",     action: () => setActiveItem("Lieux") },
         { label: "Séjour",          icon: "hotel",           action: () => router.push("/offers") },
         { label: "Réservations",    icon: "book_online",     action: () => router.push("/dashboard/ecovoyageur/reservations") },
-        { label: "Paramètres",      icon: "settings",        action: () => setActiveItem("Paramètres") },
+        { label: "Paramètres",      icon: "settings",        action: () => router.push("/dashboard/profile") },
       ]
     : role === "guide"
     ? [
         { label: "Tableau de bord", icon: "dashboard",      action: () => setActiveItem("Tableau de bord") },
         { label: "Explorer",        icon: "explore",         action: () => router.push("/explorer") },
         { label: "Offres",          icon: "storefront",      action: () => setActiveItem("Offres") },
-        { label: "Circuits",        icon: "route",           action: () => router.push("/profile/guide?tab=circuits") },
+        { label: "Circuits",        icon: "route",           action: () => router.push("/dashboard/guide?section=Circuits") },
         { label: "Réservations",    icon: "event_available", action: () => router.push("/reservations") },
         { label: "Avis",            icon: "star",            action: () => router.push("/profile/guide?tab=apropos") },
-        { label: "Paramètres",      icon: "settings",        action: () => setActiveItem("Paramètres") },
+        { label: "Paramètres",      icon: "settings",        action: () => router.push("/dashboard/profile") },
       ]
     : [
         { label: "Tableau de bord", icon: "dashboard",      action: () => setActiveItem("Tableau de bord") },
         { label: "Explorer",        icon: "explore",         action: () => router.push("/explorer") },
         { label: "Offres",          icon: "storefront",      action: () => setActiveItem("Offres") },
-        { label: "Circuits",        icon: "route",           action: () => router.push("/profile/provider?tab=circuits") },
+        { label: "Circuits",        icon: "route",           action: () => router.push("/dashboard/provider?section=Circuits") },
         { label: "Réservations",    icon: "event_available", action: () => router.push("/reservations") },
         { label: "Avis",            icon: "star",            action: () => router.push("/profile/provider?tab=apropos") },
-        { label: "Paramètres",      icon: "settings",        action: () => setActiveItem("Paramètres") },
+        { label: "Paramètres",      icon: "settings",        action: () => router.push("/dashboard/profile") },
       ];
 
   const score = profile?.sustainability_score ?? null;
@@ -1420,16 +1433,13 @@ export default function DashboardPage() {
           <header className="h-24 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md border-b border-primary/10 px-10 flex items-center justify-between sticky top-0 z-10">
             <div className="flex items-center gap-12 shrink-0">
               <h2 className="text-2xl font-bold whitespace-nowrap">
-                Bonjour, {profile.full_name || (role === "guide" ? "Guide" : role === "project" ? "Prestataire" : "Voyageur")} 👋
+                Bonjour, {profile.full_name || (role === "guide" ? "Guide" : role === "project" ? "Prestataire" : "Voyageur")}
               </h2>
-              <div className="flex items-center bg-slate-100 dark:bg-slate-800 rounded-full px-5 py-2 gap-2 whitespace-nowrap">
-                <span className="material-symbols-outlined text-primary text-base">
-                  {role === "project" ? "domain_verification" : "verified_user"}
-                </span>
-                <span className="text-sm font-semibold">
-                  {score !== null ? getScoreLabel(score, role) : role === "eco_traveler" ? "Nouveau voyageur" : "Évaluation en attente"}
-                </span>
-              </div>
+              <BadgeChip
+                role={role ?? ""}
+                icon={role === "project" ? "domain_verification" : "verified_user"}
+                fallback={score !== null ? getScoreLabel(score, role) : role === "eco_traveler" ? "Nouveau voyageur" : "Évaluation en attente"}
+              />
             </div>
 
             <div className="flex items-center gap-6 flex-1 justify-end">
@@ -2027,54 +2037,39 @@ export default function DashboardPage() {
                   <div>
                     <h3 className="text-xl font-bold mb-6">Mes Badges</h3>
                     <div className="bg-white dark:bg-slate-900 rounded-2xl p-6 border border-primary/10">
-                      <div className="grid grid-cols-2 gap-4">
-                        {badgeConfig.map((config) => {
-                          const obtained = obtainedBadgeLabels.has(config.label);
-                          const obtainedData = profile.badges.find((b) => b.label === config.label);
-                          return (
-                            <div key={config.label}
-                              title={obtained && obtainedData ? `Obtenu le ${new Date(obtainedData.obtained_at).toLocaleDateString("fr-FR")}` : config.description}
-                              className={`flex flex-col items-center text-center p-4 rounded-xl border-2 transition-all ${obtained ? "bg-slate-50 dark:bg-slate-800 border-primary/20" : "bg-slate-100/50 dark:bg-slate-800/50 border-dashed border-slate-200 dark:border-slate-700"}`}>
-                              <div className="size-16 flex items-center justify-center mb-2">
-                                <span className={`material-symbols-outlined text-4xl transition-all ${obtained ? "text-primary" : "text-slate-300"}`}
-                                  style={obtained ? { fontVariationSettings: '"FILL" 1' } : {}}>
-                                  {config.icon}
-                                </span>
+                      {ECHELLE_PAR_ROLE[role ?? ""] ? (
+                        <>
+                          <BadgeGrid role={role ?? ""} details={false} />
+                          <a href="/dashboard/profile?onglet=badges" className="mt-3 inline-flex items-center gap-1 text-[11px] font-bold text-primary hover:underline">Voir le détail des paliers →</a>
+                        </>
+                      ) : (
+                        /* Porteur de projet : barème non encore défini, ancienne grille conservée. */
+  <div className="grid grid-cols-2 gap-4">
+                          {badgeConfig.map((config) => {
+                            const obtained = obtainedBadgeLabels.has(config.label);
+                            const obtainedData = profile.badges.find((b) => b.label === config.label);
+                            return (
+                              <div key={config.label}
+                                title={obtained && obtainedData ? `Obtenu le ${new Date(obtainedData.obtained_at).toLocaleDateString("fr-FR")}` : config.description}
+                                className={`flex flex-col items-center text-center p-4 rounded-xl border-2 transition-all ${obtained ? "bg-slate-50 dark:bg-slate-800 border-primary/20" : "bg-slate-100/50 dark:bg-slate-800/50 border-dashed border-slate-200 dark:border-slate-700"}`}>
+                                <div className="size-16 flex items-center justify-center mb-2">
+                                  <span className={`material-symbols-outlined text-4xl transition-all ${obtained ? "text-primary" : "text-slate-300"}`}
+                                    style={obtained ? { fontVariationSettings: '"FILL" 1' } : {}}>
+                                    {config.icon}
+                                  </span>
+                                </div>
+                                <p className={`text-xs font-bold ${obtained ? "text-slate-700" : "text-slate-300"}`}>{config.label}</p>
+                                <p className={`text-[10px] font-bold uppercase mt-1 ${obtained ? "text-green-500" : "text-slate-300"}`}>
+                                  {obtained ? "Débloqué" : "Verrouillé"}
+                                </p>
+                                {!obtained && <p className="text-[9px] text-slate-300 mt-1 italic">{config.description}</p>}
                               </div>
-                              <p className={`text-xs font-bold ${obtained ? "text-slate-700" : "text-slate-300"}`}>{config.label}</p>
-                              <p className={`text-[10px] font-bold uppercase mt-1 ${obtained ? "text-green-500" : "text-slate-300"}`}>
-                                {obtained ? "Débloqué" : "Verrouillé"}
-                              </p>
-                              {!obtained && <p className="text-[9px] text-slate-300 mt-1 italic">{config.description}</p>}
-                            </div>
-                          );
-                        })}
-                      </div>
+                            );
+                          })}
+                        </div>
+                      )}
 
-                      {/* Engagement footer */}
-                      <div className="mt-5 pt-4 border-t border-slate-100 dark:border-slate-800 grid grid-cols-3 gap-2 text-center">
-                        {role === "eco_traveler" && (
-                          <>
-                            <div><p className="text-lg font-extrabold text-slate-800 dark:text-slate-100">{profile.feedback_given ?? 0}</p><p className="text-[10px] text-slate-400 font-bold uppercase">Feedbacks</p></div>
-                            <div><p className="text-lg font-extrabold text-slate-800 dark:text-slate-100">{publications.filter((p) => p.type === "experience").length}</p><p className="text-[10px] text-slate-400 font-bold uppercase">Expériences</p></div>
-                            <div><p className="text-lg font-extrabold text-slate-800 dark:text-slate-100">{profile.reservations_made ?? 0}</p><p className="text-[10px] text-slate-400 font-bold uppercase">Réservations</p></div>
-                          </>
-                        )}
-                        {role === "guide" && (
-                          <>
-                            <div><p className="text-lg font-extrabold text-slate-800 dark:text-slate-100">{profile.feedback_received ?? 0}</p><p className="text-[10px] text-slate-400 font-bold uppercase">Avis</p></div>
-                            <div><p className="text-lg font-extrabold text-slate-800 dark:text-slate-100">{profile.years_experience ?? 0}</p><p className="text-[10px] text-slate-400 font-bold uppercase">Années</p></div>
-                            <div><p className="text-lg font-extrabold text-slate-800 dark:text-slate-100">{profile.reservations_handled ?? 0}</p><p className="text-[10px] text-slate-400 font-bold uppercase">Circuits</p></div>
-                          </>
-                        )}
-                        {role === "project" && (
-                          <>
-                            <div><p className="text-lg font-extrabold text-slate-800 dark:text-slate-100">{profile.feedback_received ?? 0}</p><p className="text-[10px] text-slate-400 font-bold uppercase">Avis</p></div>
-                            <div><p className="text-lg font-extrabold text-slate-800 dark:text-slate-100">{profile.projects?.length ?? 0}</p><p className="text-[10px] text-slate-400 font-bold uppercase">Projets</p></div>
-                            <div><p className="text-lg font-extrabold text-slate-800 dark:text-slate-100">{profile.total_reservations ?? 0}</p><p className="text-[10px] text-slate-400 font-bold uppercase">Réserv.</p></div>
-                          </>
-                        )}
-                      </div>
+                      
                     </div>
                   </div>
                 </div>
@@ -2316,65 +2311,14 @@ export default function DashboardPage() {
             })()}
 
             {/* ── Mes Offres (guide + project) ─────────────────────────── */}
-            {(role === "guide" || role === "project") && activeItem === "Offres" && (
-              <div>
-                <div className="flex items-center justify-between mb-6">
-                  <h3 className="text-xl font-bold">Mes Offres</h3>
-                  <button onClick={() => setShowAddOffer(true)}
-                    className="flex items-center gap-2 px-5 py-2.5 bg-primary text-slate-900 font-bold rounded-xl shadow-lg shadow-primary/20 hover:-translate-y-0.5 transition-all text-sm">
-                    <Plus className="w-4 h-4" />Ajouter une offre
-                  </button>
-                </div>
-
-                {offers.length === 0 ? (
-                  <div className="bg-white dark:bg-slate-900 rounded-2xl border border-dashed border-slate-200 p-12 flex flex-col items-center justify-center text-center">
-                    <span className="material-symbols-outlined text-5xl text-slate-300 mb-3">sell</span>
-                    <p className="font-bold text-slate-500">Aucune offre publiée</p>
-                    <p className="text-sm text-slate-400 mt-1">Créez votre première offre pour la rendre visible sur votre profil.</p>
-                    <button onClick={() => setShowAddOffer(true)} className="mt-4 px-5 py-2.5 bg-primary/10 text-primary font-bold rounded-xl text-sm hover:bg-primary/20 transition-colors">
-                      Créer une offre
-                    </button>
-                  </div>
-                ) : (
-                  <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
-                    {offers.map((offer) => {
-                      const offerTypes = role === "guide" ? GUIDE_OFFER_TYPES : PROJ_OFFER_TYPES;
-                      const typeLabel = offerTypes.find((t) => t.value === offer.offer_type)?.label;
-                      const typeIcon = role === "guide" ? (GUIDE_OFFER_TYPES.find((t) => t.value === offer.offer_type) as any)?.icon ?? "sell" : "sell";
-                      return (
-                        <div key={offer.id} className="bg-white dark:bg-slate-900 rounded-2xl border border-primary/5 p-5 flex flex-col gap-3">
-                          <div className="flex items-start justify-between gap-2">
-                            <div className="flex items-center gap-3">
-                              <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center flex-shrink-0">
-                                <span className="material-symbols-outlined text-primary text-lg">{typeIcon}</span>
-                              </div>
-                              <div>
-                                <p className="font-extrabold text-slate-900 dark:text-slate-100 leading-tight">{offer.title}</p>
-                                {typeLabel && <p className="text-xs font-bold text-primary mt-0.5">{typeLabel}</p>}
-                              </div>
-                            </div>
-                            <button onClick={() => handleDeleteOffer(offer.id)} className="w-7 h-7 flex items-center justify-center rounded-lg hover:bg-red-50 text-slate-400 hover:text-red-500 transition-colors flex-shrink-0">
-                              <X className="w-4 h-4" />
-                            </button>
-                          </div>
-                          {offer.description && <p className="text-sm text-slate-500 font-medium line-clamp-2">{offer.description}</p>}
-                          <div className="flex items-center gap-3 mt-auto pt-2 border-t border-slate-100 dark:border-slate-800">
-                            {offer.price !== null && <span className="text-sm font-extrabold text-slate-800 dark:text-slate-200">{offer.price} TND</span>}
-                            {offer.duration && (
-                              <span className="flex items-center gap-1 text-xs font-bold text-slate-500">
-                                <span className="material-symbols-outlined text-sm">schedule</span>{offer.duration}
-                              </span>
-                            )}
-                            <div className="ml-auto">
-                              <StatusBadge status={offer.status} reason={offer.rejection_reason} />
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
+            {/* ── Offres : l'interface du profil, montée ici ──────────────
+                 Même rendu que sur /dashboard/guide et /dashboard/provider :
+                 cartes complètes, score de durabilité, interactions. */}
+            {role === "guide" && activeItem === "Offres" && (
+              <GuideProfilePage embedded forcedTab="offres" />
+            )}
+            {role === "project" && activeItem === "Offres" && (
+              <ProjectOwnerProfilePage embedded forcedTab="offres" />
             )}
 
             {/* ── Mes Projets tab (project only) ───────────────────────── */}

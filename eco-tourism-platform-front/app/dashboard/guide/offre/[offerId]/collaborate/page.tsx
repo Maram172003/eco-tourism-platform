@@ -5,6 +5,7 @@ import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { Leaf } from "lucide-react";
 import { apiFetch } from "@/lib/api";
 import OfferDetailView, { type OfferFull } from "@/components/offer/OfferDetailView";
+import { monTableauDeBord } from "@/lib/dashboard-path";
 
 type SectionField = { key: string; label: string; type: "text" | "textarea" | "number"; placeholder?: string };
 
@@ -232,7 +233,7 @@ export default function CollaboratePage() {
                           headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
                           body: JSON.stringify({ status: "declined" }),
                         });
-                        router.push("/dashboard");
+                        router.push(monTableauDeBord());
                       } catch { setError("Erreur."); }
                     }}
                     className="px-5 py-3 rounded-2xl border border-slate-200 text-slate-500 font-bold text-sm hover:bg-slate-50 transition-colors"

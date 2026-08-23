@@ -35,6 +35,10 @@ export class PublicationController {
   @Public() @Get('experiences')
   findAllExperiences() { return this.service.findAllExperiences(); }
 
+  // Les lieux validés, pour la carte publique de l'accueil.
+  @Public() @Get('places')
+  findAllPublicPlaces() { return this.service.findAllPublicPlaces(); }
+
   @Public() @Get('author/:authorId')
   findByAuthor(@Param('authorId') authorId: string) { return this.service.findPublicByAuthor(authorId); }
 

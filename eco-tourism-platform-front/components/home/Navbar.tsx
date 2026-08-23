@@ -48,19 +48,19 @@ export default function Navbar({
               Destinations
             </Link>
             <Link
-              href="#"
+              href="/#comment-ca-marche"
               className="text-sm font-semibold hover:text-primary transition-colors"
             >
               Comment ça marche
             </Link>
             <Link
-              href="#"
+              href="/#publications"
               className="text-sm font-semibold hover:text-primary transition-colors"
             >
               Projets Éco
             </Link>
             <Link
-              href="#"
+              href="/#a-propos"
               className="text-sm font-semibold hover:text-primary transition-colors"
             >
               À propos

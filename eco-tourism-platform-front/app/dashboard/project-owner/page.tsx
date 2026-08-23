@@ -472,7 +472,7 @@ export default function ProjectOwnerDashboardPage() {
           <header className="h-24 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md border-b border-primary/10 px-10 flex items-center justify-between sticky top-0 z-10">
             <div className="flex items-center gap-12 shrink-0">
               <h2 className="text-2xl font-bold whitespace-nowrap">
-                Bonjour, {profile?.full_name || user?.full_name || "Prestataire"} 👋
+                Bonjour, {profile?.full_name || user?.full_name || "Prestataire"}
               </h2>
               <div className="flex items-center bg-slate-100 dark:bg-slate-800 rounded-full px-5 py-2 gap-2 whitespace-nowrap">
                 <span className="material-symbols-outlined text-primary text-base">domain_verification</span>
@@ -744,20 +744,7 @@ export default function ProjectOwnerDashboardPage() {
                     })}
                   </div>
 
-                  <div className="mt-5 pt-4 border-t border-slate-100 dark:border-slate-800 grid grid-cols-3 gap-2 text-center">
-                    <div>
-                      <p className="text-lg font-extrabold text-slate-800 dark:text-slate-100">{profile?.feedback_received ?? 0}</p>
-                      <p className="text-[10px] text-slate-400 font-bold uppercase">Avis</p>
-                    </div>
-                    <div>
-                      <p className="text-lg font-extrabold text-slate-800 dark:text-slate-100">{profile?.projects_count ?? 0}</p>
-                      <p className="text-[10px] text-slate-400 font-bold uppercase">Projets</p>
-                    </div>
-                    <div>
-                      <p className="text-lg font-extrabold text-slate-800 dark:text-slate-100">{profile?.total_reservations ?? 0}</p>
-                      <p className="text-[10px] text-slate-400 font-bold uppercase">Réserv.</p>
-                    </div>
-                  </div>
+                  
                 </div>
               </div>
             </div>

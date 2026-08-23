@@ -8,6 +8,7 @@ import {
   Calendar, Zap, CheckCircle, Info, Shield, UserCircle, Globe,
   Phone, Package, Tag,
 } from "lucide-react";
+import SustainabilityBadge from "@/components/common/SustainabilityBadge";
 
 interface Offer {
   id: string;
@@ -195,11 +196,7 @@ export default function OfferDetailPage() {
               {TYPE_ICONS[offer.offer_type]} {TYPE_LABELS[offer.offer_type] ?? offer.offer_type}
             </span>
           )}
-          {offer.sustainability_score !== null && (
-            <span className="bg-emerald-500/90 backdrop-blur-sm text-white rounded-full px-3 py-1 flex items-center gap-1 text-xs font-bold">
-              <Star size={11} fill="white" /> {offer.sustainability_score}/100
-            </span>
-          )}
+          <SustainabilityBadge score={offer.sustainability_score} kind="offer" variant="overlay" />
         </div>
         {hasDeposit && (
           <div className="absolute top-4 right-4 bg-amber-500 text-white rounded-full px-3 py-1 text-xs font-bold">

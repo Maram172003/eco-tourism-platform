@@ -7,6 +7,7 @@ import {
   MapPin, Clock, Users, Star, Leaf, Search, Filter, ArrowRight,
   ChevronLeft, Tag,
 } from "lucide-react";
+import SustainabilityBadge from "@/components/common/SustainabilityBadge";
 
 interface Offer {
   id: string;
@@ -233,12 +234,8 @@ function OfferCard({
             {typeIcon}
           </div>
         )}
-        {offer.sustainability_score !== null && (
-          <div className="absolute top-3 right-3 bg-white/90 backdrop-blur-sm rounded-full px-2 py-1 flex items-center gap-1 text-xs font-bold text-emerald-600">
-            <Star size={11} fill="currentColor" />
-            {offer.sustainability_score}
-          </div>
-        )}
+        <SustainabilityBadge score={offer.sustainability_score} kind="offer" variant="overlay"
+          className="absolute top-3 right-3" />
         {offer.offer_type && (
           <div className={`absolute top-3 left-3 rounded-full px-2 py-1 text-xs font-semibold ${typeColor}`}>
             {typeIcon} {typeLabel}

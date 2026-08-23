@@ -73,6 +73,40 @@ export class PublicationService {
     return this.repo.find({ where: { author_id: authorId, status: 'approved' }, order: { created_at: 'DESC' } });
   }
 
+  /**
+   * Les lieux validés, avec le nom de l'éco-voyageur qui les a ajoutés.
+   * Alimente la carte de la page d'accueil : seules les entrées géolocalisées
+   * sont renvoyées, une fiche sans coordonnées n'ayant rien à y faire.
+   */
+  async findAllPublicPlaces(): Promise<any[]> {
+    const places = await this.repo.find({
+      where: { type: 'place', status: 'approved' },
+      order: { created_at: 'DESC' },
+      take: 100,
+    });
+    const situes = places.filter((p) => p.latitude !== null && p.longitude !== null);
+    if (!situes.length) return [];
+
+    const auteurs = await this.ecoRepo.find({
+      where: { user_id: In(situes.map((p) => p.author_id)) },
+      select: ['user_id', 'full_name'],
+    });
+    const parId = new Map(auteurs.map((a) => [a.user_id, a.full_name]));
+
+    // Photo d'auteur volontairement omise : elle est stockée en base64 et
+    // pèserait une trentaine de kilo-octets par lieu, pour une vignette de carte.
+    return situes.map((p) => ({
+      id: p.id,
+      place_name: p.place_name ?? p.title,
+      description: p.description,
+      region: p.region,
+      image: p.images?.[0] ?? null,
+      latitude: Number(p.latitude),
+      longitude: Number(p.longitude),
+      author_name: parId.get(p.author_id) ?? null,
+    }));
+  }
+
   async findAllExperiences(): Promise<Publication[]> {
     return this.repo.find({ where: { type: 'experience', status: 'approved' }, order: { created_at: 'DESC' }, take: 12 });
   }

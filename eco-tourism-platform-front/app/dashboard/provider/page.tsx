@@ -5,6 +5,9 @@ import { useRouter } from "next/navigation";
 import { Leaf, Plus, CheckCircle, XCircle } from "lucide-react";
 import { logoutUser } from "@/lib/auth";
 import { apiFetch } from "@/lib/api";
+import BadgeGrid from "@/components/common/BadgeGrid";
+import ProviderProfilePage from "@/app/profile/provider/page";
+import BadgeChip from "@/components/common/BadgeChip";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -68,13 +71,6 @@ type Reservation = {
 };
 
 // ─── Constants ────────────────────────────────────────────────────────────────
-
-const BADGE_CONFIG = [
-  { label: "Prestataire Éco-Certifié", icon: "verified", description: "Onboarding complété" },
-  { label: "Ambassadeur Éco-Voyage", icon: "stars", description: "Score ≥ 80%" },
-  { label: "Expert Durable", icon: "domain_verification", description: "10 réservations gérées" },
-  { label: "Champion Durable", icon: "eco", description: "5 évaluations reçues" },
-];
 
 const PROVIDER_TYPE_LABELS: Record<string, string> = {
   guide: "Guide nature",
@@ -154,6 +150,16 @@ export default function ProviderDashboardPage() {
   const [reservations, setReservations] = useState<Reservation[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeItem, setActiveItem] = useState("Tableau de bord");
+
+  // ?section=Offres — arriver directement sur une section depuis une autre page.
+  // Lu dans un effet, pas dans l'initialiseur d'état : ce composant est aussi
+  // pré-rendu côté serveur, où `window` n'existe pas. React conserve alors la
+  // valeur du serveur lors de l'hydratation et ne rejoue pas l'initialiseur —
+  // la section demandée était donc ignorée à l'arrivée.
+  useEffect(() => {
+    const s = new URLSearchParams(window.location.search).get("section");
+    if (s === "Offres" || s === "Circuits") setActiveItem(s);
+  }, []);
   const [showScoreDetail, setShowScoreDetail] = useState(false);
   const [notifications, setNotifications] = useState<DashNotif[]>([]);
   const [notifOpen, setNotifOpen] = useState(false);
@@ -162,10 +168,10 @@ export default function ProviderDashboardPage() {
   const notifRef = useRef<HTMLDivElement>(null);
 
   const navItems = [
-    { label: "Tableau de bord", icon: "dashboard",      href: "/dashboard/provider" },
+    { label: "Tableau de bord", icon: "dashboard",      section: true as const },
     { label: "Explorer",        icon: "explore",         href: "/explorer" },
-    { label: "Offres",          icon: "storefront",      href: "/profile/provider?tab=offres" },
-    { label: "Circuits",        icon: "route",           href: "/profile/provider?tab=circuits" },
+    { label: "Offres",          icon: "storefront",      section: true as const },
+    { label: "Circuits",        icon: "route",           section: true as const },
     { label: "Réservations",    icon: "event_available", href: "/reservations" },
     { label: "Avis",            icon: "star",            href: "/profile/provider?tab=apropos" },
     { label: "Paramètres",      icon: "settings",        href: "/dashboard/profile" },
@@ -322,7 +328,6 @@ export default function ProviderDashboardPage() {
 
   const score = provider?.sustainability_score ?? null;
   const scoreWidth = score !== null ? `${score}%` : "0%";
-  const obtainedBadgeLabels = new Set((provider?.badges ?? []).map((b) => b.label));
   const approvedOffers = offers.filter((o) => o.status === "approved");
 
   if (loading || !provider) {
@@ -349,7 +354,22 @@ export default function ProviderDashboardPage() {
               {navItems.map((item) => (
                 <button
                   key={item.label}
-                  onClick={() => router.push(item.href)}
+                  onClick={() => {
+                    if ("section" in item) {
+                      setActiveItem(item.label);
+                      // L'adresse suit la section affichée : sans cela, un
+                      // ?section= hérité contredirait l'écran au rechargement.
+                      const url = item.label === "Tableau de bord"
+                        ? window.location.pathname
+                        : `${window.location.pathname}?section=${item.label}`;
+                      window.history.replaceState(null, "", url);
+                      // La section s'affiche en haut, pas à la position de défilement
+                      // héritée du tableau de bord.
+                      window.scrollTo({ top: 0 });
+                      return;
+                    }
+                    router.push(item.href!);
+                  }}
                   className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${
                     activeItem === item.label
                       ? "bg-primary/10 text-primary font-bold"
@@ -395,14 +415,9 @@ export default function ProviderDashboardPage() {
           <header className="h-24 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md border-b border-primary/10 px-10 flex items-center justify-between sticky top-0 z-10">
             <div className="flex items-center gap-12 shrink-0">
               <h2 className="text-2xl font-bold whitespace-nowrap">
-                Bonjour, {provider.full_name || user?.full_name || "Prestataire"} 👋
+                Bonjour, {provider.full_name || user?.full_name || "Prestataire"}
               </h2>
-              <div className="flex items-center bg-slate-100 dark:bg-slate-800 rounded-full px-5 py-2 gap-2 whitespace-nowrap">
-                <span className="material-symbols-outlined text-primary text-base">domain_verification</span>
-                <span className="text-sm font-semibold">
-                  {score !== null ? getScoreLabel(score) : "Prestataire — Évaluation en attente"}
-                </span>
-              </div>
+              <BadgeChip role="provider" icon="domain_verification" fallback={score !== null ? getScoreLabel(score) : "Prestataire — Évaluation en attente"} />
             </div>
 
             <div className="flex items-center gap-6 flex-1 justify-end">
@@ -565,6 +580,7 @@ export default function ProviderDashboardPage() {
 
           <div className="p-8">
 
+            {activeItem === "Tableau de bord" && (<>
             {/* Bannière questionnaire non complété */}
             {score === null && (
               <div className="mb-6 p-5 bg-primary/10 border border-primary/20 rounded-2xl flex items-center justify-between">
@@ -958,60 +974,26 @@ export default function ProviderDashboardPage() {
               <div>
                 <h3 className="text-xl font-bold mb-6">Mes Badges</h3>
                 <div className="bg-white dark:bg-slate-900 rounded-2xl p-6 border border-primary/10">
-                  <div className="grid grid-cols-2 gap-4">
-                    {BADGE_CONFIG.map((config) => {
-                      const obtained = obtainedBadgeLabels.has(config.label);
-                      const obtainedData = provider.badges?.find((b) => b.label === config.label);
-                      return (
-                        <div
-                          key={config.label}
-                          title={
-                            obtained && obtainedData
-                              ? `Obtenu le ${new Date(obtainedData.obtained_at).toLocaleDateString("fr-FR")}`
-                              : config.description
-                          }
-                          className={`flex flex-col items-center text-center p-4 rounded-xl border-2 transition-all ${
-                            obtained
-                              ? "bg-slate-50 dark:bg-slate-800 border-primary/20"
-                              : "bg-slate-100/50 dark:bg-slate-800/50 border-dashed border-slate-200 dark:border-slate-700"
-                          }`}
-                        >
-                          <div className="size-16 flex items-center justify-center mb-2">
-                            <span
-                              className={`material-symbols-outlined text-4xl transition-all ${obtained ? "text-primary" : "text-slate-300"}`}
-                              style={obtained ? { fontVariationSettings: '"FILL" 1' } : {}}
-                            >
-                              {config.icon}
-                            </span>
-                          </div>
-                          <p className={`text-xs font-bold ${obtained ? "text-slate-700" : "text-slate-300"}`}>{config.label}</p>
-                          <p className={`text-[10px] font-bold uppercase mt-1 ${obtained ? "text-green-500" : "text-slate-300"}`}>
-                            {obtained ? "Débloqué" : "Verrouillé"}
-                          </p>
-                          {!obtained && <p className="text-[9px] text-slate-300 mt-1 italic">{config.description}</p>}
-                        </div>
-                      );
-                    })}
-                  </div>
+                  <BadgeGrid role="provider" details={false} />
+                  <a href="/dashboard/profile?onglet=badges" className="mt-3 inline-flex items-center gap-1 text-[11px] font-bold text-primary hover:underline">Voir le détail des paliers →</a>
 
-                  <div className="mt-5 pt-4 border-t border-slate-100 dark:border-slate-800 grid grid-cols-3 gap-2 text-center">
-                    <div>
-                      <p className="text-lg font-extrabold text-slate-800 dark:text-slate-100">{provider.feedback_received ?? 0}</p>
-                      <p className="text-[10px] text-slate-400 font-bold uppercase">Avis</p>
-                    </div>
-                    <div>
-                      <p className="text-lg font-extrabold text-slate-800 dark:text-slate-100">{approvedOffers.length}</p>
-                      <p className="text-[10px] text-slate-400 font-bold uppercase">Offres</p>
-                    </div>
-                    <div>
-                      <p className="text-lg font-extrabold text-slate-800 dark:text-slate-100">{provider.total_reservations ?? reservations.length}</p>
-                      <p className="text-[10px] text-slate-400 font-bold uppercase">Réserv.</p>
-                    </div>
-                  </div>
+                  
                 </div>
               </div>
 
             </div>
+            </>)}
+
+            {/* ── Offres et Circuits : l'interface du profil, montée ici ──
+                 Les formulaires viennent avec, sans être dupliqués. */}
+            {activeItem === "Offres" && (
+              <ProviderProfilePage embedded forcedTab="offres" />
+            )}
+
+            {activeItem === "Circuits" && (
+              <ProviderProfilePage embedded forcedTab="circuits" />
+            )}
+
           </div>
         </main>
       </div>

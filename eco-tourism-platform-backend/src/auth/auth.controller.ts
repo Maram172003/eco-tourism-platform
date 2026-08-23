@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Post, Query, Req, Res, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Patch, Post, Query, Req, Res, UseGuards } from '@nestjs/common';
 import { Throttle, SkipThrottle } from '@nestjs/throttler';
 import { AuthService } from './auth.service';
 import { RegisterDto } from './dto/register.dto';
@@ -7,6 +7,8 @@ import { ApiTags } from '@nestjs/swagger';
 import { RefreshTokenDto } from './dto/refresh-token.dto';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
+import { ChangePasswordDto } from './dto/change-password.dto';
+import { VerifyPasswordDto } from './dto/verify-password.dto';
 import { Response } from 'express';
 import { Public } from '../common/decorators/public.decorator';
 import { GoogleAuthGuard } from '../common/guards/google-auth.guard';
@@ -72,6 +74,16 @@ export class AuthController {
     @Post('reset-password')
     async resetPassword(@Body() dto: ResetPasswordDto) {
         return this.authService.resetPassword(dto.token, dto.password);
+    }
+
+    @Post('verify-password')
+    async verifyPassword(@Req() req: any, @Body() dto: VerifyPasswordDto) {
+        return this.authService.verifyCurrentPassword(req.user.sub, dto.current_password);
+    }
+
+    @Patch('change-password')
+    async changePassword(@Req() req: any, @Body() dto: ChangePasswordDto) {
+        return this.authService.changePassword(req.user.sub, dto.current_password, dto.new_password);
     }
 
     @Post('logout')

@@ -6,6 +6,7 @@ import { ArrowRight, ArrowLeft, Check } from "lucide-react";
 import Navbar from "@/components/home/Navbar";
 import { apiFetch } from "@/lib/api";
 import { getConsistentSession } from "@/lib/auth";
+import { monTableauDeBord } from "@/lib/dashboard-path";
 
 // ─── Step components ───────────────────────────────────────────────────────────
 
@@ -260,7 +261,7 @@ export default function ProjectOwnerOnboardingPage() {
           headers: { Authorization: `Bearer ${getToken()}` },
         });
 
-        router.push("/dashboard");
+        router.push(monTableauDeBord());
         return;
       }
 

@@ -41,3 +41,6 @@ out/
 # Docker volumes / local data
 postgres_data/
 mongo_data/
+
+# Jeu de données de démonstration : contient des adresses e-mail réelles.
+database-seed/

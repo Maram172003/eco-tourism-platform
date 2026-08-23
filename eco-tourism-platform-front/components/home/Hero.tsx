@@ -1,9 +1,18 @@
 "use client";
 
-import { Search, Sparkles, Users } from "lucide-react";
+import { useState } from "react";
+import { useRouter } from "next/navigation";
+import { Search, Sparkles, ShieldCheck } from "lucide-react";
 import { motion } from "framer-motion";
 
 export default function Hero() {
+  const router = useRouter();
+  const [recherche, setRecherche] = useState("");
+  function lancerRecherche() {
+    const q = recherche.trim();
+    router.push(q ? `/destinations?q=${encodeURIComponent(q)}` : "/destinations");
+  }
+
   return (
     <section className="px-6 md:px-20 lg:px-40 py-12 md:py-20 max-w-[1440px] mx-auto">
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 items-center">
@@ -15,7 +24,7 @@ export default function Hero() {
         >
           <div className="inline-flex w-fit items-center gap-2 rounded-full bg-primary/10 px-4 py-1.5 text-xs font-bold uppercase tracking-wider text-primary dark:bg-primary/20">
             <Sparkles className="w-4 h-4" />
-            Nouveau : Éco-Score Voyageur
+            Écotourisme en Tunisie
           </div>
 
           <div className="flex flex-col gap-4">
@@ -23,11 +32,12 @@ export default function Hero() {
               Voyagez avec <span className="text-primary">sens</span> et respect.
             </h1>
             <p className="text-lg text-slate-600 dark:text-slate-400 max-w-lg leading-relaxed">
-              Découvrez des expériences uniques qui soutiennent les communautés locales,
-              protègent la biodiversité et minimisent votre empreinte carbone.
+              Offres et circuits proposés par des guides et des prestataires vérifiés,
+              chacun évalué sur 100 par un questionnaire de durabilité.
             </p>
           </div>
 
+          {/* ⚠︎ Barre de recherche — présentation inchangée. */}
           <div className="relative group max-w-xl">
             <div className="flex h-16 w-full items-center rounded-2xl bg-white dark:bg-slate-800 shadow-xl shadow-slate-200/50 dark:shadow-none border border-slate-100 dark:border-slate-700 p-2 overflow-hidden">
               <div className="flex items-center pl-4 text-slate-400 group-focus-within:text-primary transition-colors">
@@ -37,36 +47,19 @@ export default function Hero() {
                 className="h-full w-full border-none bg-transparent px-4 text-slate-900 dark:text-slate-100 placeholder:text-slate-400 focus:outline-none text-base font-medium"
                 placeholder="Quelle sera votre prochaine éco-aventure ?"
                 type="text"
+                value={recherche}
+                onChange={(e) => setRecherche(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter") lancerRecherche(); }}
               />
-              <button className="h-full px-6 rounded-xl bg-primary text-slate-900 font-bold hover:brightness-105 transition-all">
+              <button
+                onClick={lancerRecherche}
+                className="h-full px-6 rounded-xl bg-primary text-slate-900 font-bold hover:brightness-105 transition-all"
+              >
                 Rechercher
               </button>
             </div>
           </div>
 
-          <div className="flex items-center gap-6 pt-4">
-            <div className="flex -space-x-3">
-              {[1, 2, 3].map((i) => (
-                <div
-                  key={i}
-                  className="h-10 w-10 rounded-full border-2 border-white bg-slate-200 overflow-hidden"
-                >
-                  <img
-                    src={`https://picsum.photos/seed/user${i}/100/100`}
-                    alt="User"
-                    className="w-full h-full object-cover"
-                    referrerPolicy="no-referrer"
-                  />
-                </div>
-              ))}
-              <div className="flex h-10 w-10 items-center justify-center rounded-full border-2 border-white bg-primary text-[10px] font-bold text-slate-900">
-                +10k
-              </div>
-            </div>
-            <p className="text-sm font-medium text-slate-500">
-              Rejoignez 10,000+ voyageurs engagés
-            </p>
-          </div>
         </motion.div>
 
         <motion.div
@@ -90,14 +83,14 @@ export default function Hero() {
             className="absolute -bottom-6 -left-6 bg-white dark:bg-slate-800 p-6 rounded-2xl shadow-xl flex items-center gap-4 border border-slate-100 dark:border-slate-700"
           >
             <div className="h-12 w-12 rounded-xl bg-primary/20 flex items-center justify-center text-primary">
-              <Users className="w-6 h-6" />
+              <ShieldCheck className="w-6 h-6" />
             </div>
             <div>
               <p className="text-xs font-bold text-slate-400 uppercase tracking-tighter leading-none">
-                Impact direct
+                Score de durabilité
               </p>
               <p className="text-xl font-black text-slate-900 dark:text-slate-100">
-                84% reversé
+                Noté sur 100
               </p>
             </div>
           </motion.div>

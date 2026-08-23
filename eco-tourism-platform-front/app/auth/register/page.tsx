@@ -20,6 +20,12 @@ export default function RegisterPage() {
   }, []);
 
   const [role, setRole] = useState<"eco_traveler" | "provider" | "guide">("eco_traveler");
+
+  // Rôle présélectionné depuis l'accueil : /auth/register?role=guide.
+  useEffect(() => {
+    const r = new URLSearchParams(window.location.search).get("role");
+    if (r === "eco_traveler" || r === "provider" || r === "guide") setRole(r);
+  }, []);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);

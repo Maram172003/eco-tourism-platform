@@ -3,6 +3,7 @@
 import { Suspense, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { apiFetch } from "@/lib/api";
+import { monTableauDeBord } from "@/lib/dashboard-path";
 
 function AuthCallbackInner() {
   const router = useRouter();
@@ -48,13 +49,13 @@ function AuthCallbackInner() {
           if (!profile || !profile.is_onboarded) {
             router.push(onboardingRoute);
           } else {
-            router.push("/dashboard");
+            router.push(monTableauDeBord());
           }
         } catch {
           router.push(onboardingRoute);
         }
       } else {
-        router.push("/dashboard");
+        router.push(monTableauDeBord());
       }
     }
     init();

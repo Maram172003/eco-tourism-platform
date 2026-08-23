@@ -2,7 +2,7 @@ import { Leaf, Globe, MessageSquare } from "lucide-react";
 
 export default function Footer() {
   return (
-    <footer className="bg-white dark:bg-background-dark border-t border-slate-100 dark:border-slate-800 px-6 md:px-20 lg:px-40 py-16">
+    <footer id="a-propos" className="scroll-mt-24 bg-white dark:bg-background-dark border-t border-slate-100 dark:border-slate-800 px-6 md:px-20 lg:px-40 py-16">
       <div className="max-w-[1440px] mx-auto grid grid-cols-1 md:grid-cols-4 gap-12">
         <div className="flex flex-col gap-6">
           <div className="flex items-center gap-2 text-slate-900 dark:text-slate-100">
@@ -29,22 +29,23 @@ export default function Footer() {
         </div>
 
         <div>
-          <h4 className="font-bold mb-6 text-slate-900 dark:text-slate-100">Destinations</h4>
+          <h4 className="font-bold mb-6 text-slate-900 dark:text-slate-100">Explorer</h4>
           <ul className="space-y-4 text-sm text-slate-500 dark:text-slate-400">
-            <li><a className="hover:text-primary transition-colors" href="#">Europe Durable</a></li>
-            <li><a className="hover:text-primary transition-colors" href="#">Asie Éthique</a></li>
-            <li><a className="hover:text-primary transition-colors" href="#">Afrique Solidaire</a></li>
-            <li><a className="hover:text-primary transition-colors" href="#">Amérique Nature</a></li>
+            <li><a className="hover:text-primary transition-colors" href="/destinations">Toutes les destinations</a></li>
+            <li><a className="hover:text-primary transition-colors" href="/destinations?macro=nature">Nature</a></li>
+            <li><a className="hover:text-primary transition-colors" href="/destinations?macro=gastronomie">Gastronomie</a></li>
+            <li><a className="hover:text-primary transition-colors" href="/destinations?macro=artisanat">Artisanat</a></li>
+            <li><a className="hover:text-primary transition-colors" href="/destinations?macro=hebergement">Hébergement</a></li>
           </ul>
         </div>
 
         <div>
-          <h4 className="font-bold mb-6 text-slate-900 dark:text-slate-100">Ressources</h4>
+          <h4 className="font-bold mb-6 text-slate-900 dark:text-slate-100">Rejoindre</h4>
           <ul className="space-y-4 text-sm text-slate-500 dark:text-slate-400">
-            <li><a className="hover:text-primary transition-colors" href="#">Le Blog Éco</a></li>
-            <li><a className="hover:text-primary transition-colors" href="#">Calculateur Carbone</a></li>
-            <li><a className="hover:text-primary transition-colors" href="#">Guide du Voyageur</a></li>
-            <li><a className="hover:text-primary transition-colors" href="#">Certifications</a></li>
+            <li><a className="hover:text-primary transition-colors" href="/auth/register?role=eco_traveler">Devenir éco-voyageur</a></li>
+            <li><a className="hover:text-primary transition-colors" href="/auth/register?role=guide">Devenir guide</a></li>
+            <li><a className="hover:text-primary transition-colors" href="/auth/register?role=provider">Devenir prestataire</a></li>
+            <li><a className="hover:text-primary transition-colors" href="/auth/login">Se connecter</a></li>
           </ul>
         </div>
 
@@ -60,14 +61,11 @@ export default function Footer() {
 
       <div className="max-w-[1440px] mx-auto mt-16 pt-8 border-t border-slate-50 dark:border-slate-800 flex flex-col md:flex-row justify-between items-center gap-4">
         <p className="text-xs text-slate-400 font-medium">
-          © 2024 Éco-Voyage. Fièrement engagé pour la planète.
+          © 2026 Éco-Voyage. Fièrement engagé pour la planète.
         </p>
-        <div className="flex items-center gap-2">
-          <span className="h-2 w-2 rounded-full bg-primary animate-pulse"></span>
-          <span className="text-xs text-slate-400 font-medium">
-            Statut du système : Opérationnel
-          </span>
-        </div>
+        <a href="/destinations" className="text-xs font-bold text-primary hover:underline underline-offset-4">
+          Découvrir les offres et circuits
+        </a>
       </div>
     </footer>
   );

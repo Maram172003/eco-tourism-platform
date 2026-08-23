@@ -41,8 +41,9 @@ export class CircuitController {
     return this.service.findPublishedByUser(userId);
   }
 
-  @ApiBearerAuth('bearer')
-  @Roles(Role.ECO_TRAVELER, Role.GUIDE, Role.PROVIDER, Role.ADMIN)
+  // Ouvert aux visiteurs : `all-public` renvoie déjà ces mêmes circuits enrichis
+  // sans authentification, le détail n'expose donc rien de plus.
+  @Public()
   @Get(':id/public-detail')
   findPublicDetail(@Param('id') id: string) {
     return this.service.findPublicDetail(id);

@@ -6,6 +6,7 @@ import { Leaf, ArrowRight, ArrowLeft, Check } from "lucide-react";
 import { apiFetch } from "@/lib/api";
 import { MACRO_CATEGORIES, TAXONOMY_TAGS as ALL_TAXONOMY_TAGS } from "@/lib/constants/taxonomy-tags";
 import { getConsistentSession } from "@/lib/auth";
+import { monTableauDeBord } from "@/lib/dashboard-path";
 
 // ─── Étape 2 — Type de voyageur ───────────────────────────────────────────────
 // Slugs identiques à public_recommande (guide) et details.public_cible (prestataire)
@@ -519,7 +520,7 @@ export default function OnboardingPage() {
           headers: { Authorization: `Bearer ${getToken()}` },
         });
 
-        router.push("/dashboard");
+        router.push(monTableauDeBord());
         return;
       }
 
@@ -599,7 +600,7 @@ export default function OnboardingPage() {
 
           {step > 2 && (
             <div className="text-center mt-4">
-              <button type="button" onClick={() => router.push("/dashboard")}
+              <button type="button" onClick={() => router.push(monTableauDeBord())}
                 className="text-sm text-slate-400 hover:text-slate-600 font-medium transition-colors">
                 Passer cette étape →
               </button>

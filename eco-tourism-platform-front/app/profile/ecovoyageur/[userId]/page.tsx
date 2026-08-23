@@ -11,6 +11,7 @@ import dynamic from "next/dynamic";
 import { apiFetch } from "@/lib/api";
 import PubInteractions from "@/components/PubInteractions";
 import PlaceContributions, { type TopPhotoData, type TopDescData } from "@/components/PlaceContributions";
+import BadgeLabel from "@/components/common/BadgeLabel";
 
 const MapView = dynamic(() => import("@/components/map/MapView"), {
   ssr: false,
@@ -550,10 +551,7 @@ export default function PublicEcoTravelerProfile() {
                       }
                     </div>
                   </div>
-                  <div className="bg-primary text-white text-[10px] font-extrabold px-3 py-1 rounded-full flex items-center gap-1 shadow-md uppercase tracking-wider border border-white">
-                    <span className="material-symbols-outlined text-yellow-300" style={{ fontSize: 11 }}>star</span>
-                    {scoreLabel(profile.sustainability_score)}
-                  </div>
+                  <BadgeLabel role="eco_traveler" userId={userId} taille={11} />
                 </div>
                 <div className="text-center sm:text-left pb-1 min-w-0">
                   <div className="flex items-center justify-center sm:justify-start gap-2">

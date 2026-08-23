@@ -12,6 +12,7 @@ import PubInteractions from "@/components/PubInteractions";
 import PlaceContributions, { type TopPhotoData, type TopDescData } from "@/components/PlaceContributions";
 import OfferDetailView from "@/components/offer/OfferDetailView";
 import CircuitDetailView from "@/components/circuit/CircuitDetailView";
+import SustainabilityBadge from "@/components/common/SustainabilityBadge";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -57,6 +58,7 @@ type OfferFeed = {
 type CircuitFeed = {
   id: string; provider_id: string; title: string;
   description: string | null; nb_jours: number;
+  sustainability_score?: number | null;
   cover_image: string | null; etapes: any[]; owner_type: string;
   author_name: string | null; author_photo: string | null;
   org_name: string | null; org_logo: string | null;
@@ -200,30 +202,6 @@ function timeAgo(dateStr: string): string {
 
 // ─── Sustainability (dupliqué depuis destinations/page.tsx) ───────────────────
 
-function sustainabilityLevel(score: number) {
-  if (score >= 86) return { label: "Ambassadeur Éco Voyage", color: "text-primary",      bar: "bg-primary" };
-  if (score >= 71) return { label: "Éco-Responsable",        color: "text-emerald-600", bar: "bg-emerald-500" };
-  if (score >= 51) return { label: "Engagé",                 color: "text-teal-600",    bar: "bg-teal-500" };
-  if (score >= 31) return { label: "Sensibilisé",            color: "text-blue-600",    bar: "bg-blue-500" };
-  return              { label: "Conventionnel",               color: "text-slate-500",   bar: "bg-slate-400" };
-}
-
-function SustainabilityBar({ score }: { score: number | null }) {
-  if (score === null) return null;
-  const { label, color, bar } = sustainabilityLevel(score);
-  return (
-    <div className="mt-3 pt-3 border-t border-slate-100">
-      <div className="flex items-center justify-between mb-1">
-        <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider flex items-center gap-1">🌿 Durabilité</span>
-        <span className={`text-[10px] font-black ${color}`}>{score}/100</span>
-      </div>
-      <div className="w-full h-1.5 bg-slate-100 rounded-full overflow-hidden mb-1">
-        <div className={`h-full ${bar} rounded-full`} style={{ width: `${score}%` }} />
-      </div>
-      <span className={`text-[10px] font-bold ${color}`}>{label}</span>
-    </div>
-  );
-}
 
 // ─── Helpers offre ───────────────────────────────────────────────────────────
 
@@ -491,7 +469,7 @@ function OfferCard({ offer, onClick }: { offer: OfferFeed; onClick: () => void }
           </div>
         )}
 
-        <SustainabilityBar score={offer.sustainability_score} />
+        <SustainabilityBadge score={offer.sustainability_score} kind="offer" className="mt-3" />
 
         {/* Auteur */}
         {(offer.author_name || offer.org_name) && (
@@ -552,6 +530,7 @@ function CircuitCard({ circuit, onClick }: { circuit: CircuitFeed; onClick: () =
         </div>
       </div>
       <div className="p-5 flex flex-col flex-1">
+        <SustainabilityBadge score={circuit.sustainability_score} kind="circuit" className="mb-3 self-start" />
         <h3 className="font-extrabold text-slate-900 text-base mb-2 line-clamp-2 group-hover:text-primary transition-colors">{circuit.title}</h3>
         {circuit.description && (<p className="text-slate-500 text-sm line-clamp-2 leading-relaxed mb-3">{circuit.description}</p>)}
         {(circuit.author_name || circuit.org_name) && (() => {
@@ -639,6 +618,7 @@ function RecoCard({ item, onOpen }: { item: RecommendedItem; onOpen: () => void 
       </div>
       <div className="p-3 flex flex-col flex-1">
         <h4 className="font-extrabold text-slate-900 text-sm line-clamp-2 group-hover:text-primary transition-colors mb-2">{data.title}</h4>
+        <SustainabilityBadge score={data.sustainability_score} kind={isOffer ? "offer" : "circuit"} className="mb-2 self-start" />
         {authorName && (
           <div className="flex items-center gap-1.5 mb-2">
             {authorPhoto
@@ -948,14 +928,14 @@ export default function ExplorerPage() {
     role === "guide" ? [
       { label: "Tableau de bord", icon: "dashboard",      href: "/dashboard/guide" },
       { label: "Explorer",        icon: "explore",         href: "/explorer" },
-      { label: "Offres",          icon: "storefront",      href: "/profile/guide?tab=offres" },
-      { label: "Circuits",        icon: "route",           href: "/profile/guide?tab=circuits" },
+      { label: "Offres",          icon: "storefront",      href: "/dashboard/guide?section=Offres" },
+      { label: "Circuits",        icon: "route",           href: "/dashboard/guide?section=Circuits" },
       { label: "Réservations",    icon: "event_available", href: "/reservations" },
       { label: "Avis",            icon: "star",            href: "/profile/guide?tab=apropos" },
       { label: "Paramètres",      icon: "settings",        href: "/dashboard/profile" },
       { label: "Messagerie",      icon: "forum",           href: "/messagerie" },
     ] : role === "eco_traveler" ? [
-      { label: "Tableau de bord", icon: "dashboard",      href: "/dashboard/ecovoyageur" },
+      { label: "Tableau de bord", icon: "dashboard",      href: "/dashboard" },
       { label: "Explorer",        icon: "explore",         href: "/explorer" },
       { label: "Expériences",     icon: "auto_stories",   href: "/profile/ecovoyageur?tab=experiences" },
       { label: "Lieux",           icon: "location_on",    href: "/profile/ecovoyageur?tab=lieux" },
@@ -965,8 +945,8 @@ export default function ExplorerPage() {
     ] : [
       { label: "Tableau de bord", icon: "dashboard",      href: "/dashboard/provider" },
       { label: "Explorer",        icon: "explore",         href: "/explorer" },
-      { label: "Offres",          icon: "storefront",      href: "/profile/provider?tab=offres" },
-      { label: "Circuits",        icon: "route",           href: "/profile/provider?tab=circuits" },
+      { label: "Offres",          icon: "storefront",      href: "/dashboard/provider?section=Offres" },
+      { label: "Circuits",        icon: "route",           href: "/dashboard/provider?section=Circuits" },
       { label: "Réservations",    icon: "event_available", href: "/reservations" },
       { label: "Avis",            icon: "star",            href: "/profile/provider?tab=apropos" },
       { label: "Paramètres",      icon: "settings",        href: "/dashboard/profile" },

@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ChevronRight, ChevronLeft } from "lucide-react";
 import { apiFetch } from "@/lib/api";
+import { monTableauDeBord } from "@/lib/dashboard-path";
 
 type Answer = {
   id: string;
@@ -136,7 +137,7 @@ function ScoreCard({ result }: { result: ScoreResult }) {
       </div>
 
       <button
-        onClick={() => router.push("/dashboard")}
+        onClick={() => router.push(monTableauDeBord())}
         className="w-full max-w-md py-4 bg-primary text-slate-900 font-extrabold rounded-2xl shadow-lg shadow-primary/30 hover:-translate-y-0.5 transition-all flex items-center justify-center gap-2"
       >
         <span className="material-symbols-outlined">dashboard</span>
@@ -173,7 +174,7 @@ export default function GuideQuestionnairePage() {
         q.questions.sort((a, b) => a.question_order - b.question_order);
         q.questions.forEach((question) => question.answers.sort((a, b) => a.answer_order - b.answer_order));
       } catch {
-        router.push("/dashboard");
+        router.push(monTableauDeBord());
         return;
       }
 

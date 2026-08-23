@@ -1569,6 +1569,8 @@ export class GuideService {
           offer_description: (offer as any)?.description ?? contribData.offer_description ?? null,
           offer_cover: cover,
           offer_status: offerStatusResolved,
+          // Le collaborateur voit le score de l'offre à laquelle il contribue.
+          offer_sustainability_score: (offer as any)?.sustainability_score ?? null,
           guide_id: (offer as any)?.author_id ?? null,
         };
       }),

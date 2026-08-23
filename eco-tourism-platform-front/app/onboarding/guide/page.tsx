@@ -6,6 +6,7 @@ import { Leaf, ArrowRight, ArrowLeft, Check, Plus, X } from "lucide-react";
 import { apiFetch } from "@/lib/api";
 import dynamic from "next/dynamic";
 import { getConsistentSession } from "@/lib/auth";
+import { monTableauDeBord } from "@/lib/dashboard-path";
 
 const MultiLocationPicker = dynamic(
   () => import("@/components/map/MultiLocationPicker"),
@@ -754,7 +755,7 @@ export default function GuideOnboardingPage() {
           }),
         });
         await apiFetch("/guide/onboarded", { method: "POST", headers });
-        router.push("/dashboard");
+        router.push(monTableauDeBord());
         return;
       }
       setStep((s) => s + 1);

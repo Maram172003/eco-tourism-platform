@@ -11,6 +11,7 @@ import dynamic from "next/dynamic";
 import { PROVIDER_SCHEMA } from "@/lib/provider-schema";
 import CircuitViewContent from "@/components/circuit/CircuitViewContent";
 import OfferDetailView, { type OfferFull } from "@/components/offer/OfferDetailView";
+import SustainabilityBadge from "@/components/common/SustainabilityBadge";
 
 const MapView = dynamic(() => import("@/components/map/MapView"), { ssr: false, loading: () => <div className="h-[200px] rounded-xl bg-slate-100 animate-pulse" /> });
 
@@ -77,6 +78,7 @@ function LieuxMap({ lieux }: { lieux: string[] }) {
 import { apiFetch } from "@/lib/api";
 import PubInteractions from "@/components/PubInteractions";
 import { DOMAIN_CASCADE_CONFIG } from "@/lib/domainCascadeConfig";
+import BadgeLabel from "@/components/common/BadgeLabel";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -93,6 +95,8 @@ type PubCollab = {
   circuit_cover?: string | null;
   circuit_description?: string | null;
   circuit_nb_jours?: number | null;
+  circuit_sustainability_score?: number | null;
+  offer_sustainability_score?: number | null;
   circuit_nb_etapes?: number | null;
   circuit_status?: string | null;
   section: string;
@@ -272,20 +276,7 @@ function OfferCard({ offer, onClick }: { offer: Offer; onClick: () => void }) {
               </span>
             )}
           </div>
-          {offer.sustainability_score !== null && (
-            <div className="mb-1">
-              <div className="flex items-center justify-between mb-1">
-                <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Durabilité</span>
-                <span className="text-[10px] font-black text-primary">{offer.sustainability_score}/100</span>
-              </div>
-              <div className="w-full h-1.5 bg-slate-100 rounded-full overflow-hidden">
-                <div className="h-full bg-primary rounded-full transition-all" style={{ width: `${offer.sustainability_score}%` }} />
-              </div>
-              <span className={`mt-1 inline-block text-[10px] font-bold ${getOfferSustainabilityLevel(offer.sustainability_score).color}`}>
-                {getOfferSustainabilityLevel(offer.sustainability_score).emoji} {getOfferSustainabilityLevel(offer.sustainability_score).label}
-              </span>
-            </div>
-          )}
+          <SustainabilityBadge score={offer.sustainability_score} kind="offer" className="mb-1" />
         </div>
         <div className="flex items-center justify-end border-t border-slate-50 pt-4 mt-3">
           <span className="text-primary font-extrabold text-xs inline-flex items-center gap-1">
@@ -535,10 +526,7 @@ export default function PublicGuideProfile() {
                     {profile.photo ? <img src={profile.photo} alt={profile.full_name} className="w-full h-full object-cover" /> : <span className="material-symbols-outlined text-slate-400" style={{ fontSize: 56 }}>person</span>}
                   </div>
                 </div>
-                <div className="bg-primary text-white text-[10px] font-extrabold px-3 py-1 rounded-full flex items-center gap-1 shadow-md uppercase tracking-wider border border-white">
-                  <span className="material-symbols-outlined text-yellow-300" style={{ fontSize: 11 }}>star</span>
-                  {scoreLabel(profile.sustainability_score)}
-                </div>
+                <BadgeLabel role="guide" userId={userId} taille={11} />
               </div>
               <div className="text-center sm:text-left pt-3 sm:pt-0 pb-1">
                 <div className="flex items-center justify-center sm:justify-start gap-2">
@@ -819,6 +807,7 @@ export default function PublicGuideProfile() {
                                     <span className="flex items-center gap-1 text-[10px] font-black tracking-widest uppercase text-slate-500 bg-slate-100 px-2.5 py-1 rounded-xl">
                                       <MapPin size={10} />{etapes.length} étape{etapes.length !== 1 ? "s" : ""}
                                     </span>
+                                    <SustainabilityBadge score={circuit.sustainability_score} kind="circuit" />
                                   </div>
                                   {etapes.length > 0 && (
                                     <div className="mt-3 space-y-1">
@@ -884,6 +873,7 @@ export default function PublicGuideProfile() {
                                   {c.circuit_description && <p className="text-xs text-slate-500 mt-1 line-clamp-2">{c.circuit_description}</p>}
                                   <div className="flex flex-wrap gap-2 mt-3">
                                     {c.circuit_nb_jours && <span className="flex items-center gap-1 text-[10px] font-black tracking-widest uppercase text-primary bg-primary/10 px-2.5 py-1 rounded-xl"><Calendar size={10} />{c.circuit_nb_jours} jour{c.circuit_nb_jours > 1 ? "s" : ""}</span>}
+                <SustainabilityBadge score={c.source_type === "circuit" ? c.circuit_sustainability_score : c.offer_sustainability_score} kind={c.source_type === "circuit" ? "circuit" : "offer"} />
                                     {c.circuit_nb_etapes != null && c.circuit_nb_etapes > 0 && <span className="flex items-center gap-1 text-[10px] font-black tracking-widest uppercase text-slate-500 bg-slate-100 px-2.5 py-1 rounded-xl"><MapPin size={10} />{c.circuit_nb_etapes} étape{c.circuit_nb_etapes > 1 ? "s" : ""}</span>}
                                   </div>
                                   {c.message && <p className="mt-2 text-slate-400 text-xs leading-relaxed line-clamp-1 italic border-l-2 border-slate-200 pl-2">&ldquo;{c.message}&rdquo;</p>}
@@ -906,6 +896,7 @@ export default function PublicGuideProfile() {
                                     {c.offer_description && <p className="text-slate-500 text-sm leading-relaxed mb-3 line-clamp-2">{c.offer_description}</p>}
                                     {c.message && <p className="text-slate-400 text-xs leading-relaxed mb-3 line-clamp-2 italic border-l-2 border-slate-200 pl-3">&ldquo;{c.message}&rdquo;</p>}
                                     {sectionLabel && <div className="flex flex-wrap gap-2 mb-4"><span className="flex items-center gap-1.5 text-[11px] font-extrabold tracking-wider px-3 py-1 rounded-xl text-white bg-gradient-to-r from-emerald-600 to-green-500 uppercase">{sectionLabel}</span></div>}
+                                    <SustainabilityBadge score={c.offer_sustainability_score} kind="offer" className="mb-4" />
                                   </div>
                                   <div className="flex items-center justify-between border-t border-slate-50 pt-4 mt-3">
                                     <p className="text-[11px] font-bold text-slate-400">{new Date(c.created_at).toLocaleDateString("fr-FR", { day: "numeric", month: "long", year: "numeric" })}</p>
@@ -994,6 +985,7 @@ export default function PublicGuideProfile() {
                                 <span className="flex items-center gap-1 text-[10px] font-black tracking-widest uppercase text-slate-500 bg-slate-100 px-2.5 py-1 rounded-xl">
                                   <MapPin size={10} />{etapes.length} étape{etapes.length !== 1 ? "s" : ""}
                                 </span>
+                                <SustainabilityBadge score={circuit.sustainability_score} kind="circuit" />
                               </div>
                               {etapes.length > 0 && (
                                 <div className="mt-3 space-y-1">
@@ -1069,6 +1061,7 @@ export default function PublicGuideProfile() {
                                 {c.circuit_description && <p className="text-xs text-slate-500 mt-1 line-clamp-2">{c.circuit_description}</p>}
                                 <div className="flex flex-wrap gap-2 mt-3">
                                   {c.circuit_nb_jours && <span className="flex items-center gap-1 text-[10px] font-black tracking-widest uppercase text-primary bg-primary/10 px-2.5 py-1 rounded-xl"><Calendar size={10} />{c.circuit_nb_jours} jour{c.circuit_nb_jours > 1 ? "s" : ""}</span>}
+                                  <SustainabilityBadge score={c.source_type === "circuit" ? c.circuit_sustainability_score : c.offer_sustainability_score} kind={c.source_type === "circuit" ? "circuit" : "offer"} />
                                   {c.circuit_nb_etapes != null && c.circuit_nb_etapes > 0 && <span className="flex items-center gap-1 text-[10px] font-black tracking-widest uppercase text-slate-500 bg-slate-100 px-2.5 py-1 rounded-xl"><MapPin size={10} />{c.circuit_nb_etapes} étape{c.circuit_nb_etapes > 1 ? "s" : ""}</span>}
                                 </div>
                                 {c.message && <p className="mt-2 text-slate-400 text-xs leading-relaxed line-clamp-1 italic border-l-2 border-slate-200 pl-2">&ldquo;{c.message}&rdquo;</p>}
@@ -1091,6 +1084,7 @@ export default function PublicGuideProfile() {
                                   {c.offer_description && <p className="text-slate-500 text-sm leading-relaxed mb-3 line-clamp-2">{c.offer_description}</p>}
                                   {c.message && <p className="text-slate-400 text-xs leading-relaxed mb-3 line-clamp-2 italic border-l-2 border-slate-200 pl-3">&ldquo;{c.message}&rdquo;</p>}
                                   {sectionLabel && <div className="flex flex-wrap gap-2 mb-4"><span className="flex items-center gap-1.5 text-[11px] font-extrabold tracking-wider px-3 py-1 rounded-xl text-white bg-gradient-to-r from-emerald-600 to-green-500 uppercase">{sectionLabel}</span></div>}
+                                  <SustainabilityBadge score={c.offer_sustainability_score} kind="offer" className="mb-4" />
                                 </div>
                                 <div className="flex items-center justify-between border-t border-slate-50 pt-4 mt-3">
                                   <p className="text-[11px] font-bold text-slate-400">{new Date(c.created_at).toLocaleDateString("fr-FR", { day: "numeric", month: "long", year: "numeric" })}</p>

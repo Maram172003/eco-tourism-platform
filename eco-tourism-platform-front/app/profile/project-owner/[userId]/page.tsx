@@ -36,6 +36,7 @@ function LocMap({ lat, lng, address }: { lat: number | null; lng: number | null;
 }
 import { apiFetch } from "@/lib/api";
 import PubInteractions from "@/components/PubInteractions";
+import SustainabilityBadge from "@/components/common/SustainabilityBadge";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -243,20 +244,7 @@ function OfferCard({ offer, onClick }: { offer: Offer; onClick: () => void }) {
               </span>
             )}
           </div>
-          {offer.sustainability_score !== null && (
-            <div className="mb-1">
-              <div className="flex items-center justify-between mb-1">
-                <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Durabilité</span>
-                <span className="text-[10px] font-black text-primary">{offer.sustainability_score}/100</span>
-              </div>
-              <div className="w-full h-1.5 bg-slate-100 rounded-full overflow-hidden">
-                <div className="h-full bg-primary rounded-full transition-all" style={{ width: `${offer.sustainability_score}%` }} />
-              </div>
-              <span className={`mt-1 inline-block text-[10px] font-bold ${getOfferSustainabilityLevel(offer.sustainability_score).color}`}>
-                {getOfferSustainabilityLevel(offer.sustainability_score).emoji} {getOfferSustainabilityLevel(offer.sustainability_score).label}
-              </span>
-            </div>
-          )}
+          <SustainabilityBadge score={offer.sustainability_score} kind="offer" className="mb-1" />
         </div>
         <div className="flex items-center justify-end border-t border-slate-50 pt-4 mt-3">
           <span className="text-primary font-extrabold text-xs inline-flex items-center gap-1">
