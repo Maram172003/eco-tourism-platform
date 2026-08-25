@@ -706,7 +706,7 @@ function NewReservationContent() {
                     ) : (
                       <div className="space-y-2">
                         {sessions.map((s) => {
-                          const available = (s.capacity ?? offer.capacity ?? 0) - s.spots_taken;
+                          const available = (s.capacity ?? offer?.capacity ?? 0) - s.spots_taken;
                           const full = available <= 0;
                           return (
                             <button
@@ -855,10 +855,10 @@ function NewReservationContent() {
                   </div>
                 )}
 
-                {offer.cancellation_policy && (
+                {offer?.cancellation_policy && (
                   <div className="bg-amber-50 border border-amber-100 rounded-2xl p-4">
                     <p className="text-xs font-bold text-amber-800 mb-1">Politique d&apos;annulation</p>
-                    <p className="text-xs text-amber-700">{offer.cancellation_policy}</p>
+                    <p className="text-xs text-amber-700">{offer?.cancellation_policy}</p>
                   </div>
                 )}
               </div>
@@ -1044,7 +1044,7 @@ function NewReservationContent() {
                   <div className="space-y-3 text-sm">
                     <div className="flex justify-between text-slate-600">
                       <span>Offre</span>
-                      <span className="font-medium line-clamp-1 max-w-40 text-right">{offer.title}</span>
+                      <span className="font-medium line-clamp-1 max-w-40 text-right">{offer?.title}</span>
                     </div>
                     {chosenSubtypes.length > 0 && (
                       <div className="flex justify-between text-slate-600">
@@ -1115,8 +1115,8 @@ function NewReservationContent() {
                 </div>
 
                 {/* Mode de confirmation */}
-                <div className={`rounded-2xl p-4 border ${offer.confirmation_mode === "instant" ? "bg-amber-50 border-amber-100" : "bg-blue-50 border-blue-100"}`}>
-                  {offer.confirmation_mode === "instant" ? (
+                <div className={`rounded-2xl p-4 border ${offer?.confirmation_mode === "instant" ? "bg-amber-50 border-amber-100" : "bg-blue-50 border-blue-100"}`}>
+                  {offer?.confirmation_mode === "instant" ? (
                     <div className="flex items-center gap-2 text-amber-700">
                       <Zap size={16} />
                       <div>
