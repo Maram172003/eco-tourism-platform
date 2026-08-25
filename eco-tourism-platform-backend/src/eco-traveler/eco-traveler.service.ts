@@ -263,13 +263,17 @@ export class EcoTravelerService {
 
   async searchTravelers(query: string, currentUserId: string) {
     const q = query.trim();
-    if (!q) return [];
+    // Require at least 2 chars — never return a dump of all travelers
+    if (q.length < 2) return [];
+    const like = `%${q.toLowerCase()}%`;
     const results = await this.repo
       .createQueryBuilder('t')
-      .where('LOWER(t.full_name) LIKE :q', { q: `%${q.toLowerCase()}%` })
-      .andWhere('t.user_id != :me', { me: currentUserId })
+      .innerJoin('t.user', 'u')
+      .where('t.user_id != :me', { me: currentUserId })
+      .andWhere('u.role = :role', { role: 'eco_traveler' })
+      .andWhere('(LOWER(t.full_name) LIKE :like OR LOWER(u.email) LIKE :like)', { like })
       .select(['t.user_id', 't.full_name', 't.photo', 't.country', 't.sustainability_score'])
-      .limit(20)
+      .limit(10)
       .getMany();
     return results;
   }

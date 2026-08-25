@@ -3,6 +3,8 @@
 import { useEffect, useState } from "react";
 import { useRouter, useParams } from "next/navigation";
 import { apiFetch } from "@/lib/api";
+import { goToReservation } from "@/lib/auth";
+import { formatSubtypeLabel, formatOfferCapacityLabel, getBookingUnitPrice, hasSelectableFormulas, isPackageOffer, defaultPackageSubtypes } from "@/lib/offer-variant";
 import {
   MapPin, Clock, Users, Star, Leaf, ChevronLeft, ArrowRight,
   Calendar, Zap, CheckCircle, Info, Shield, UserCircle, Globe,
@@ -19,6 +21,10 @@ interface Offer {
   duration: string | null;
   offer_type: string | null;
   offer_subtype: string | null;
+  offer_mode?: string | null;
+  offer_subtypes?: string[] | null;
+  variant_pricing?: Record<string, number> | null;
+  price_display_from?: number | null;
   fulfillment_mode: string | null;
   confirmation_mode: string | null;
   capacity: number | null;
@@ -103,16 +109,14 @@ export default function OfferDetailPage() {
   const [sessions, setSessions] = useState<OfferSession[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeImage, setActiveImage] = useState(0);
-  const [user, setUser] = useState<{ role: string } | null>(null);
+  const [selectedSubtypes, setSelectedSubtypes] = useState<string[]>([]);
 
   useEffect(() => {
-    const stored = localStorage.getItem("user");
-    if (stored) setUser(JSON.parse(stored));
-
     if (!id) return;
     apiFetch<Offer>(`/offers/${id}`)
       .then((o) => {
         setOffer(o);
+        if (isPackageOffer(o)) setSelectedSubtypes(defaultPackageSubtypes(o));
         return Promise.all([
           apiFetch<Provider>(`/providers/${o.author_id}`).catch(() => null),
           (o.fulfillment_mode === "scheduled" || o.fulfillment_mode === "recurring")
@@ -152,13 +156,29 @@ export default function OfferDetailPage() {
     );
   }
 
-  const canReserve = user?.role === "eco_traveler";
-  const isProvider = user?.role === "provider";
+  const canReserve = true;
+  const isVariant = hasSelectableFormulas(offer);
+  const isPackage = isPackageOffer(offer);
+  const displayPrice = isVariant || isPackage
+    ? getBookingUnitPrice(offer, selectedSubtypes) ?? offer.price_display_from ?? offer.price
+    : offer.price;
+  const capacityLabel = formatOfferCapacityLabel(offer);
   const priceUnit = PRICE_UNIT[offer.price_type ?? "per_person"] ?? "/ pers.";
   const hasDeposit = offer.deposit_percentage && offer.deposit_percentage > 0;
-  const depositAmount = offer.price && hasDeposit ? (Number(offer.price) * offer.deposit_percentage!) / 100 : null;
+  const depositAmount = displayPrice && hasDeposit ? (Number(displayPrice) * offer.deposit_percentage!) / 100 : null;
 
   const futureSessions = sessions.filter((s) => new Date(s.date) >= new Date() && s.status !== "cancelled");
+
+  const goReserve = () => {
+    if (isVariant && selectedSubtypes.length === 0) return;
+    goToReservation(offer.id, selectedSubtypes.length ? selectedSubtypes : undefined);
+  };
+
+  function toggleSubtype(key: string) {
+    setSelectedSubtypes((prev) =>
+      prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key].sort(),
+    );
+  }
 
   return (
     <div className="min-h-screen bg-slate-50 pb-24">
@@ -170,8 +190,11 @@ export default function OfferDetailPage() {
           </button>
           <h1 className="font-bold text-slate-800 flex-1 text-sm line-clamp-1">{offer.title}</h1>
           {canReserve && (
-            <button onClick={() => router.push(`/reservations/new?offerId=${offer.id}`)}
-              className="flex items-center gap-1.5 px-4 py-2 bg-emerald-500 text-white rounded-xl text-sm font-bold hover:bg-emerald-600 shadow-sm">
+            <button
+              onClick={goReserve}
+              disabled={isVariant && selectedSubtypes.length === 0}
+              className="flex items-center gap-1.5 px-4 py-2 bg-emerald-500 text-white rounded-xl text-sm font-bold hover:bg-emerald-600 shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
+            >
               Réserver <ArrowRight size={14} />
             </button>
           )}
@@ -225,11 +248,14 @@ export default function OfferDetailPage() {
               )}
             </div>
             <div className="text-right flex-shrink-0">
-              {offer.price_type === "on_request" || !offer.price ? (
+              {offer.price_type === "on_request" || (!displayPrice && !isVariant) ? (
                 <span className="text-emerald-600 font-bold text-lg">Sur devis</span>
               ) : (
                 <>
-                  <span className="text-emerald-600 font-bold text-2xl">{Number(offer.price).toFixed(0)}</span>
+                  {isVariant && selectedSubtypes.length === 0 && (
+                    <p className="text-xs text-slate-400 mb-0.5">À partir de</p>
+                  )}
+                  <span className="text-emerald-600 font-bold text-2xl">{Number(displayPrice).toFixed(0)}</span>
                   <span className="text-slate-400 text-sm ml-1">TND {priceUnit}</span>
                 </>
               )}
@@ -270,6 +296,64 @@ export default function OfferDetailPage() {
             )}
           </div>
         </div>
+
+        {/* Formules (variant) */}
+        {isVariant && offer.variant_pricing && (
+          <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-5">
+            <h3 className="font-bold text-slate-800 mb-3 flex items-center gap-2">
+              <Package size={16} className="text-emerald-500" /> Formules disponibles
+            </h3>
+            <p className="text-xs text-slate-500 mb-4">
+              Sélectionnez une ou plusieurs formules. Le nombre de participants est celui de l&apos;offre
+              {capacityLabel ? ` (${capacityLabel.toLowerCase()}).` : "."}
+            </p>
+            <div className="space-y-2">
+              {Object.entries(offer.variant_pricing).map(([key, price]) => {
+                const selected = selectedSubtypes.includes(key);
+                return (
+                  <button
+                    key={key}
+                    type="button"
+                    onClick={() => toggleSubtype(key)}
+                    className={`w-full text-left px-4 py-3 rounded-xl border-2 transition-all flex items-center justify-between gap-3
+                      ${selected
+                        ? "border-emerald-500 bg-emerald-50"
+                        : "border-slate-100 hover:border-emerald-200"}`}
+                  >
+                    <div>
+                      <span className="font-semibold text-slate-800 text-sm block">
+                        {formatSubtypeLabel(key)}
+                      </span>
+                      {capacityLabel && (
+                        <span className="text-[11px] text-slate-400">{capacityLabel}</span>
+                      )}
+                    </div>
+                    <span className="text-sm font-bold text-emerald-600 whitespace-nowrap">
+                      {price.toFixed(0)} TND {priceUnit}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {isPackage && offer.variant_pricing && (
+          <div className="bg-emerald-50 rounded-2xl border border-emerald-100 p-5">
+            <h3 className="font-bold text-emerald-800 mb-2 flex items-center gap-2">
+              <Package size={16} /> Package tout inclus
+            </h3>
+            <ul className="text-sm text-emerald-700 space-y-1">
+              {Object.entries(offer.variant_pricing).map(([key, price]) => (
+                <li key={key} className="flex justify-between gap-2">
+                  <span>{formatSubtypeLabel(key)}</span>
+                  <span className="font-semibold">{price.toFixed(0)} TND</span>
+                </li>
+              ))}
+            </ul>
+            {capacityLabel && <p className="text-xs text-emerald-600 mt-2">{capacityLabel}</p>}
+          </div>
+        )}
 
         {/* Description */}
         {offer.description && (
@@ -432,29 +516,31 @@ export default function OfferDetailPage() {
       <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-slate-100 shadow-lg px-4 py-3 z-10">
         <div className="max-w-3xl mx-auto flex items-center justify-between gap-4">
           <div>
-            {offer.price_type === "on_request" || !offer.price ? (
+            {offer.price_type === "on_request" || (!displayPrice && !isVariant) ? (
               <p className="font-bold text-slate-800">Prix sur devis</p>
             ) : (
               <p className="font-bold text-slate-800">
-                <span className="text-emerald-600 text-xl">{Number(offer.price).toFixed(0)} TND</span>
+                {isVariant && selectedSubtypes.length === 0 && (
+                  <span className="text-slate-400 text-xs font-normal block">À partir de</span>
+                )}
+                <span className="text-emerald-600 text-xl">{Number(displayPrice).toFixed(0)} TND</span>
                 <span className="text-slate-400 text-sm font-normal"> {priceUnit}</span>
               </p>
             )}
             {hasDeposit && <p className="text-xs text-amber-600">Acompte {offer.deposit_percentage}% requis</p>}
+            {isVariant && selectedSubtypes.length === 0 && (
+              <p className="text-xs text-slate-400 mt-1">Choisissez une formule ci-dessus</p>
+            )}
           </div>
           {canReserve ? (
-            <button onClick={() => router.push(`/reservations/new?offerId=${offer.id}`)}
-              className="flex-1 max-w-56 py-3 bg-emerald-500 text-white font-bold rounded-2xl hover:bg-emerald-600 flex items-center justify-center gap-2 shadow-sm">
+            <button
+              onClick={goReserve}
+              disabled={isVariant && selectedSubtypes.length === 0}
+              className="flex-1 max-w-56 py-3 bg-emerald-500 text-white font-bold rounded-2xl hover:bg-emerald-600 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 shadow-sm"
+            >
               Réserver <ArrowRight size={16} />
             </button>
-          ) : isProvider ? (
-            <span className="text-xs text-slate-400 text-right">Mode prestataire</span>
-          ) : (
-            <button onClick={() => router.push("/auth/login")}
-              className="flex-1 max-w-56 py-3 bg-slate-700 text-white font-bold rounded-2xl hover:bg-slate-800 flex items-center justify-center gap-2">
-              Connexion pour réserver
-            </button>
-          )}
+          ) : null}
         </div>
       </div>
     </div>

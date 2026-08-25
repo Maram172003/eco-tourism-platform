@@ -1,10 +1,18 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
 import { ChevronLeft, ChevronRight, X } from "lucide-react";
 import OfferDetailView, { type OfferFull } from "@/components/offer/OfferDetailView";
 import CircuitViewContent from "@/components/circuit/CircuitViewContent";
+import { goToCircuitReservation, goToReservation } from "@/lib/auth";
+import {
+  formatSubtypeLabel,
+  formatOfferCapacityLabel,
+  getBookingUnitPrice,
+  hasSelectableFormulas,
+  isPackageOffer,
+  defaultPackageSubtypes,
+} from "@/lib/offer-variant";
 
 /**
  * Fenêtres de détail des offres et des circuits.
@@ -41,6 +49,11 @@ export type ModalOffer = OfferFull & {
   author_photo?: string | null;
   org_name?: string | null;
   org_logo?: string | null;
+  offer_mode?: string | null;
+  offer_subtypes?: string[] | null;
+  variant_pricing?: Record<string, number> | null;
+  price_display_from?: number | null;
+  capacity?: number | null;
 };
 
 export type ModalCircuit = {
@@ -50,6 +63,9 @@ export type ModalCircuit = {
   owner_type?: string | null;
   author_name?: string | null;
   author_photo?: string | null;
+  price?: number | null;
+  price_display_from?: number | null;
+  bookable_options?: Array<{ key: string; label: string; price_per_person: number }> | null;
   [k: string]: any;
 };
 
@@ -107,15 +123,26 @@ export function ImageGallery({ images, fallback }: { images: string[]; fallback:
 
 export function OfferModal({ offer, onClose }: { offer: ModalOffer; onClose: () => void }) {
   const isGuide = offer.author_type === "guide";
-  const router = useRouter();
+  const isVariant = hasSelectableFormulas(offer);
+  const isPackage = isPackageOffer(offer);
+  const [selectedSubtypes, setSelectedSubtypes] = useState<string[]>(() =>
+    isPackage ? defaultPackageSubtypes(offer) : [],
+  );
+  const capacityLabel = formatOfferCapacityLabel(offer);
+  const displayPrice =
+    isVariant || isPackage
+      ? getBookingUnitPrice(offer, selectedSubtypes) ?? offer.price_display_from ?? offer.price
+      : offer.price;
+
+  function toggleSubtype(key: string) {
+    setSelectedSubtypes((prev) =>
+      prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key].sort(),
+    );
+  }
 
   function handleReserve() {
-    const token = typeof window !== "undefined" ? localStorage.getItem("access_token") : null;
-    if (!token) {
-      router.push(`/auth/login?redirect=/reservations/new?offerId=${offer.id}`);
-    } else {
-      router.push(`/reservations/new?offerId=${offer.id}`);
-    }
+    if (isVariant && selectedSubtypes.length === 0) return;
+    goToReservation(offer.id, selectedSubtypes.length ? selectedSubtypes : undefined);
   }
 
   useFermetureModale(onClose);
@@ -172,21 +199,57 @@ export function OfferModal({ offer, onClose }: { offer: ModalOffer; onClose: () 
           max_group_size: offer.max_group_size,
           min_group_size: offer.min_group_size,
           min_age: offer.min_age,
+          capacity: offer.capacity,
           cancellation_policy: offer.cancellation_policy,
           inclusions: offer.inclusions,
+          offer_mode: offer.offer_mode,
+          offer_subtypes: offer.offer_subtypes,
+          variant_pricing: offer.variant_pricing,
+          price_display_from: offer.price_display_from,
           details: offer.details,
         }} />
 
+        {isVariant && offer.variant_pricing && (
+          <div className="px-6 pb-4">
+            <p className="text-xs font-bold text-slate-500 uppercase mb-2">Formules — sélection multiple</p>
+            <div className="space-y-2">
+              {Object.entries(offer.variant_pricing).map(([key, price]) => {
+                const selected = selectedSubtypes.includes(key);
+                return (
+                  <button
+                    key={key}
+                    type="button"
+                    onClick={() => toggleSubtype(key)}
+                    className={`w-full text-left px-4 py-3 rounded-xl border-2 flex justify-between gap-3 ${selected ? "border-primary bg-primary/5" : "border-slate-100"}`}
+                  >
+                    <div>
+                      <span className="text-sm font-bold text-slate-800">{formatSubtypeLabel(key)}</span>
+                      {capacityLabel && <span className="block text-[11px] text-slate-400">{capacityLabel}</span>}
+                    </div>
+                    <span className="text-sm font-bold text-primary">{price} TND</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
         <div className="flex items-center justify-between px-6 py-5 border-t border-slate-100">
-          {offer.price !== null ? (
+          {displayPrice !== null ? (
             <div>
-              <p className="text-xs text-slate-400 font-medium">À partir de</p>
-              <p className="text-3xl font-black text-slate-900">{offer.price} <span className="text-lg font-bold text-slate-400">TND</span></p>
+              <p className="text-xs text-slate-400 font-medium">
+                {isVariant && selectedSubtypes.length === 0 ? "À partir de" : "Total / pers."}
+              </p>
+              <p className="text-3xl font-black text-slate-900">{Number(displayPrice).toFixed(0)} <span className="text-lg font-bold text-slate-400">TND</span></p>
             </div>
           ) : (
             <p className="text-base font-semibold text-slate-400 italic">Prix sur demande</p>
           )}
-          <button onClick={handleReserve} className="h-12 px-8 rounded-xl bg-primary text-slate-900 font-extrabold hover:bg-primary/90 transition-colors text-sm">
+          <button
+            onClick={handleReserve}
+            disabled={isVariant && selectedSubtypes.length === 0}
+            className="h-12 px-8 rounded-xl bg-primary text-slate-900 font-extrabold hover:bg-primary/90 transition-colors text-sm disabled:opacity-50"
+          >
             Réserver cette offre
           </button>
         </div>
@@ -199,6 +262,8 @@ export function OfferModal({ offer, onClose }: { offer: ModalOffer; onClose: () 
 
 export function CircuitModal({ circuit, onClose }: { circuit: ModalCircuit; onClose: () => void }) {
   const fallback = OFFER_PLACEHOLDERS[seedFromId(circuit.id, OFFER_PLACEHOLDERS.length)];
+  const priceFrom = circuit.price_display_from ?? circuit.price;
+  const bookable = (circuit.bookable_options?.length ?? 0) > 0 || priceFrom != null;
 
   useFermetureModale(onClose);
 
@@ -239,6 +304,25 @@ export function CircuitModal({ circuit, onClose }: { circuit: ModalCircuit; onCl
         </div>
 
         <CircuitViewContent circuit={circuit} ownerName={circuit.author_name ?? undefined} />
+
+        {bookable && (
+          <div className="px-6 py-4 border-t border-slate-100 flex items-center justify-between gap-4 bg-slate-50/80">
+            <div>
+              <p className="text-xs text-slate-400 font-semibold uppercase tracking-wide">À partir de</p>
+              <p className="text-xl font-black text-slate-900">
+                {(priceFrom ?? 0).toFixed(0)} TND
+                <span className="text-sm font-semibold text-slate-500"> / pers.</span>
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => goToCircuitReservation(circuit.id)}
+              className="h-11 px-6 rounded-xl bg-primary text-slate-900 font-bold hover:bg-primary/90 transition-all text-sm shrink-0"
+            >
+              Réserver
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );

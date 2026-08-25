@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException, ForbiddenException, Optional } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
 import { InjectModel } from '@nestjs/mongoose';
@@ -16,6 +16,8 @@ import { ProfileApprovalService } from '../common/services/profile-approval.serv
 import { Organization } from '../organization/entities/organization.entity';
 import { NotificationService } from '../notifications/notification.service';
 import { SlotLike, overlappingDays, dispoEqual, toSlotType } from '../shared/slot.utils';
+import { ReservationService } from '../reservation/reservation.service';
+import { enrichOfferWithVariantFields } from './offer-variant.util';
 
 // Champs d'onboarding pouvant contraindre la capacité d'une offre
 const CAPACITY_FIELD_NAMES = [
@@ -56,6 +58,9 @@ export class OfferService {
     private readonly notifService: NotificationService,
 
     private readonly profileApproval: ProfileApprovalService,
+
+    @Optional()
+    private readonly reservationService?: ReservationService,
   ) {}
 
   async create(authorId: string, dto: CreateOfferDto, initialStatus: string = 'draft'): Promise<Offer> {
@@ -65,6 +70,13 @@ export class OfferService {
     // Validation des contraintes si une activité est liée
     if (dto.activity_id) {
       await this.validateAgainstActivity(dto);
+    }
+
+    if (!dto.availability_start || !dto.availability_end) {
+      throw new BadRequestException('Les dates de disponibilité (début et fin) sont obligatoires.');
+    }
+    if (new Date(dto.availability_end) < new Date(dto.availability_start)) {
+      throw new BadRequestException('La date de fin doit être postérieure à la date de début.');
     }
 
     const offer = this.repo.create({
@@ -80,9 +92,9 @@ export class OfferService {
       offer_subtype: dto.offer_subtype ?? (dto.offer_subtypes?.[0] ?? null),
       offer_subtypes: dto.offer_subtypes?.length ? dto.offer_subtypes : null,
       offer_mode: dto.offer_mode ?? 'single',
-      availability_mode: dto.availability_mode ?? null,
-      availability_start: dto.availability_start ? new Date(dto.availability_start) : null,
-      availability_end: dto.availability_end ? new Date(dto.availability_end) : null,
+      availability_mode: dto.availability_mode ?? 'period',
+      availability_start: new Date(dto.availability_start),
+      availability_end: new Date(dto.availability_end),
       fulfillment_mode: dto.fulfillment_mode ?? null,
       confirmation_mode: dto.confirmation_mode ?? 'manual',
       price_type: dto.price_type ?? 'per_person',
@@ -178,7 +190,13 @@ export class OfferService {
           org_logo = (org as any)?.logo ?? null;
         }
 
-        return { ...offer, author_name, author_photo, org_name, org_logo };
+        return enrichOfferWithVariantFields({
+          ...offer,
+          author_name,
+          author_photo,
+          org_name,
+          org_logo,
+        } as Offer);
       }),
     );
   }
@@ -186,7 +204,7 @@ export class OfferService {
   async findById(id: string): Promise<Offer> {
     const offer = await this.repo.findOne({ where: { id } });
     if (!offer) throw new NotFoundException('Offre introuvable.');
-    return offer;
+    return enrichOfferWithVariantFields(offer);
   }
 
   async update(authorId: string, offerId: string, dto: UpdateOfferDto): Promise<Offer> {
@@ -216,9 +234,19 @@ export class OfferService {
     if (dto.offer_subtype !== undefined) offer.offer_subtype = dto.offer_subtype ?? null;
     if (dto.offer_subtypes !== undefined) offer.offer_subtypes = dto.offer_subtypes?.length ? dto.offer_subtypes : null;
     if (dto.offer_mode !== undefined) offer.offer_mode = dto.offer_mode ?? 'single';
-    if (dto.availability_mode !== undefined) offer.availability_mode = dto.availability_mode ?? null;
-    if (dto.availability_start !== undefined) offer.availability_start = dto.availability_start ? new Date(dto.availability_start) : null;
-    if (dto.availability_end !== undefined) offer.availability_end = dto.availability_end ? new Date(dto.availability_end) : null;
+    if (dto.availability_mode !== undefined) offer.availability_mode = dto.availability_mode ?? 'period';
+    if (dto.availability_start !== undefined) {
+      if (!dto.availability_start) {
+        throw new BadRequestException('La date de début de disponibilité est obligatoire.');
+      }
+      offer.availability_start = new Date(dto.availability_start);
+    }
+    if (dto.availability_end !== undefined) {
+      if (!dto.availability_end) {
+        throw new BadRequestException('La date de fin de disponibilité est obligatoire.');
+      }
+      offer.availability_end = new Date(dto.availability_end);
+    }
     if (dto.images !== undefined) offer.images = dto.images?.length ? dto.images : null;
     if (dto.inclusions !== undefined) offer.inclusions = dto.inclusions ?? null;
     if (dto.region !== undefined) offer.region = dto.region ?? null;
@@ -409,6 +437,11 @@ export class OfferService {
     const offerDescription = (offer as any).description ?? null;
     const offerImages: string[] = (offer as any).images ?? [];
     const offerCover: string | null = Array.isArray(offerImages) && offerImages.length > 0 ? offerImages[0] : null;
+
+    // Notifier les voyageurs ayant une réservation active avant suppression
+    if (this.reservationService) {
+      await this.reservationService.notifyTravelersOfferDeleted(offerId, offerTitle).catch(() => {});
+    }
 
     // Notifier les collaborateurs et marquer les collabs comme supprimés (sans suppression physique)
     // pour que les collaborateurs puissent encore les voir avec le statut "offre supprimée"

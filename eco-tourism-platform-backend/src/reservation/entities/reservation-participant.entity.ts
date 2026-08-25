@@ -20,9 +20,12 @@ export class ReservationParticipant {
   @JoinColumn({ name: 'reservation_id' })
   reservation!: Reservation;
 
-  // user_id de l'ami invité
-  @Column('uuid')
-  user_id!: string;
+  // user_id de l'ami invité (null si invitation email seule)
+  @Column({ type: 'uuid', nullable: true })
+  user_id!: string | null;
+
+  @Column({ type: 'varchar', nullable: true })
+  email!: string | null;
 
   // pending | accepted | declined
   @Column({ type: 'varchar', default: 'pending' })

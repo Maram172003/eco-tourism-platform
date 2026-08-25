@@ -3,11 +3,10 @@
 import Navbar from "@/components/home/Navbar";
 import Link from "next/link";
 import { Suspense, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
-import { loginUser } from "@/lib/auth";
+import { useSearchParams } from "next/navigation";
+import { loginUser, resolvePostLoginRedirect } from "@/lib/auth";
 
 function LoginForm() {
-  const router = useRouter();
   const searchParams = useSearchParams();
   const redirectUrl = searchParams.get("redirect");
 
@@ -30,7 +29,13 @@ function LoginForm() {
       localStorage.setItem("refresh_token", result.refresh_token);
       localStorage.setItem("user", JSON.stringify(result.user));
 
-      router.push(redirectUrl || result.dashboard);
+      const next = resolvePostLoginRedirect(
+        redirectUrl,
+        result.user.role,
+        result.dashboard,
+      );
+      // Hard navigation so role-based redirect always applies
+      window.location.assign(next);
     } catch (err: any) {
       setError(err.message || "Erreur lors de la connexion.");
     } finally {

@@ -58,6 +58,24 @@ export async function logoutUser(accessToken: string) {
     },
   });
 }
+function clearSession() {
+  localStorage.removeItem("access_token");
+  localStorage.removeItem("refresh_token");
+  localStorage.removeItem("user");
+}
+
+function decodeJwtPayload(token: string): Record<string, any> | null {
+  try {
+    const part = token.split(".")[1];
+    if (!part) return null;
+    const b64 = part.replace(/-/g, "+").replace(/_/g, "/");
+    const padded = b64 + "=".repeat((4 - (b64.length % 4)) % 4);
+    return JSON.parse(atob(padded));
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Vérifie que le jeton présent dans localStorage désigne bien le compte qui y
  * est stocké. Sans ce contrôle, un onglet resté ouvert sur un autre compte
@@ -75,25 +93,102 @@ export function getConsistentSession(): { userId: string; role: string } | null 
   if (!token || !rawUser) return null;
 
   try {
-    const payload = JSON.parse(
-      atob(token.split(".")[1].replace(/-/g, "+").replace(/_/g, "/")),
-    );
+    const payload = decodeJwtPayload(token);
     const stored = JSON.parse(rawUser);
-
-    // Le serveur n'identifie l'appelant que par le « sub » du jeton : si le
-    // compte affiché n'est pas celui-là, toute écriture partirait au mauvais
-    // endroit. On préfère redemander une connexion.
-    if (!payload?.sub || !stored?.id || payload.sub !== stored.id) {
-      localStorage.removeItem("access_token");
-      localStorage.removeItem("refresh_token");
-      localStorage.removeItem("user");
+    if (!payload?.sub || !stored?.id || String(payload.sub) !== String(stored.id)) {
+      clearSession();
       return null;
     }
-    return { userId: payload.sub, role: stored.role };
+    // Expired JWT → treat as logged out
+    if (typeof payload.exp === "number" && payload.exp * 1000 <= Date.now()) {
+      clearSession();
+      return null;
+    }
+    const role = String(payload.role ?? stored.role ?? "");
+    if (!role) {
+      clearSession();
+      return null;
+    }
+    return { userId: String(payload.sub), role };
   } catch {
-    localStorage.removeItem("access_token");
-    localStorage.removeItem("refresh_token");
-    localStorage.removeItem("user");
+    clearSession();
     return null;
   }
+}
+
+/** Path to open when clicking "Réserver" on an offer. */
+export function getReservationEntryPath(offerId: string, subtypes?: string[]): string {
+  const subsQ =
+    subtypes?.length
+      ? `&subtypes=${encodeURIComponent([...subtypes].sort().join(","))}`
+      : "";
+  const entryPath = `/reservations/entry?offerId=${offerId}${subsQ}`;
+  const session = getConsistentSession();
+  if (!session) {
+    return `/auth/login?redirect=${encodeURIComponent(entryPath)}`;
+  }
+  if (session.role === "eco_traveler") {
+    return `/reservations/new?offerId=${offerId}${subsQ}`;
+  }
+  if (session.role === "guide") return "/dashboard/guide/reservations";
+  if (session.role === "provider") return "/dashboard/provider/reservations";
+  return "/reservations";
+}
+
+/** Path to open when clicking "Réserver" on a circuit module. */
+export function getCircuitReservationEntryPath(circuitId: string, subtypes?: string[]): string {
+  const subsQ =
+    subtypes?.length
+      ? `&subtypes=${encodeURIComponent([...subtypes].sort().join(","))}`
+      : "";
+  const entryPath = `/reservations/entry?circuitId=${circuitId}${subsQ}`;
+  const session = getConsistentSession();
+  if (!session) {
+    return `/auth/login?redirect=${encodeURIComponent(entryPath)}`;
+  }
+  if (session.role === "eco_traveler") {
+    return `/reservations/new?circuitId=${circuitId}${subsQ}`;
+  }
+  if (session.role === "guide") return "/dashboard/guide/reservations";
+  if (session.role === "provider") return "/dashboard/provider/reservations";
+  return "/reservations";
+}
+
+/** Navigate to reservation entry (hard redirect). */
+export function goToReservation(offerId: string, subtypes?: string | string[]) {
+  const list = typeof subtypes === "string"
+    ? (subtypes ? [subtypes] : [])
+    : (subtypes ?? []);
+  window.location.assign(getReservationEntryPath(offerId, list.length ? list : undefined));
+}
+
+/** Navigate to circuit reservation entry (hard redirect). */
+export function goToCircuitReservation(circuitId: string, subtypes?: string | string[]) {
+  const list = typeof subtypes === "string"
+    ? (subtypes ? [subtypes] : [])
+    : (subtypes ?? []);
+  window.location.assign(getCircuitReservationEntryPath(circuitId, list.length ? list : undefined));
+}
+
+/** After login, route booking entry by role (list for guide/provider). */
+export function resolvePostLoginRedirect(
+  redirectUrl: string | null | undefined,
+  role: string,
+  fallback: string,
+): string {
+  if (!redirectUrl) return fallback;
+
+  const isBookingOrEntry =
+    redirectUrl.startsWith("/reservations/new") ||
+    redirectUrl.includes("/reservations/new?") ||
+    redirectUrl.includes("circuitId=") ||
+    redirectUrl.startsWith("/reservations/entry") ||
+    redirectUrl.includes("/reservations/entry?");
+
+  if (isBookingOrEntry) {
+    if (role === "guide") return "/dashboard/guide/reservations";
+    if (role === "provider") return "/dashboard/provider/reservations";
+    if (role !== "eco_traveler") return fallback;
+  }
+  return redirectUrl;
 }

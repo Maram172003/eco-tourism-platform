@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { MongooseModule } from '@nestjs/mongoose';
 import { Offer } from './entities/offer.entity';
@@ -14,15 +14,26 @@ import { Provider } from '../provider/entities/provider.entity';
 import { Organization } from '../organization/entities/organization.entity';
 import { NotificationModule } from '../notifications/notification.module';
 import { ProfileApprovalModule } from '../common/services/profile-approval.module';
+import { ReservationModule } from '../reservation/reservation.module';
 
 @Module({
   imports: [
     ProfileApprovalModule,
-    TypeOrmModule.forFeature([Offer, OfferSession, ProviderActivity, OfferCollaboration, GuideAvailabilitySlot, Guide, Provider, Organization]),
+    TypeOrmModule.forFeature([
+      Offer,
+      OfferSession,
+      ProviderActivity,
+      OfferCollaboration,
+      GuideAvailabilitySlot,
+      Guide,
+      Provider,
+      Organization,
+    ]),
     MongooseModule.forFeature([
       { name: ActivityDetails.name, schema: ActivityDetailsSchema },
     ]),
     NotificationModule,
+    forwardRef(() => ReservationModule),
   ],
   providers: [OfferService],
   controllers: [OfferController],

@@ -48,6 +48,38 @@ export class Circuit {
   @Column({ type: 'int', nullable: true })
   sustainability_score!: number | null;
 
+  /** single | variant | package — how travelers pick bookable blocks */
+  @Column({ type: 'varchar', default: 'single' })
+  circuit_mode!: string;
+
+  /** Cached list of reservable blocks (rebuilt from etapes + collabs) */
+  @Column({ type: 'jsonb', nullable: true })
+  bookable_options!: object[] | null;
+
+  @Column({ type: 'decimal', precision: 10, scale: 2, nullable: true })
+  price!: number | null;
+
+  @Column({ type: 'int', nullable: true })
+  capacity!: number | null;
+
+  @Column({ type: 'int', nullable: true })
+  min_group_size!: number | null;
+
+  @Column({ type: 'int', nullable: true })
+  max_group_size!: number | null;
+
+  @Column({ type: 'varchar', default: 'manual' })
+  confirmation_mode!: string;
+
+  @Column({ type: 'int', default: 0 })
+  deposit_percentage!: number;
+
+  @Column({ type: 'int', nullable: true })
+  booking_deadline_hours!: number | null;
+
+  @Column({ type: 'text', nullable: true })
+  cancellation_policy!: string | null;
+
   @CreateDateColumn()
   created_at!: Date;
 

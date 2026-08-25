@@ -1,0 +1,24 @@
+services:
+  db:
+    image: postgres:15-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: eco
+      POSTGRES_PASSWORD: eco_local
+      POSTGRES_DB: eco_tourism
+    ports:
+      - "5432:5432"
+    volumes:
+      - tourisme_pgdata_local:/var/lib/postgresql/data
+
+  mongo:
+    image: mongo:7
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    volumes:
+      - tourisme_mongodata_local:/data/db
+
+volumes:
+  tourisme_pgdata_local:
+  tourisme_mongodata_local:

@@ -17,13 +17,19 @@ interface ReservationSummary {
   reservation_date: string | null;
   created_at: string;
   _role?: "organizer" | "invited";
-  offer: {
+  offer?: {
     id: string;
     title: string;
     offer_type: string | null;
     region: string | null;
     images: string[] | null;
-  };
+  } | null;
+  circuit?: {
+    id: string;
+    title: string;
+    cover_image?: string | null;
+    nb_jours?: number;
+  } | null;
   session: {
     id: string;
     date: string;
@@ -204,8 +210,9 @@ export default function ReservationsListPage() {
         ) : (
           filtered.map((res) => {
             const st = STATUS_CONFIG[res.status] ?? STATUS_CONFIG.pending;
-            const img = res.offer.images?.[0];
-            const emoji = TYPE_EMOJI[res.offer.offer_type ?? ""] ?? "🌿";
+            const img = res.offer?.images?.[0] ?? res.circuit?.cover_image;
+            const emoji = res.circuit ? "🗺️" : TYPE_EMOJI[res.offer?.offer_type ?? ""] ?? "🌿";
+            const title = res.offer?.title ?? res.circuit?.title ?? "Réservation";
             return (
               <button key={res.id} onClick={() => router.push(`/dashboard/ecovoyageur/reservations/${res.id}`)}
                 className="w-full bg-white rounded-2xl border border-slate-100 shadow-sm hover:shadow-md hover:border-primary/20 transition-all text-left group">
@@ -222,13 +229,13 @@ export default function ReservationsListPage() {
                     <div>
                       <div className="flex items-start justify-between gap-2">
                         <p className="font-bold text-slate-800 text-sm leading-tight line-clamp-2 group-hover:text-primary transition-colors">
-                          {res.offer.title}
+                          {title}
                         </p>
                         <ChevronRight size={16} className="text-slate-300 group-hover:text-primary flex-shrink-0 mt-0.5 transition-colors" />
                       </div>
 
                       <div className="flex flex-wrap gap-x-3 gap-y-1 mt-1.5 text-xs text-slate-400">
-                        {res.offer.region && (
+                        {res.offer?.region && (
                           <span className="flex items-center gap-1">
                             <MapPin size={10} /> {res.offer.region}
                           </span>

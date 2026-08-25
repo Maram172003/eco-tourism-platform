@@ -1,6 +1,7 @@
 import {
   IsArray,
   IsDateString,
+  IsEmail,
   IsEnum,
   IsInt,
   IsOptional,
@@ -11,15 +12,19 @@ import {
 import { Type } from 'class-transformer';
 
 export class CreateReservationDto {
+  @IsOptional()
   @IsUUID()
-  offer_id!: string;
+  offer_id?: string;
 
-  // Séance choisie (pour scheduled/recurring)
+  @IsOptional()
+  @IsUUID()
+  circuit_id?: string;
+
   @IsOptional()
   @IsUUID()
   session_id?: string;
 
-  // Date souhaitée (pour on_request)
+  /** Obligatoire sauf si session_id (la date de séance sera utilisée). */
   @IsOptional()
   @IsDateString()
   reservation_date?: string;
@@ -40,6 +45,22 @@ export class CreateReservationDto {
   @IsArray()
   @IsUUID('4', { each: true })
   invited_user_ids?: string[];
+
+  @IsOptional()
+  @IsArray()
+  @IsEmail({}, { each: true })
+  invited_emails?: string[];
+
+  /** Variant: one or more option keys (offer subtypes or circuit bookable_options). */
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  chosen_subtypes?: string[];
+
+  /** @deprecated use chosen_subtypes */
+  @IsOptional()
+  @IsString()
+  chosen_subtype?: string;
 }
 
 export class RespondToInvitationDto {
@@ -54,4 +75,22 @@ export class ConfirmReservationDto {
   @IsOptional()
   @IsString()
   cancellation_reason?: string;
+}
+
+export class AvailabilityQueryDto {
+  @IsOptional()
+  @IsUUID()
+  offer_id?: string;
+
+  @IsOptional()
+  @IsUUID()
+  circuit_id?: string;
+
+  @IsOptional()
+  @IsUUID()
+  session_id?: string;
+
+  @IsOptional()
+  @IsDateString()
+  date?: string;
 }

@@ -4,10 +4,11 @@ import { useEffect, useState } from "react";
 import { useRouter, useParams } from "next/navigation";
 import { apiFetch } from "@/lib/api";
 import React from "react";
+import { formatSubtypeLabel } from "@/lib/offer-variant";
 import {
   ChevronLeft, Calendar, Users, MapPin, Clock, Leaf,
   CheckCircle, XCircle, AlertCircle, CreditCard, User,
-  QrCode, Download, Phone, Star,
+  QrCode, Download, Phone, Star, Package,
 } from "lucide-react";
 
 interface Reservation {
@@ -20,9 +21,11 @@ interface Reservation {
   deposit_paid: boolean;
   reservation_date: string | null;
   notes: string | null;
+  cancellation_reason?: string | null;
+  chosen_subtypes?: string[] | null;
   created_at: string;
   payment_status: string | null;
-  offer: {
+  offer?: {
     id: string;
     title: string;
     offer_type: string | null;
@@ -31,7 +34,13 @@ interface Reservation {
     images: string[] | null;
     confirmation_mode: string | null;
     meeting_point: string | null;
-  };
+  } | null;
+  circuit?: {
+    id: string;
+    title: string;
+    nb_jours?: number;
+    cover_image?: string | null;
+  } | null;
   session: {
     id: string;
     date: string;
@@ -39,12 +48,13 @@ interface Reservation {
     end_time: string | null;
   } | null;
   invited_members?: {
-    user_id: string;
+    user_id: string | null;
     full_name: string;
     photo: string | null;
     status: string;
     share_amount: number | null;
   }[];
+  share_amount?: number | null;
   provider?: {
     user_id: string;
     full_name: string | null;
@@ -172,14 +182,14 @@ export default function ReservationDetailPage() {
   const remainingAmount = reservation.total_price !== null && reservation.deposit_amount
     ? Number(reservation.total_price) - Number(reservation.deposit_amount)
     : null;
-  const canCancel = reservation.status === "pending" || reservation.status === "confirmed";
+  const canCancel = reservation.status === "pending";
 
   return (
     <div className="min-h-screen bg-slate-50">
       {/* Header */}
       <div className="bg-white border-b border-slate-100 sticky top-0 z-10 shadow-sm">
         <div className="max-w-2xl mx-auto px-4 py-4 flex items-center gap-3">
-          <button onClick={() => router.push("/reservations")}
+          <button onClick={() => router.push("/dashboard/ecovoyageur/reservations")}
             className="w-9 h-9 flex items-center justify-center rounded-full hover:bg-slate-100 text-slate-500">
             <ChevronLeft size={20} />
           </button>
@@ -199,32 +209,66 @@ export default function ReservationDetailPage() {
           </div>
         </div>
 
-        {/* Offre */}
+        {(reservation.status === "cancelled" || reservation.status === "rejected") &&
+          reservation.cancellation_reason && (
+          <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+            <p className="font-bold text-xs uppercase tracking-wide text-amber-700 mb-1">Motif</p>
+            <p>{reservation.cancellation_reason}</p>
+          </div>
+        )}
+
+        {/* Offre ou circuit */}
+        {(reservation.offer || reservation.circuit) && (
         <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
           <div className="h-32 bg-gradient-to-br from-emerald-100 to-teal-200 relative">
-            {reservation.offer.images?.[0] ? (
+            {reservation.offer?.images?.[0] ? (
               <img src={reservation.offer.images[0]} alt="" className="w-full h-full object-cover" />
+            ) : reservation.circuit?.cover_image ? (
+              <img src={reservation.circuit.cover_image} alt="" className="w-full h-full object-cover" />
             ) : (
               <div className="w-full h-full flex items-center justify-center text-5xl">
-                {TYPE_ICONS[reservation.offer.offer_type ?? ""] ?? "🌿"}
+                {reservation.circuit ? "🗺️" : TYPE_ICONS[reservation.offer?.offer_type ?? ""] ?? "🌿"}
               </div>
             )}
           </div>
           <div className="p-4">
-            <button onClick={() => router.push(`/offers/${reservation.offer.id}`)}
-              className="font-bold text-slate-800 text-lg hover:text-emerald-600 transition-colors text-left">
-              {reservation.offer.title}
-            </button>
+            {reservation.offer ? (
+              <button onClick={() => router.push(`/offers/${reservation.offer!.id}`)}
+                className="font-bold text-slate-800 text-lg hover:text-emerald-600 transition-colors text-left">
+                {reservation.offer.title}
+              </button>
+            ) : (
+              <p className="font-bold text-slate-800 text-lg">{reservation.circuit!.title}</p>
+            )}
             <div className="flex flex-wrap gap-2 mt-2 text-xs text-slate-500">
-              {reservation.offer.region && (
+              {reservation.offer?.region && (
                 <span className="flex items-center gap-1"><MapPin size={10} /> {reservation.offer.region}</span>
               )}
-              {reservation.offer.duration && (
+              {reservation.offer?.duration && (
                 <span className="flex items-center gap-1"><Clock size={10} /> {reservation.offer.duration}</span>
+              )}
+              {reservation.circuit?.nb_jours && (
+                <span className="flex items-center gap-1"><Clock size={10} /> {reservation.circuit.nb_jours} jour{reservation.circuit.nb_jours > 1 ? "s" : ""}</span>
               )}
             </div>
           </div>
         </div>
+        )}
+
+        {reservation.chosen_subtypes && reservation.chosen_subtypes.length > 0 && (
+          <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-5">
+            <h3 className="font-bold text-slate-800 mb-2 flex items-center gap-2">
+              <Package size={16} className="text-emerald-500" /> Formule
+            </h3>
+            <p className="text-sm font-medium text-slate-700">
+              {reservation.chosen_subtypes.map((k) =>
+                reservation.circuit
+                  ? k.replace(/^etape:/, "").replace(/^hebergement:/, "Hébergement — ").replace(/_/g, " ")
+                  : formatSubtypeLabel(k),
+              ).join(", ")}
+            </p>
+          </div>
+        )}
 
         {/* Détails créneau */}
         <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-5">
@@ -259,7 +303,7 @@ export default function ReservationDetailPage() {
             ) : (
               <p className="text-slate-400 text-sm">Date à confirmer avec le prestataire</p>
             )}
-            {reservation.offer.meeting_point && (
+            {reservation.offer?.meeting_point && (
               <div className="flex justify-between py-1">
                 <span className="text-slate-500">Point de rendez-vous</span>
                 <span className="font-medium text-slate-800 text-right max-w-52">{reservation.offer.meeting_point}</span>
@@ -285,7 +329,7 @@ export default function ReservationDetailPage() {
           {reservation.invited_members && reservation.invited_members.length > 0 && (
             <div className="space-y-2">
               {reservation.invited_members.map((m) => (
-                <div key={m.user_id} className="flex items-center gap-3 p-2.5 rounded-xl bg-slate-50">
+                <div key={m.user_id ?? m.full_name} className="flex items-center gap-3 p-2.5 rounded-xl bg-slate-50">
                   <div className="w-9 h-9 rounded-full bg-emerald-100 flex-shrink-0 overflow-hidden flex items-center justify-center">
                     {m.photo ? <img src={m.photo} alt="" className="w-full h-full object-cover" /> : <User size={14} className="text-emerald-400" />}
                   </div>
@@ -318,6 +362,18 @@ export default function ReservationDetailPage() {
                 <span className="text-slate-500">Total</span>
                 <span className="font-bold text-slate-800 text-base">{Number(reservation.total_price).toFixed(0)} TND</span>
               </div>
+              {(reservation.share_amount != null || (reservation.participant_count > 1 && reservation.total_price != null)) && (
+                <div className="flex justify-between py-1 border-b border-slate-50">
+                  <span className="text-slate-500">Part par personne</span>
+                  <span className="font-semibold text-emerald-700">
+                    {Number(
+                      reservation.share_amount ??
+                        Number(reservation.total_price) / reservation.participant_count,
+                    ).toFixed(0)}{" "}
+                    TND
+                  </span>
+                </div>
+              )}
               {reservation.deposit_amount !== null && Number(reservation.deposit_amount) > 0 && (
                 <>
                   <div className="flex justify-between py-1 border-b border-slate-50">
@@ -391,7 +447,9 @@ export default function ReservationDetailPage() {
         {canCancel && (
           <div className="bg-red-50 rounded-2xl border border-red-100 p-4">
             <p className="text-sm font-bold text-red-800 mb-2">Annuler la réservation</p>
-            <p className="text-xs text-red-600 mb-3">L'annulation peut être soumise à des frais selon la politique du prestataire.</p>
+            <p className="text-xs text-red-600 mb-3">
+              Vous pouvez annuler uniquement tant que la réservation n&apos;est pas encore confirmée.
+            </p>
             <button onClick={handleCancel} disabled={cancelling || cancelled}
               className="flex items-center gap-2 px-4 py-2 bg-red-100 text-red-700 rounded-xl text-sm font-semibold hover:bg-red-200 disabled:opacity-50">
               <XCircle size={14} /> {cancelling ? "Annulation..." : cancelled ? "Annulée" : "Annuler ma réservation"}

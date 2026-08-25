@@ -1108,7 +1108,7 @@ export default function DashboardPage() {
         { label: "Explorer",        icon: "explore",         action: () => router.push("/explorer") },
         { label: "Offres",          icon: "storefront",      action: () => setActiveItem("Offres") },
         { label: "Circuits",        icon: "route",           action: () => router.push("/dashboard/guide?section=Circuits") },
-        { label: "Réservations",    icon: "event_available", action: () => router.push("/reservations") },
+        { label: "Réservations",    icon: "event_available", action: () => router.push("/dashboard/guide/reservations") },
         { label: "Avis",            icon: "star",            action: () => router.push("/profile/guide?tab=apropos") },
         { label: "Paramètres",      icon: "settings",        action: () => router.push("/dashboard/profile") },
       ]
@@ -1117,7 +1117,7 @@ export default function DashboardPage() {
         { label: "Explorer",        icon: "explore",         action: () => router.push("/explorer") },
         { label: "Offres",          icon: "storefront",      action: () => setActiveItem("Offres") },
         { label: "Circuits",        icon: "route",           action: () => router.push("/dashboard/provider?section=Circuits") },
-        { label: "Réservations",    icon: "event_available", action: () => router.push("/reservations") },
+        { label: "Réservations",    icon: "event_available", action: () => router.push("/dashboard/provider/reservations") },
         { label: "Avis",            icon: "star",            action: () => router.push("/profile/provider?tab=apropos") },
         { label: "Paramètres",      icon: "settings",        action: () => router.push("/dashboard/profile") },
       ];
