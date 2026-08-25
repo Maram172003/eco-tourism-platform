@@ -140,14 +140,14 @@ export class Offer {
   offer_mode!: string;
 
   // 'period' | 'weekly' | 'specific' | 'always'
-  @Column({ type: 'varchar', default: 'period' })
-  availability_mode!: string;
+  @Column({ type: 'varchar', nullable: true })
+  availability_mode!: string | null;
 
-  @Column({ type: 'date' })
-  availability_start!: Date;
+  @Column({ type: 'date', nullable: true })
+  availability_start!: Date | null;
 
-  @Column({ type: 'date' })
-  availability_end!: Date;
+  @Column({ type: 'date', nullable: true })
+  availability_end!: Date | null;
 
   // pending = en attente de validation / approved = visible publiquement / rejected = refusé
   @Column({ type: 'varchar', default: 'pending' })
