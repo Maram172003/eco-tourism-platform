@@ -6,6 +6,7 @@ import { ChevronLeft, ChevronRight, Globe, X } from "lucide-react";
 import { formatSubtypeLabel, formatOfferCapacityLabel } from "@/lib/offer-variant";
 import { OFFER_DETAIL_FIELDS } from "@/lib/offer-schema";
 import { DOMAINES } from "@/lib/guideOfferConfig";
+import { DOMAIN_CASCADE_CONFIG } from "@/lib/domainCascadeConfig";
 import { TRANSPORT_ECO_SUBTYPES, TRANSPORT_STD_SUBTYPES } from "@/components/GuideOfferModal";
 
 const MapView = dynamic(() => import("@/components/map/MapView"), { ssr: false });
