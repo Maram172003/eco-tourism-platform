@@ -31,6 +31,11 @@ export class ReservationParticipant {
   @Column({ type: 'varchar', default: 'pending' })
   status!: string;
 
+  // Ce que doit cet invité. Nul sur les réservations antérieures au choix de
+  // répartition : leur part se déduit alors du total divisé équitablement.
+  @Column({ type: 'decimal', precision: 10, scale: 2, nullable: true })
+  share_amount!: number | null;
+
   @CreateDateColumn()
   invited_at!: Date;
 

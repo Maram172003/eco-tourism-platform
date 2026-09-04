@@ -20,9 +20,12 @@ import {
 } from './dto/guide.dto';
 import { GuideMongoService } from './guide-mongo.service';
 import { NotificationService } from '../notifications/notification.service';
+import { normalizeConfirmationMode } from '../common/confirmation.util';
 import { SlotLike, overlappingDays, dispoEqual, toSlotType } from '../shared/slot.utils';
 import { CircuitService } from '../circuit/circuit.service';
 import { ProfileApprovalService } from '../common/services/profile-approval.service';
+import { BadgeService } from '../badge/badge.service';
+import { ligne, lignePartielle, totalCompletion, type LigneCompletion } from '../common/completion.util';
 
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -47,6 +50,7 @@ export class GuideService {
     private readonly circuitService: CircuitService,
 
     private readonly profileApproval: ProfileApprovalService,
+    private readonly badgeService: BadgeService,
   ) {}
 
   async getProfile(userId: string) {
@@ -57,11 +61,26 @@ export class GuideService {
     ]);
 
     if (sqlProfile) {
+      let dirty = false;
       const freshCompletion = this.calculateCompletion(sqlProfile);
       if (freshCompletion !== sqlProfile.profile_completion) {
         sqlProfile.profile_completion = freshCompletion;
-        await this.repo.save(sqlProfile);
+        dirty = true;
       }
+
+      // Le score de durabilité se déduit désormais de la progression dans
+      // l'échelle de badges : le questionnaire donne le départ, les paliers
+      // prennent le relais. Il n'était jusqu'ici écrit qu'à la soumission du
+      // questionnaire et ne bougeait plus jamais ensuite.
+      try {
+        const stats = await this.badgeService.getStats(userId, 'guide');
+        if (stats.sustainability_score !== sqlProfile.sustainability_score) {
+          sqlProfile.sustainability_score = stats.sustainability_score;
+          dirty = true;
+        }
+      } catch { /* le score reste celui déjà enregistré */ }
+
+      if (dirty) await this.repo.save(sqlProfile);
     }
 
     return {
@@ -95,6 +114,7 @@ export class GuideService {
       score_reservations: sqlProfile?.score_reservations ?? 0,
       score_feedbacks: sqlProfile?.score_feedbacks ?? 0,
       profile_completion: sqlProfile?.profile_completion,
+      completion_details: sqlProfile ? this.lignesCompletion(sqlProfile) : [],
       is_onboarded: sqlProfile?.is_onboarded,
       // MongoDB
       skills_activities: mongoSkills?.activities ?? [],
@@ -339,6 +359,10 @@ export class GuideService {
       availability_mode: 'period' as const,
       availability_start: availStart,
       availability_end: availEnd,
+      // Le formulaire guide ne renseigne que l'intitulé ; sans ce report, la
+      // colonne gardait la valeur par défaut et une confirmation immédiate
+      // partait quand même en attente.
+      confirmation_mode: normalizeConfirmationMode(dto.type_confirmation) ?? 'manual',
       details: {
         description_longue: dto.description_longue,
         type_prestation: dto.type_prestation,
@@ -529,6 +553,10 @@ export class GuideService {
       offer_subtype: dto.type_guidage_offre,
       images: dto.photos,
       inclusions: dto.inclus_resume.join('||'),
+      // Le formulaire guide ne renseigne que l'intitulé ; sans ce report, la
+      // colonne gardait la valeur par défaut et une confirmation immédiate
+      // partait quand même en attente.
+      confirmation_mode: normalizeConfirmationMode(dto.type_confirmation) ?? 'manual',
       details: newDetails,
       tags: dto.tags ?? null,
       ...(newStatus ? { status: newStatus } : {}),
@@ -957,6 +985,10 @@ export class GuideService {
       availability_mode: 'period',
       availability_start: new Date(),
       availability_end: new Date(Date.now() + 180 * 24 * 60 * 60 * 1000),
+      // Le formulaire guide ne renseigne que l'intitulé ; sans ce report, la
+      // colonne gardait la valeur par défaut et une confirmation immédiate
+      // partait quand même en attente.
+      confirmation_mode: normalizeConfirmationMode(dto.type_confirmation) ?? 'manual',
       details: {
         description_longue: dto.description_longue,
         type_prestation: dto.type_prestation,
@@ -1531,22 +1563,16 @@ export class GuideService {
     // Récupérer les collaborateurs actifs (exclure les kicked)
     const allCollabs = await this.collabRepo.find({ where: { offer_id: offerId } });
     const collabs = allCollabs.filter((c) => !((c as any).status === 'declined' && (c as any).contribution_data?.kicked === true));
-    const collaborators = await Promise.all(
-      collabs.map(async (c) => {
-        const uid = (c as any).invited_user_id;
-        const section = (c as any).section;
-        // Chercher d'abord dans les guides, sinon dans les prestataires
-        const guideProfile = await this.repo.findOne({ where: { user_id: uid } });
-        if (guideProfile) {
-          return { id: uid, name: (guideProfile as any).full_name ?? uid, section };
-        }
-        const providerProfile = await this.providerRepo.findOne({ where: { user_id: uid } as any });
-        if (providerProfile) {
-          return { id: uid, name: (providerProfile as any).name ?? uid, section };
-        }
-        return { id: uid, name: uid, section };
-      }),
-    );
+    // Le nom du collaborateur est déjà porté par l'invitation : le relire dans
+    // les profils n'apportait rien et échouait côté prestataire, dont le champ
+    // s'appelle `full_name` — l'offre était alors publiée avec un identifiant
+    // technique en guise de nom.
+    const collaborators = collabs.map((c) => ({
+      id: (c as any).invited_user_id,
+      name: (c as any).invited_user_name ?? (c as any).invited_user_id,
+      section: (c as any).section,
+      status: (c as any).status,
+    }));
     const details: Record<string, any> = { ...((offer as any).details ?? {}) };
     details.collaborators = collaborators;
     await this.offerRepo.update({ id: offerId }, { status: 'approved', details } as any);
@@ -1753,19 +1779,34 @@ export class GuideService {
       .getMany();
   }
 
+  /**
+   * Complétion du profil guide, calée sur les 4 étapes de son onboarding.
+   *
+   * L'ancien barème notait `country`, `guide_type`, `zone` et `specialties` —
+   * quatre champs que l'onboarding ne renseigne jamais : il collecte
+   * `ville_residence`, `domaines`, `expertises` et `zones_couvertes`. Tous les
+   * guides plafonnaient donc à 45 %, quoi qu'ils remplissent.
+   */
+  /** Le barème, ligne à ligne — c'est lui qui produit le pourcentage. */
+  private lignesCompletion(p: Partial<Guide>): LigneCompletion[] {
+    return [
+      lignePartielle('Informations personnelles', 'Nom, téléphone, ville, langues', 20,
+        [p.full_name, p.telephone, p.ville_residence, p.languages_spoken]),
+      ligne('Informations personnelles', 'Photo de profil', 10, p.photo),
+      ligne('Expertise', "Domaines d'intervention", 10, p.domaines),
+      ligne('Expertise', 'Expertises', 10, p.expertises),
+      ligne('Expertise', "Années d'expérience", 10, p.years_experience),
+      ligne("Zone d'activité", 'Zones couvertes', 10, p.zones_couvertes),
+      ligne("Zone d'activité", 'Villes ou sites maîtrisés', 5,
+        (p.villes_couvertes?.length ? p.villes_couvertes : p.sites_maitrises)),
+      ligne("Zone d'activité", 'Publics accueillis', 5, p.publics_accueillis),
+      ligne('Présentation', 'Biographie', 8, p.bio),
+      ligne('Présentation', 'Expérience professionnelle', 6, p.experience_pro),
+      ligne('Présentation', 'Pourquoi moi', 6, p.pourquoi_moi),
+    ];
+  }
+
   private calculateCompletion(p: Partial<Guide>): number {
-    let score = 0;
-
-    const identityFields = [p.full_name, p.country, p.language];
-    score += (identityFields.filter(Boolean).length / identityFields.length) * 30;
-
-    if (p.guide_type) score += 10;
-    if (p.zone) score += 10;
-    if (p.specialties?.length) score += 15;
-    if (p.languages_spoken?.length) score += 10;
-    if (p.years_experience !== null && p.years_experience !== undefined) score += 15;
-    if (p.photo) score += 10;
-
-    return Math.round(score);
+    return totalCompletion(this.lignesCompletion(p));
   }
 }

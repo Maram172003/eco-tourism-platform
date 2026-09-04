@@ -3,6 +3,13 @@
 import { useEffect, useState, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { apiFetch } from "@/lib/api";
+import { confirmationDe } from "@/lib/confirmation";
+import {
+  MODES_REPARTITION,
+  calculerRepartition,
+  partsEgales,
+  type ModeRepartition,
+} from "@/lib/payment-split";
 import { getConsistentSession } from "@/lib/auth";
 import { formatSubtypeLabel, formatOfferCapacityLabel, getBookingUnitPrice, hasSelectableFormulas, isPackageOffer, defaultPackageSubtypes, parseSubtypesParam } from "@/lib/offer-variant";
 import {
@@ -16,10 +23,11 @@ import {
   resolveCircuitDateMode,
 } from "@/lib/circuit-booking";
 import {
-  Calendar, Users, User, UserPlus, X, ChevronLeft, ChevronRight,
+  ArrowLeft, Calendar, Users, User, UserPlus, X, ChevronLeft, ChevronRight,
   Leaf, Clock, MapPin, AlertCircle, CheckCircle, Search, Check,
   CreditCard, Zap, Package,
 } from "lucide-react";
+import { monTableauDeBord } from "@/lib/dashboard-path";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -48,6 +56,8 @@ interface Offer {
   availability_start?: string | null;
   availability_end?: string | null;
   details?: {
+    /** L'intitulé exact choisi par l'auteur — « Sous 24h (validation manuelle) ». */
+    type_confirmation?: string | null;
     disponibilite?: {
       type?: string | null;
       dates?: string[] | null;
@@ -179,6 +189,9 @@ function NewReservationContent() {
   const searchParams = useSearchParams();
   const offerId = searchParams.get("offerId");
   const circuitId = searchParams.get("circuitId");
+  // Même formulaire pour créer et pour modifier : dupliquer l'écran aurait
+  // garanti qu'il diverge du premier ajustement.
+  const editId = searchParams.get("edit");
   const subtypesFromUrl = parseSubtypesParam(searchParams.get("subtypes") ?? searchParams.get("subtype"));
   const circuitSubtypesFromUrl = parseCircuitSubtypesParam(searchParams.get("subtypes") ?? searchParams.get("subtype"));
   const isCircuit = !!circuitId && !offerId;
@@ -199,6 +212,12 @@ function NewReservationContent() {
   const [participantCount, setParticipantCount] = useState(1);
   const [reservationType, setReservationType] = useState<"solo" | "group">("solo");
   const [invitedUsers, setInvitedUsers] = useState<UserResult[]>([]);
+  // Qui paie quoi, quand la réservation est en groupe.
+  const [paymentSplit, setPaymentSplit] = useState<ModeRepartition>("equal");
+  // Montants saisis en répartition personnalisée. Conservés en texte : un champ
+  // vidé doit pouvoir le rester le temps de la frappe, ce qu'un nombre interdit.
+  const [organizerShare, setOrganizerShare] = useState("");
+  const [customShares, setCustomShares] = useState<Record<string, string>>({});
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<UserResult[]>([]);
   const [searching, setSearching] = useState(false);
@@ -391,6 +410,46 @@ function NewReservationContent() {
     totalPrice !== null && realParticipantCount > 0
       ? Math.round((totalPrice / realParticipantCount) * 100) / 100
       : null;
+  const clesInvites = invitedUsers.map((u) => u.user_id);
+  const enGroupe = reservationType === "group";
+  const repartition = calculerRepartition(
+    enGroupe ? paymentSplit : "organizer",
+    totalPrice,
+    enGroupe ? clesInvites : [],
+    {
+      organisateur: champEnNombre(organizerShare),
+      invites: Object.fromEntries(clesInvites.map((c) => [c, champEnNombre(customShares[c])])),
+    },
+  );
+  const repartitionInvalide = enGroupe && paymentSplit === "custom" && repartition.erreur !== null;
+
+  /**
+   * Bascule vers la répartition personnalisée en pré-remplissant les champs
+   * avec la division équitable : l'organisateur part d'une somme qui tombe
+   * juste et n'a plus qu'à déplacer des montants.
+   */
+  function choisirMode(mode: ModeRepartition) {
+    setPaymentSplit(mode);
+    if (mode !== "custom" || totalPrice === null) return;
+    const parts = partsEgales(totalPrice, clesInvites.length + 1);
+    setOrganizerShare(String(parts[0]));
+    setCustomShares(Object.fromEntries(clesInvites.map((c, i) => [c, String(parts[i + 1])])));
+  }
+
+  // Inviter ou retirer quelqu'un change le total : une répartition saisie à la
+  // main ne tombe plus juste. On repart de la division équitable, qui est un
+  // point de départ valide, plutôt que de laisser un message d'erreur.
+  const signatureInvites = clesInvites.join("|");
+  useEffect(() => {
+    if (paymentSplit !== "custom" || totalPrice === null) return;
+    const parts = partsEgales(totalPrice, clesInvites.length + 1);
+    setOrganizerShare(String(parts[0]));
+    setCustomShares(Object.fromEntries(clesInvites.map((c, i) => [c, String(parts[i + 1])])));
+    // Volontairement indexé sur la composition du groupe, pas sur les montants :
+    // réagir à ceux-ci écraserait la saisie en cours.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [signatureInvites]);
+
   const depositPct = (isCircuit ? circuit?.deposit_percentage : offer?.deposit_percentage) ?? 0;
   const depositAmount = totalPrice !== null && depositPct > 0 ? (totalPrice * depositPct) / 100 : null;
   const remainingAmount = totalPrice !== null && depositAmount !== null ? totalPrice - depositAmount : null;
@@ -420,37 +479,99 @@ function NewReservationContent() {
     if (currentKind === "participants") {
       if (reservationType === "group" && invitedUsers.length === 0) return false;
       if (realParticipantCount > maxSpots) return false;
+      // Une répartition qui ne tombe pas juste laisserait un reliquat que
+      // personne ne doit : le serveur la refuse, autant le dire tout de suite.
+      if (repartitionInvalide) return false;
       return true;
     }
     return true;
   }
+
+  // Préremplissage : on repart de ce qui a été réservé, pas d'un écran vide.
+  const [prerempli, setPrerempli] = useState(false);
+  useEffect(() => {
+    if (!authOk || !editId || prerempli) return;
+    apiFetch<any>(`/reservations/${editId}`)
+      .then((r) => {
+        setReservationType(r.reservation_type === "group" ? "group" : "solo");
+        setParticipantCount(r.participant_count ?? 1);
+        if (r.session_id) setSelectedSessionId(r.session_id);
+        else if (r.reservation_date) setSelectedDate(String(r.reservation_date).slice(0, 10));
+        if (Array.isArray(r.chosen_subtypes) && r.chosen_subtypes.length) {
+          setChosenSubtypes(r.chosen_subtypes);
+        }
+        setNotes(r.notes ?? "");
+        const membres = (r.invited_members ?? []).filter((m: any) => m.user_id);
+        setInvitedUsers(
+          membres.map((m: any) => ({
+            user_id: m.user_id,
+            full_name: m.full_name,
+            photo: m.photo ?? null,
+          })),
+        );
+        const mode = (r.payment_split ?? "equal") as ModeRepartition;
+        setPaymentSplit(mode);
+        if (mode === "custom") {
+          setOrganizerShare(r.share_amount != null ? String(r.share_amount) : "");
+          setCustomShares(
+            Object.fromEntries(
+              membres.map((m: any) => [m.user_id, m.share_amount != null ? String(m.share_amount) : ""]),
+            ),
+          );
+        }
+      })
+      .catch(() => setError("Réservation introuvable ou déjà confirmée."))
+      .finally(() => setPrerempli(true));
+  }, [authOk, editId, prerempli]);
+
+  // Le type de confirmation annoncé au voyageur est celui de l'offre ou du
+  // circuit réservé — même intitulé que sur sa fiche, pas un texte figé ici.
+  const confirmation = confirmationDe(isCircuit ? (circuit as any) : (offer as any));
 
   // ─── Soumission ─────────────────────────────────────────────────────────────
   async function handleSubmit() {
     setSubmitting(true);
     setError("");
     try {
-      const res = await apiFetch<{ message?: string; confirmation_mode?: string }>("/reservations", {
-        method: "POST",
+      const res = await apiFetch<{ message?: string; confirmation_mode?: string }>(
+        editId ? `/reservations/${editId}` : "/reservations",
+        {
+        method: editId ? "PATCH" : "POST",
         body: JSON.stringify({
-          ...(isCircuit ? { circuit_id: circuitId } : { offer_id: offerId }),
+          // À la modification, la réservation porte déjà son offre et son type :
+          // les renvoyer ferait rejeter la requête par la validation stricte.
+          ...(editId ? {} : isCircuit ? { circuit_id: circuitId } : { offer_id: offerId }),
+          ...(editId ? {} : { reservation_type: reservationType }),
           session_id: selectedSessionId ?? undefined,
           reservation_date: effectiveDate || undefined,
-          reservation_type: reservationType,
           participant_count: realParticipantCount,
           notes: notes || undefined,
           invited_user_ids: reservationType === "group" ? invitedUsers.map((u) => u.user_id) : [],
+          ...(enGroupe
+            ? {
+                payment_split: paymentSplit,
+                ...(paymentSplit === "custom"
+                  ? {
+                      organizer_share: repartition.organisateur,
+                      custom_shares: clesInvites.map((c) => ({
+                        user_id: c,
+                        amount: repartition.invites[c],
+                      })),
+                    }
+                  : {}),
+              }
+            : {}),
           ...(chosenSubtypes.length ? { chosen_subtypes: chosenSubtypes } : {}),
         }),
-      });
-      const instant = isCircuit
-        ? circuit?.confirmation_mode === "instant"
-        : offer?.confirmation_mode === "instant";
+        },
+      );
       setSuccessMessage(
-        res.message ??
-          (instant
-            ? "Votre réservation est confirmée."
-            : "Votre réservation est en attente de confirmation."),
+        editId
+          ? "Votre réservation a été modifiée."
+          : res.message ??
+            (confirmation.mode === "instant"
+              ? "Votre réservation est confirmée."
+              : confirmation.description),
       );
       setSuccess(true);
       setTimeout(() => router.push("/dashboard/ecovoyageur/reservations"), 2500);
@@ -475,21 +596,40 @@ function NewReservationContent() {
 
   return (
     <div className="min-h-screen bg-background">
-      {/* Header */}
-      <div className="bg-surface border-b border-surface-container-highest sticky top-0 z-10 shadow-sm">
-        <div className="max-w-2xl mx-auto px-4 py-4 flex items-center gap-3">
-          <button onClick={() => step > 0 ? setStep(step - 1) : router.back()} className="text-outline hover:text-on-surface">
-            <ChevronLeft size={22} />
-          </button>
-          <div className="flex-1">
-            <h1 className="text-base font-extrabold text-on-surface flex items-center gap-2">
-              <Leaf size={18} className="text-primary" /> Réserver
-            </h1>
-            <p className="text-xs text-outline">Étape {step + 1} sur {stepLabels.length} — {stepLabels[step]}</p>
+      {/* Barre supérieure — même style que le reste de la plateforme. */}
+      <div className="sticky top-0 z-40 bg-white/80 backdrop-blur-md border-b border-slate-200">
+        <div className="px-6 py-3">
+          <div className="max-w-2xl mx-auto flex items-center justify-between">
+            {/* Aux étapes suivantes on recule d'une étape ; à la première on
+                rejoint le tableau de bord. `router.back()` renvoyait à la page
+                de connexion quand c'est elle qui avait conduit ici. */}
+            <button
+              onClick={() => (step > 0 ? setStep(step - 1) : router.push(monTableauDeBord()))}
+              className="flex items-center gap-2 rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100 transition-all"
+            >
+              <ArrowLeft size={16} />{step > 0 ? "Étape précédente" : "Retour"}
+            </button>
+            <div className="flex items-center gap-2 text-slate-900">
+              <Leaf className="text-primary w-6 h-6" />
+              <span className="text-base font-extrabold tracking-tight">Éco-Voyage</span>
+            </div>
           </div>
         </div>
-        <div className="h-1 bg-surface-container">
-          <div className="h-1 bg-primary transition-all" style={{ width: `${((step + 1) / stepLabels.length) * 100}%` }} />
+
+        {/* Où l'on en est dans le parcours */}
+        <div className="px-6 pb-3">
+          <div className="max-w-2xl mx-auto flex items-baseline justify-between gap-3">
+            <p className="text-sm font-extrabold text-slate-800 truncate">{stepLabels[step]}</p>
+            <p className="text-[11px] font-bold text-slate-400 shrink-0 tabular-nums">
+              Étape {step + 1} sur {stepLabels.length}
+            </p>
+          </div>
+        </div>
+        <div className="h-1 bg-slate-100">
+          <div
+            className="h-1 bg-primary transition-all duration-500"
+            style={{ width: `${((step + 1) / stepLabels.length) * 100}%` }}
+          />
         </div>
       </div>
 
@@ -536,9 +676,14 @@ function NewReservationContent() {
                   <span className="bg-primary/15 text-secondary rounded-full px-2 py-0.5">Circuit</span>
                 )}
               </div>
-              {(offer?.confirmation_mode === "instant" || circuit?.confirmation_mode === "instant") && (
-                <span className="inline-flex items-center gap-1 text-xs text-amber-600 bg-amber-50 rounded-full px-2 py-0.5 mt-1">
-                  <Zap size={10} /> Confirmation instantanée
+              {(offer || circuit) && (
+                <span className={`inline-flex items-center gap-1 text-xs rounded-full px-2 py-0.5 mt-1 ${
+                  confirmation.mode === "instant"
+                    ? "text-amber-600 bg-amber-50"
+                    : "text-blue-700 bg-blue-50"
+                }`}>
+                  {confirmation.mode === "instant" ? <Zap size={10} /> : <Clock size={10} />}
+                  {confirmation.label}
                 </span>
               )}
             </div>
@@ -551,12 +696,11 @@ function NewReservationContent() {
           <div className="bg-primary/5 border border-primary/30 rounded-2xl p-6 flex flex-col items-center gap-3 text-center">
             <CheckCircle size={40} className="text-primary" />
             <div>
-              <p className="font-bold text-on-primary-container text-lg">Réservation envoyée !</p>
+              <p className="font-bold text-on-primary-container text-lg">
+                {editId ? "Réservation modifiée !" : "Réservation envoyée !"}
+              </p>
               <p className="text-sm text-secondary mt-1">
-                {successMessage ||
-                  ((isCircuit ? circuit?.confirmation_mode : offer?.confirmation_mode) === "instant"
-                    ? "Votre réservation est confirmée automatiquement."
-                    : "Le prestataire va confirmer votre réservation sous peu.")}
+                {successMessage || confirmation.description}
               </p>
             </div>
           </div>
@@ -1005,17 +1149,71 @@ function NewReservationContent() {
                     )}
 
                     {totalPrice !== null && (
-                      <div className="mt-4 pt-3 border-t border-slate-100 text-sm space-y-1">
-                        <div className="flex justify-between text-slate-600">
+                      <div className="mt-4 pt-4 border-t border-slate-100">
+                        <div className="flex justify-between text-sm text-slate-600 mb-4">
                           <span>Total ({realParticipantCount} pers.)</span>
                           <span className="font-bold text-slate-800">{totalPrice.toFixed(0)} TND</span>
                         </div>
-                        {shareAmount !== null && (
-                          <div className="flex justify-between text-secondary text-xs font-semibold">
-                            <span>Part par personne</span>
-                            <span>{shareAmount.toFixed(0)} TND</span>
-                          </div>
-                        )}
+
+                        <h4 className="font-semibold text-slate-700 mb-2 flex items-center gap-2 text-sm">
+                          <CreditCard size={15} /> Mode de paiement
+                        </h4>
+                        <div className="space-y-2">
+                          {MODES_REPARTITION.map((m) => {
+                            const actif = paymentSplit === m.cle;
+                            return (
+                              <button
+                                key={m.cle}
+                                type="button"
+                                onClick={() => choisirMode(m.cle)}
+                                className={`w-full flex items-start gap-3 px-3.5 py-3 rounded-xl border-2 text-left transition-all
+                                  ${actif ? "border-primary bg-primary/5" : "border-slate-200 hover:border-primary/30"}`}
+                              >
+                                <span className={`material-symbols-outlined text-lg mt-0.5 ${actif ? "text-primary" : "text-slate-400"}`}>
+                                  {m.icone}
+                                </span>
+                                <span className="flex-1">
+                                  <span className={`block text-sm font-semibold ${actif ? "text-secondary" : "text-slate-600"}`}>
+                                    {m.titre}
+                                  </span>
+                                  <span className="block text-xs text-slate-400 mt-0.5">{m.description}</span>
+                                </span>
+                              </button>
+                            );
+                          })}
+                        </div>
+
+                        {/* Ce que chacun doit, selon le mode retenu. */}
+                        <div className="mt-4 rounded-xl bg-slate-50 border border-slate-100 p-3.5 space-y-2">
+                          <LignePart
+                            nom="Vous (organisateur)"
+                            montant={repartition.organisateur}
+                            modifiable={paymentSplit === "custom"}
+                            valeur={organizerShare}
+                            onChange={setOrganizerShare}
+                          />
+                          {invitedUsers.map((u) => (
+                            <LignePart
+                              key={u.user_id}
+                              nom={u.full_name}
+                              montant={repartition.invites[u.user_id] ?? 0}
+                              modifiable={paymentSplit === "custom"}
+                              valeur={customShares[u.user_id] ?? ""}
+                              onChange={(v) => setCustomShares((p) => ({ ...p, [u.user_id]: v }))}
+                            />
+                          ))}
+                          {repartition.erreur && (
+                            <p className="flex items-center gap-1.5 text-xs font-semibold text-amber-700 bg-amber-50 border border-amber-100 rounded-lg px-2.5 py-2 mt-1">
+                              <AlertCircle size={13} className="flex-shrink-0" />
+                              {repartition.erreur}
+                            </p>
+                          )}
+                          {paymentSplit === "organizer" && (
+                            <p className="text-xs text-slate-400 pt-1">
+                              Vos invités sont conviés sans participation financière.
+                            </p>
+                          )}
+                        </div>
                       </div>
                     )}
                   </div>
@@ -1079,10 +1277,10 @@ function NewReservationContent() {
                         <span>{pricePerUnit.toFixed(0)} TND</span>
                       </div>
                     )}
-                    {shareAmount !== null && realParticipantCount > 1 && (
+                    {totalPrice !== null && realParticipantCount > 1 && (
                       <div className="flex justify-between text-secondary font-semibold">
-                        <span>Part par personne</span>
-                        <span>{shareAmount.toFixed(0)} TND</span>
+                        <span>{enGroupe ? "Votre part" : "Part par personne"}</span>
+                        <span>{repartition.organisateur.toFixed(0)} TND</span>
                       </div>
                     )}
                     <div className="border-t border-slate-100 pt-3">
@@ -1114,25 +1312,21 @@ function NewReservationContent() {
                   </div>
                 </div>
 
-                {/* Mode de confirmation */}
-                <div className={`rounded-2xl p-4 border ${offer?.confirmation_mode === "instant" ? "bg-amber-50 border-amber-100" : "bg-blue-50 border-blue-100"}`}>
-                  {offer?.confirmation_mode === "instant" ? (
-                    <div className="flex items-center gap-2 text-amber-700">
-                      <Zap size={16} />
-                      <div>
-                        <p className="font-semibold text-sm">Confirmation instantanée</p>
-                        <p className="text-xs mt-0.5">Votre réservation sera confirmée immédiatement.</p>
-                      </div>
+                {/* Type de confirmation — repris tel quel de la fiche de l'offre */}
+                <div className={`rounded-2xl p-4 border ${
+                  confirmation.mode === "instant"
+                    ? "bg-amber-50 border-amber-100"
+                    : "bg-blue-50 border-blue-100"
+                }`}>
+                  <div className={`flex items-center gap-2 ${
+                    confirmation.mode === "instant" ? "text-amber-700" : "text-blue-700"
+                  }`}>
+                    {confirmation.mode === "instant" ? <Zap size={16} /> : <Clock size={16} />}
+                    <div>
+                      <p className="font-semibold text-sm">{confirmation.label}</p>
+                      <p className="text-xs mt-0.5">{confirmation.description}</p>
                     </div>
-                  ) : (
-                    <div className="flex items-center gap-2 text-blue-700">
-                      <Clock size={16} />
-                      <div>
-                        <p className="font-semibold text-sm">Confirmation sous 48h</p>
-                        <p className="text-xs mt-0.5">Le prestataire vous confirmera votre réservation.</p>
-                      </div>
-                    </div>
-                  )}
+                  </div>
                 </div>
 
                 {error && (
@@ -1147,7 +1341,13 @@ function NewReservationContent() {
                   disabled={submitting}
                   className="w-full py-4 bg-primary text-slate-900 font-bold rounded-2xl hover:bg-primary/90 disabled:opacity-60 transition-colors text-base shadow-sm flex items-center justify-center gap-2"
                 >
-                  {submitting ? "Envoi en cours…" : depositAmount ? `Confirmer & payer l'acompte (${depositAmount.toFixed(0)} TND)` : "Confirmer la réservation"}
+                  {submitting
+                    ? "Envoi en cours…"
+                    : editId
+                      ? "Enregistrer les modifications"
+                      : depositAmount
+                        ? `Confirmer & payer l'acompte (${depositAmount.toFixed(0)} TND)`
+                        : "Confirmer la réservation"}
                 </button>
               </div>
             )}
@@ -1182,4 +1382,48 @@ export default function NewReservationPage() {
       <NewReservationContent />
     </Suspense>
   );
+}
+
+/**
+ * Une ligne « qui doit combien ». En répartition personnalisée le montant
+ * devient saisissable ; ailleurs il n'est que le résultat du calcul, et le
+ * rendre modifiable laisserait croire qu'on peut le corriger.
+ */
+function LignePart({ nom, montant, modifiable, valeur, onChange }: {
+  nom: string;
+  montant: number;
+  modifiable: boolean;
+  valeur: string;
+  onChange: (v: string) => void;
+}) {
+  return (
+    <div className="flex items-center justify-between gap-3">
+      <span className="text-sm text-slate-600 truncate">{nom}</span>
+      {modifiable ? (
+        <span className="flex items-center gap-1.5 flex-shrink-0">
+          <input
+            type="number"
+            min={0}
+            step="0.01"
+            inputMode="decimal"
+            value={valeur}
+            onChange={(e) => onChange(e.target.value)}
+            className="w-24 px-2.5 py-1.5 border border-slate-200 rounded-lg text-sm text-right font-semibold focus:outline-none focus:ring-2 focus:ring-primary"
+          />
+          <span className="text-xs text-slate-400 font-semibold">TND</span>
+        </span>
+      ) : (
+        <span className="text-sm font-bold text-slate-800 flex-shrink-0 tabular-nums">
+          {montant.toFixed(2)} TND
+        </span>
+      )}
+    </div>
+  );
+}
+
+/** Un champ vide ou mal saisi ne vaut pas zéro : il ne vaut rien encore. */
+function champEnNombre(v: string | undefined): number | null {
+  if (v === undefined || v.trim() === "") return null;
+  const n = Number(v.replace(",", "."));
+  return Number.isFinite(n) && n >= 0 ? n : null;
 }

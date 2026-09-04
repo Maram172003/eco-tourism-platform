@@ -3,6 +3,7 @@
 import { useEffect, useState, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import {
+  ArrowLeft,
   Leaf,
   Search,
   SlidersHorizontal,
@@ -48,6 +49,7 @@ import {
 } from "@/components/destinations/DetailModals";
 import { MACRO_CATEGORIES, TAXONOMY_TAGS, getTagsByMacro } from "@/lib/constants/taxonomy-tags";
 import type { MacroSlug } from "@/lib/constants/taxonomy-tags";
+import { monTableauDeBord } from "@/lib/dashboard-path";
 
 const MapView = dynamic(() => import("@/components/map/MapView"),
   { ssr: false, loading: () => <div className="h-[200px] rounded-xl bg-slate-100 animate-pulse" /> }
@@ -840,7 +842,16 @@ function CircuitCard({ circuit, onClick }: { circuit: Circuit; onClick: () => vo
 
 // ─── Page ──────────────────────────────────────────────────────────────────────
 
-export default function DestinationsPage() {
+/**
+ * Page publique des destinations, et — montée avec `interne` — le Catalogue
+ * accessible depuis la barre latérale de l'éco-voyageur.
+ *
+ * Un seul composant pour deux présentations : la version publique garde son
+ * en-tête, son héros et son pied de page ; la version interne les remplace par
+ * la barre de la plateforme. Dupliquer 1300 lignes aurait garanti la dérive.
+ */
+export default function DestinationsPage({ interne = false }: { interne?: boolean } = {}) {
+  const router = useRouter();
   const [offers, setOffers] = useState<Offer[]>([]);
   const [circuits, setCircuits] = useState<Circuit[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
@@ -1075,10 +1086,53 @@ export default function DestinationsPage() {
 
   return (
     <div className="relative flex min-h-screen flex-col overflow-x-hidden bg-background">
-      <Navbar variant="home" />
+      {interne ? (
+        <>
+          {/* Barre de la plateforme, pour l'accès depuis la barre latérale. */}
+          <div className="sticky top-0 z-40 bg-white/80 backdrop-blur-md border-b border-slate-200 px-6 md:px-20 lg:px-40 py-3">
+            <div className="max-w-[1440px] mx-auto flex items-center justify-between">
+              <button
+                onClick={() => router.push(monTableauDeBord())}
+                className="flex items-center gap-2 rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100 transition-all"
+              >
+                <ArrowLeft size={16} />Retour
+              </button>
+              <div className="flex items-center gap-2 text-slate-900">
+                <Leaf className="text-primary w-6 h-6" />
+                <span className="text-base font-extrabold tracking-tight">Éco-Voyage</span>
+              </div>
+            </div>
+          </div>
+
+          <div className="max-w-[1440px] mx-auto w-full px-6 md:px-20 lg:px-40 pt-8 pb-2">
+            <h1 className="text-3xl font-black text-slate-900 tracking-tight">Catalogue des offres</h1>
+            <p className="text-sm text-slate-500 font-medium mt-1 mb-6">
+              Offres, circuits et projets éco-responsables à travers la Tunisie.
+            </p>
+            <div className="relative max-w-2xl">
+              <span className="absolute left-2 top-1/2 -translate-y-1/2 h-9 w-9 rounded-xl bg-primary/10 flex items-center justify-center">
+                <Search className="w-4 h-4 text-primary" />
+              </span>
+              <input
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Rechercher une offre, un circuit, une activité…"
+                className="w-full h-14 pl-14 pr-12 rounded-2xl bg-white border border-slate-200 shadow-sm text-slate-800 placeholder-slate-400 font-medium focus:outline-none focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all"
+              />
+              {search && (
+                <button onClick={() => setSearch("")} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
+                  <X className="w-4 h-4" />
+                </button>
+              )}
+            </div>
+          </div>
+        </>
+      ) : (
+        <Navbar variant="home" />
+      )}
 
       {/* Hero */}
-      <div className="relative bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 py-20 px-6 md:px-20 lg:px-40 overflow-hidden">
+      {!interne && <div className="relative bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 py-20 px-6 md:px-20 lg:px-40 overflow-hidden">
         <div className="absolute inset-0 opacity-10" style={{ backgroundImage: "url('https://images.unsplash.com/photo-1469474968028-56623f02e42e?w=1200&q=80')", backgroundSize: "cover", backgroundPosition: "center" }} />
         <div className="relative max-w-[1440px] mx-auto">
           <div className="flex items-center gap-2 mb-4">
@@ -1102,7 +1156,7 @@ export default function DestinationsPage() {
             )}
           </div>
         </div>
-      </div>
+      </div>}
 
       {/* Offers */}
       <main className="flex-1 max-w-[1440px] mx-auto w-full px-6 md:px-20 lg:px-40 py-12">
@@ -1281,7 +1335,7 @@ export default function DestinationsPage() {
       )}
 
       {/* Expériences Clientèle */}
-      {!loading && experiences.length > 0 && (
+      {!interne && !loading && experiences.length > 0 && (
         <section className="bg-white border-t border-slate-100 py-16 px-6 md:px-20 lg:px-40">
           <div className="max-w-[1440px] mx-auto">
             <div className="flex items-center gap-3 mb-3">
@@ -1344,7 +1398,7 @@ export default function DestinationsPage() {
       {selectedProject && <ProjectModal project={selectedProject} onClose={() => setSelectedProject(null)} />}
       {selectedExperience && <ExperienceModal exp={selectedExperience} onClose={() => setSelectedExperience(null)} />}
 
-      <Footer />
+      {!interne && <Footer />}
     </div>
   );
 }

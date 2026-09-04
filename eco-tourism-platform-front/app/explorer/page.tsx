@@ -13,6 +13,7 @@ import PlaceContributions, { type TopPhotoData, type TopDescData } from "@/compo
 import OfferDetailView from "@/components/offer/OfferDetailView";
 import CircuitDetailView from "@/components/circuit/CircuitDetailView";
 import SustainabilityBadge from "@/components/common/SustainabilityBadge";
+import { goToReservation, goToCircuitReservation } from "@/lib/auth";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -939,7 +940,8 @@ export default function ExplorerPage() {
       { label: "Explorer",        icon: "explore",         href: "/explorer" },
       { label: "Expériences",     icon: "auto_stories",   href: "/profile/ecovoyageur?tab=experiences" },
       { label: "Lieux",           icon: "location_on",    href: "/profile/ecovoyageur?tab=lieux" },
-      { label: "Séjour",          icon: "hotel",           href: "/offers" },
+      { label: "Catalogue",       icon: "travel_explore",  href: "/catalogue" },
+      { label: "Réservations",    icon: "book_online",     href: "/dashboard/ecovoyageur/reservations" },
       { label: "Paramètres",      icon: "settings",        href: "/dashboard/profile" },
       { label: "Messagerie",      icon: "forum",           href: "/messagerie" },
     ] : [
@@ -1422,6 +1424,42 @@ export default function ExplorerPage() {
             {!detailLoading && !detailData && (
               <div className="flex items-center justify-center py-24 text-slate-400 text-sm">
                 Impossible de charger les détails.
+              </div>
+            )}
+
+            {/* Pied de la fenêtre — même présentation que sur la page Destinations.
+                Réservé aux éco-voyageurs : ce sont eux qui réservent. */}
+            {!detailLoading && detailData && role === "eco_traveler" && (
+              <div className="flex items-center justify-between gap-4 px-6 py-5 border-t border-slate-100 dark:border-slate-700">
+                {detailItem.type === "offer" ? (
+                  detailData.price != null ? (
+                    <div>
+                      <p className="text-xs text-slate-400 font-medium">À partir de</p>
+                      <p className="text-3xl font-black text-slate-900 dark:text-slate-100">
+                        {detailData.price} <span className="text-lg font-bold text-slate-400">TND</span>
+                      </p>
+                    </div>
+                  ) : (
+                    <p className="text-base font-semibold text-slate-400 italic">Prix sur demande</p>
+                  )
+                ) : (
+                  <div className="flex items-center gap-1.5">
+                    <Calendar className="w-4 h-4 text-slate-400" />
+                    <span className="text-sm font-semibold text-slate-500">
+                      {detailData.nb_jours} jour{detailData.nb_jours > 1 ? "s" : ""}
+                    </span>
+                  </div>
+                )}
+                <button
+                  onClick={() =>
+                    detailItem.type === "offer"
+                      ? goToReservation(detailItem.id)
+                      : goToCircuitReservation(detailItem.id)
+                  }
+                  className="h-12 px-8 rounded-xl bg-primary text-slate-900 font-extrabold hover:bg-primary/90 transition-colors text-sm shrink-0"
+                >
+                  {detailItem.type === "offer" ? "Réserver cette offre" : "Réserver ce circuit"}
+                </button>
               </div>
             )}
           </div>

@@ -27,25 +27,6 @@ type PendingPublication = {
   created_at: string;
 };
 
-type PendingOffer = {
-  id: string;
-  title: string;
-  description: string | null;
-  price: number | null;
-  duration: string | null;
-  offer_type: string | null;
-  author_type: string;
-  author_id: string;
-  images: string[] | null;
-  inclusions: string | null;
-  meeting_point: string | null;
-  min_group_size: number | null;
-  max_group_size: number | null;
-  min_age: number | null;
-  cancellation_policy: string | null;
-  sustainability_score: number | null;
-  created_at: string;
-};
 
 type PendingProvider = {
   user_id: string;
@@ -151,7 +132,7 @@ type PendingGuide = {
   skills_landscapes: string[] | null;
 };
 
-type Tab = "publications" | "offers" | "providers" | "guides" | "reports" | "banned";
+type Tab = "publications" | "providers" | "guides" | "reports" | "banned";
 
 type BannedUser = {
   user_id: string;
@@ -295,34 +276,6 @@ function PublicationDetail({ pub, onClose, onApprove, onReject, loading }: {
   );
 }
 
-function OfferDetail({ offer, onClose, onApprove, onReject, loading }: {
-  offer: PendingOffer;
-  onClose: () => void;
-  onApprove: () => void;
-  onReject: () => void;
-  loading: boolean;
-}) {
-  return (
-    <DetailModal title={offer.title} badge={offer.author_type === "guide" ? "Guide" : "Prestataire"} date={offer.created_at} onClose={onClose} onApprove={onApprove} onReject={onReject} loading={loading}>
-      <DetailImages images={offer.images} />
-      <div className="grid grid-cols-3 gap-4">
-        <DetailField label="Type d'offre" value={offer.offer_type} />
-        <DetailField label="Prix" value={offer.price != null ? `${offer.price} TND` : null} />
-        <DetailField label="Durée" value={offer.duration} />
-      </div>
-      <DetailField label="Description" value={offer.description} />
-      <DetailField label="Inclusions" value={offer.inclusions} />
-      <DetailField label="Point de rendez-vous" value={offer.meeting_point} />
-      <div className="grid grid-cols-3 gap-4">
-        <DetailField label="Groupe min" value={offer.min_group_size} />
-        <DetailField label="Groupe max" value={offer.max_group_size} />
-        <DetailField label="Âge minimum" value={offer.min_age} />
-      </div>
-      <DetailField label="Politique d'annulation" value={offer.cancellation_policy} />
-      <DetailSustainability score={offer.sustainability_score} />
-    </DetailModal>
-  );
-}
 
 const PROVIDER_TYPE_LABELS: Record<string, string> = {
   guide: "Guide nature", agence: "Agence de voyage", ecolodge: "Écolodge",
@@ -932,6 +885,15 @@ const ACTION_OPTIONS = [
   { value: "dismiss", label: "Rejeter le signalement",    icon: X,             color: "text-slate-600 border-slate-300 bg-slate-50 hover:bg-slate-100" },
 ];
 
+/** Les rôles techniques n'ont pas à s'afficher tels quels. */
+const ROLE_LABELS: Record<string, string> = {
+  eco_traveler: "Éco-voyageur",
+  guide: "Guide",
+  provider: "Prestataire",
+  project: "Prestataire",
+  admin: "Administrateur",
+};
+
 const BAN_DURATIONS = [
   { label: "1 jour",    days: 1 },
   { label: "3 jours",   days: 3 },
@@ -955,28 +917,49 @@ function ResolveModal({ report, onConfirm, onClose }: { report: Report; onConfir
           <div>
             <h3 className="text-base font-extrabold text-slate-900">Résoudre le signalement</h3>
             <p className="text-xs text-slate-500 font-medium mt-0.5">
-              Signalé par <strong>{report.reporter.full_name ?? "—"}</strong> · Motif : {report.reason}
+              {new Date(report.created_at).toLocaleDateString("fr-FR", { day: "numeric", month: "long", year: "numeric" })}
             </p>
           </div>
         </div>
 
-        {/* Reported user info */}
-        <div className="bg-slate-50 rounded-2xl p-4 flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-slate-200 overflow-hidden flex items-center justify-center shrink-0">
-            {report.reported.photo
-              ? <img src={report.reported.photo} alt="" className="w-full h-full object-cover" />
-              : <span className="material-symbols-outlined text-slate-400 text-base">person</span>}
-          </div>
-          <div>
-            <p className="text-sm font-extrabold text-slate-800">{report.reported.full_name ?? "—"}</p>
-            <p className="text-xs text-slate-400 font-medium">{report.reported.role} · {report.reported.email}</p>
-          </div>
-          {report.reported.status === "banned" && (
-            <span className="ml-auto text-xs font-bold px-2 py-1 bg-red-100 text-red-600 rounded-lg">Banni</span>
-          )}
+        {/* Le motif est le cœur du signalement : il porte la décision. */}
+        <div className="rounded-2xl border border-red-100 bg-red-50/60 p-4">
+          <p className="text-[10px] font-black tracking-widest text-red-400 uppercase mb-1">Motif invoqué</p>
+          <p className="text-sm font-semibold text-red-900 leading-snug">{report.reason || "Aucun motif précisé"}</p>
+        </div>
+
+        {/* Les deux personnes, côte à côte : qui signale, qui est signalé. */}
+        <div className="grid grid-cols-2 gap-3">
+          {[
+            { titre: "Signalant", p: report.reporter, teinte: "bg-slate-50" },
+            { titre: "Signalé", p: report.reported, teinte: "bg-amber-50/70 border border-amber-100" },
+          ].map(({ titre, p, teinte }) => (
+            <div key={titre} className={`rounded-2xl p-3.5 ${teinte}`}>
+              <p className="text-[10px] font-black tracking-widest text-slate-400 uppercase mb-2">{titre}</p>
+              <div className="flex items-center gap-2.5">
+                <div className="w-10 h-10 rounded-xl bg-slate-200 overflow-hidden flex items-center justify-center shrink-0">
+                  {p.photo
+                    ? <img src={p.photo} alt="" className="w-full h-full object-cover" />
+                    : <span className="material-symbols-outlined text-slate-400 text-base">person</span>}
+                </div>
+                <div className="min-w-0">
+                  <p className="text-sm font-extrabold text-slate-800 truncate">{p.full_name ?? "Nom inconnu"}</p>
+                  <p className="text-[11px] text-slate-400 font-medium truncate">{ROLE_LABELS[p.role] ?? p.role}</p>
+                  <p className="text-[11px] text-slate-400 font-medium truncate">{p.email}</p>
+                </div>
+              </div>
+              {p.status === "banned" && (
+                <span className="mt-2 inline-block text-[10px] font-black px-2 py-0.5 bg-red-100 text-red-600 rounded-lg">
+                  Compte banni
+                </span>
+              )}
+            </div>
+          ))}
         </div>
 
         {/* Action choice */}
+        <div>
+        <p className="text-[10px] font-black tracking-widest text-slate-400 uppercase mb-2">Décision</p>
         <div className="grid grid-cols-2 gap-2">
           {ACTION_OPTIONS.map(({ value, label, icon: Icon, color }) => (
             <button key={value} onClick={() => setAction(value)}
@@ -985,6 +968,7 @@ function ResolveModal({ report, onConfirm, onClose }: { report: Report; onConfir
               {label}
             </button>
           ))}
+        </div>
         </div>
 
         {/* Ban duration selector */}
@@ -1037,7 +1021,6 @@ export default function AdminPage() {
   const [tab, setTab] = useState<Tab>("publications");
 
   const [publications, setPublications] = useState<PendingPublication[]>([]);
-  const [offers, setOffers] = useState<PendingOffer[]>([]);
   const [providers, setProviders] = useState<PendingProvider[]>([]);
   const [guides, setGuides] = useState<PendingGuide[]>([]);
   const [reports, setReports] = useState<Report[]>([]);
@@ -1045,7 +1028,6 @@ export default function AdminPage() {
   const [loading, setLoading] = useState(true);
 
   const [detailPub, setDetailPub] = useState<PendingPublication | null>(null);
-  const [detailOffer, setDetailOffer] = useState<PendingOffer | null>(null);
   const [detailProvider, setDetailProvider] = useState<PendingProvider | null>(null);
   const [detailGuide, setDetailGuide] = useState<PendingGuide | null>(null);
 
@@ -1069,16 +1051,14 @@ export default function AdminPage() {
     async function fetchAll() {
       setLoading(true);
       try {
-        const [pubs, offrs, provs, gds, reps, banned] = await Promise.all([
+        const [pubs, provs, gds, reps, banned] = await Promise.all([
           apiFetch<PendingPublication[]>("/admin/publications/pending", { headers: { Authorization: `Bearer ${token}` } }),
-          apiFetch<PendingOffer[]>("/admin/offers/pending", { headers: { Authorization: `Bearer ${token}` } }),
           apiFetch<PendingProvider[]>("/admin/providers/pending", { headers: { Authorization: `Bearer ${token}` } }),
           apiFetch<PendingGuide[]>("/admin/guides/pending", { headers: { Authorization: `Bearer ${token}` } }),
           apiFetch<Report[]>("/admin/reports", { headers: { Authorization: `Bearer ${token}` } }),
           apiFetch<BannedUser[]>("/admin/users/banned", { headers: { Authorization: `Bearer ${token}` } }),
         ]);
         setPublications(pubs);
-        setOffers(offrs);
         setProviders(provs);
         setGuides(gds);
         setReports(reps);
@@ -1123,7 +1103,6 @@ export default function AdminPage() {
 
   function removeItem(type: Tab, id: string) {
     if (type === "publications") setPublications((p) => p.filter((x) => x.id !== id));
-    if (type === "offers") setOffers((p) => p.filter((x) => x.id !== id));
     if (type === "providers") setProviders((p) => p.filter((x) => x.user_id !== id));
     if (type === "guides") setGuides((p) => p.filter((x) => x.user_id !== id));
   }
@@ -1148,7 +1127,6 @@ export default function AdminPage() {
 
   function closeDetail() {
     setDetailPub(null);
-    setDetailOffer(null);
     setDetailProvider(null);
     setDetailGuide(null);
   }
@@ -1177,8 +1155,8 @@ export default function AdminPage() {
   }
 
   const pendingReports = reports.filter((r) => r.status === "pending");
-  const counts: Record<Tab, number> = { publications: publications.length, offers: offers.length, providers: providers.length, guides: guides.length, reports: pendingReports.length, banned: bannedUsers.length };
-  const tabLabels: Record<Tab, string> = { publications: "Lieux", offers: "Offres", providers: "Prestataires", guides: "Guides", reports: "Signalements", banned: "Bannis" };
+  const counts: Record<Tab, number> = { publications: publications.length, providers: providers.length, guides: guides.length, reports: pendingReports.length, banned: bannedUsers.length };
+  const tabLabels: Record<Tab, string> = { publications: "Lieux", providers: "Prestataires", guides: "Guides", reports: "Signalements", banned: "Bannis" };
 
   if (!token) return (
     <div className="min-h-screen bg-slate-50 flex items-center justify-center">
@@ -1209,7 +1187,7 @@ export default function AdminPage() {
       <main className="max-w-5xl mx-auto px-6 py-8">
         {/* Stats */}
         <div className="grid grid-cols-6 gap-4 mb-8">
-          {(["publications", "offers", "providers", "guides"] as Tab[]).map((t) => (
+          {(["publications", "providers", "guides"] as Tab[]).map((t) => (
             <div key={t} className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm">
               <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-1">{tabLabels[t]}</p>
               <p className="text-3xl font-extrabold text-slate-900">{counts[t]}</p>
@@ -1230,7 +1208,7 @@ export default function AdminPage() {
 
         {/* Tabs */}
         <div className="flex gap-2 mb-6 flex-wrap">
-          {(["publications", "offers", "providers", "guides", "reports", "banned"] as Tab[]).map((t) => (
+          {(["publications", "providers", "guides", "reports", "banned"] as Tab[]).map((t) => (
             <button key={t} onClick={() => setTab(t)}
               className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-bold transition-all ${
                 tab === t
@@ -1277,22 +1255,6 @@ export default function AdminPage() {
               ))
             )}
 
-            {tab === "offers" && (
-              offers.length === 0 ? <Empty label="Aucune offre en attente" /> :
-              offers.map((offer) => (
-                <ContentCard key={offer.id}
-                  title={offer.title}
-                  badge={offer.author_type === "guide" ? "Guide" : "Prestataire"}
-                  meta={[offer.offer_type, offer.duration, offer.price != null ? `${offer.price} TND` : null].filter(Boolean).join(" · ")}
-                  description={offer.description}
-                  date={offer.created_at}
-                  loading={actionLoading === offer.id}
-                  onOpen={() => setDetailOffer(offer)}
-                  onApprove={() => approve("offers", offer.id)}
-                  onReject={() => setRejectTarget({ type: "offers", id: offer.id })}
-                />
-              ))
-            )}
 
             {tab === "providers" && (
               providers.length === 0 ? <Empty label="Aucun prestataire en attente" /> :
@@ -1469,13 +1431,6 @@ export default function AdminPage() {
           onApprove={() => approve("publications", detailPub.id)}
           onReject={() => { closeDetail(); setRejectTarget({ type: "publications", id: detailPub.id }); }}
           loading={actionLoading === detailPub.id}
-        />
-      )}
-      {detailOffer && (
-        <OfferDetail offer={detailOffer} onClose={closeDetail}
-          onApprove={() => approve("offers", detailOffer.id)}
-          onReject={() => { closeDetail(); setRejectTarget({ type: "offers", id: detailOffer.id }); }}
-          loading={actionLoading === detailOffer.id}
         />
       )}
       {detailGuide && (

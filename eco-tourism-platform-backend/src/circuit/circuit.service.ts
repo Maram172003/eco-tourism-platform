@@ -38,6 +38,34 @@ type CircuitEtapeRaw = {
   [key: string]: any;
 };
 
+/**
+ * Une étape telle qu'un visiteur doit la voir.
+ *
+ * Le JSON stocké garde tout ce qui a servi à monter le circuit : l'identifiant
+ * du partenaire pressenti, son nom, l'état de son invitation. Rien de cela ne
+ * regarde le catalogue. Tant que la collaboration n'est pas acceptée, l'étape
+ * est publiée sans partenaire — le circuit reste lisible, la négociation reste
+ * privée. Une fois acceptée, seul le nom est publié, jamais l'identifiant.
+ */
+function etapePublique(etape: any, statut?: string, contribution?: any): any {
+  const acceptee = statut === 'accepted' || statut === 'completed';
+  const { collaborator_id, ...reste } = etape ?? {};
+  if (!acceptee) {
+    return {
+      ...reste,
+      collaborator_name: undefined,
+      collaborator_type: undefined,
+      collaborator_status: undefined,
+      collab_contribution: undefined,
+    };
+  }
+  return {
+    ...reste,
+    collaborator_status: statut,
+    collab_contribution: contribution ?? etape?.collab_contribution ?? undefined,
+  };
+}
+
 @Injectable()
 export class CircuitService {
   constructor(
@@ -127,7 +155,12 @@ export class CircuitService {
     return Promise.all(
       circuits.map(async (circuit) => {
         // ── Enrichissement collab (comme findPublicDetail) ──────────────────
-        const collabs = collabsByCircuit[circuit.id] ?? [];
+        // Seules les collaborations acceptées sortent au public : une étape
+        // dont le partenaire n'a pas encore répondu, ou a refusé, relève de la
+        // préparation du circuit et n'a pas à s'afficher dans le catalogue.
+        const collabs = (collabsByCircuit[circuit.id] ?? []).filter(
+          (c) => c.status === 'accepted' || c.status === 'completed',
+        );
         const statusMap: Record<string, string> = {};
         const contribMap: Record<string, any> = {};
         collabs.forEach((c) => {
@@ -136,24 +169,21 @@ export class CircuitService {
             if (c.contribution_data) contribMap[c.etape_id] = c.contribution_data;
           }
         });
-        const etapes = ((circuit.etapes as any[]) ?? []).map((e: any) => ({
-          ...e,
-          collaborator_status: statusMap[e.id] ?? e.collaborator_status ?? undefined,
-          collab_contribution: contribMap[e.id] ?? e.collab_contribution ?? undefined,
-        }));
+        const etapes = ((circuit.etapes as any[]) ?? []).map((e: any) =>
+          etapePublique(e, statusMap[e.id], contribMap[e.id]),
+        );
         const hebergCollab = collabs.find((c) => c.section === 'hebergement');
         const heberg = circuit.hebergement as any;
-        const enrichedHeberg =
-          hebergCollab && heberg?.etape
-            ? {
-                ...heberg,
-                etape: {
-                  ...heberg.etape,
-                  collab_contribution: hebergCollab.contribution_data ?? heberg.etape?.collab_contribution ?? null,
-                  collab_status: hebergCollab.status ?? null,
-                },
-              }
-            : heberg;
+        const enrichedHeberg = heberg?.etape
+          ? {
+              ...heberg,
+              etape: {
+                ...etapePublique(heberg.etape, hebergCollab?.status, hebergCollab?.contribution_data),
+                collab_contribution: hebergCollab?.contribution_data ?? null,
+                collab_status: hebergCollab?.status ?? null,
+              },
+            }
+          : heberg;
 
         // ── Nom / photo de l'auteur ─────────────────────────────────────────
         let author_name: string | null = null;
@@ -187,7 +217,11 @@ export class CircuitService {
   async findPublicDetail(circuitId: string): Promise<any> {
     const circuit = await this.repo.findOne({ where: { id: circuitId, status: 'approved' } });
     if (!circuit) throw new NotFoundException('Circuit introuvable ou non publié.');
-    const collabs = await this.collabRepo.find({ where: { circuit_id: circuitId } });
+    // Même règle que la liste publique : seules les collaborations acceptées
+    // sortent, et jamais l'identifiant du partenaire.
+    const collabs = (await this.collabRepo.find({ where: { circuit_id: circuitId } })).filter(
+      (c) => c.status === 'accepted' || c.status === 'completed',
+    );
     const statusMap: Record<string, string> = {};
     const contribMap: Record<string, any> = {};
     collabs.forEach((c) => {
@@ -196,15 +230,20 @@ export class CircuitService {
         if (c.contribution_data) contribMap[c.etape_id] = c.contribution_data;
       }
     });
-    const etapes = ((circuit.etapes as any[]) ?? []).map((e: any) => ({
-      ...e,
-      collaborator_status: statusMap[e.id] ?? undefined,
-      collab_contribution: contribMap[e.id] ?? undefined,
-    }));
+    const etapes = ((circuit.etapes as any[]) ?? []).map((e: any) =>
+      etapePublique(e, statusMap[e.id], contribMap[e.id]),
+    );
     const hebergCollab = collabs.find((c) => c.section === 'hebergement');
     const heberg = circuit.hebergement as any;
-    const enrichedHeberg = hebergCollab && heberg?.etape
-      ? { ...heberg, etape: { ...heberg.etape, collab_contribution: hebergCollab.contribution_data ?? null, collab_status: hebergCollab.status ?? null } }
+    const enrichedHeberg = heberg?.etape
+      ? {
+          ...heberg,
+          etape: {
+            ...etapePublique(heberg.etape, hebergCollab?.status, hebergCollab?.contribution_data),
+            collab_contribution: hebergCollab?.contribution_data ?? null,
+            collab_status: hebergCollab?.status ?? null,
+          },
+        }
       : heberg;
     return enrichCircuitWithBookingFields({ ...circuit, etapes, hebergement: enrichedHeberg }, collabs);
   }

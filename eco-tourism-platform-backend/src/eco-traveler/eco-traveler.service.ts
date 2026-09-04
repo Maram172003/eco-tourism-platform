@@ -4,6 +4,7 @@ import { Not, Or, Repository } from 'typeorm';
 import { EcoTraveler } from './entities/eco-traveler.entity';
 import { Friendship } from './entities/friendship.entity';
 import { Publication } from '../publication/entities/publication.entity';
+import { Reservation } from '../reservation/entities/reservation.entity';
 import {
   CompleteProfileDto,
   UpdateGoalsDto,
@@ -12,6 +13,9 @@ import {
   UpdateTravelerTypesDto,
 } from './dto/eco-traveler.dto';
 import { EcoTravelerMongoService } from './eco-traveler-mongo.service';
+import { BadgeService } from '../badge/badge.service';
+import { ReportsService } from '../reports/reports.service';
+import { ligne, lignePartielle, totalCompletion, type LigneCompletion } from '../common/completion.util';
 
 @Injectable()
 export class EcoTravelerService {
@@ -22,7 +26,11 @@ export class EcoTravelerService {
     private readonly pubRepo: Repository<Publication>,
     @InjectRepository(Friendship)
     private readonly friendRepo: Repository<Friendship>,
+    @InjectRepository(Reservation)
+    private readonly reservationRepo: Repository<Reservation>,
     private readonly mongoService: EcoTravelerMongoService,
+    private readonly badgeService: BadgeService,
+    private readonly reportsService: ReportsService,
   ) { }
 
   async getProfile(userId: string) {
@@ -47,9 +55,28 @@ export class EcoTravelerService {
       const freshPartages = Math.min(pubCount * 20, 100);
       if (freshPartages !== sqlProfile.score_partages) {
         sqlProfile.score_partages = freshPartages;
-        sqlProfile.sustainability_score = this.calculateFinalScore(sqlProfile);
         dirty = true;
       }
+
+      // Même principe pour les réservations, qui restent affichées dans la
+      // ventilation même si elles ne pilotent plus le score final.
+      const freshReservations = await this.calculerScoreReservations(userId);
+      if (freshReservations !== sqlProfile.score_reservations) {
+        sqlProfile.score_reservations = freshReservations;
+        dirty = true;
+      }
+
+      // Le score de durabilité se déduit désormais de la progression dans
+      // l'échelle de badges : le questionnaire donne le départ, les paliers
+      // prennent le relais. On le rafraîchit ici pour que le profil et le
+      // tableau de bord n'affichent jamais une valeur d'un chargement de retard.
+      try {
+        const stats = await this.badgeService.getStats(userId, 'eco_traveler');
+        if (stats.sustainability_score !== sqlProfile.sustainability_score) {
+          sqlProfile.sustainability_score = stats.sustainability_score;
+          dirty = true;
+        }
+      } catch { /* le score reste celui déjà enregistré */ }
 
       if (dirty) {
         await this.repo.save(sqlProfile);
@@ -79,6 +106,7 @@ export class EcoTravelerService {
       score_feedbacks: sqlProfile?.score_feedbacks ?? 0,
       score_partages: sqlProfile?.score_partages ?? 0,
       profile_completion: sqlProfile?.profile_completion,
+      completion_details: sqlProfile ? this.lignesCompletion(sqlProfile) : [],
       is_onboarded: sqlProfile?.is_onboarded,
 
       // ── MongoDB preferences : unique à cette source ─────────────────
@@ -228,6 +256,35 @@ export class EcoTravelerService {
     // TODO Sprint badges : déclencher les badges liés au score ici quand les noms/seuils seront définis
 
     return saved;
+  }
+
+  /**
+   * Composant « réservations » du score (40 %).
+   *
+   * Il mesure la durabilité de ce que le voyageur réserve réellement : la
+   * moyenne des scores des offres et circuits qu'il a fait confirmer. Réserver
+   * beaucoup ne suffit pas, c'est la qualité de ce qu'on réserve qui compte —
+   * le même principe que du côté des professionnels, notés sur leurs
+   * publications et non sur leur nombre.
+   *
+   * Les réservations encore en attente ne comptent pas : rien n'est acquis
+   * tant que le prestataire n'a pas confirmé.
+   */
+  private async calculerScoreReservations(userId: string): Promise<number> {
+    const lignes = await this.reservationRepo
+      .createQueryBuilder('r')
+      .leftJoin('r.offer', 'o')
+      .leftJoin('r.circuit', 'c')
+      .select('COALESCE(o.sustainability_score, c.sustainability_score)', 'score')
+      .where('r.organizer_id = :userId', { userId })
+      .andWhere('r.status IN (:...statuts)', { statuts: ['confirmed', 'completed'] })
+      .getRawMany<{ score: string | number | null }>();
+
+    const scores = lignes
+      .map((l) => (l.score == null ? null : Number(l.score)))
+      .filter((n): n is number => n !== null && Number.isFinite(n));
+    if (scores.length === 0) return 0;
+    return Math.round(scores.reduce((t, n) => t + n, 0) / scores.length);
   }
 
   private async findOrFail(userId: string) {
@@ -430,27 +487,43 @@ export class EcoTravelerService {
     return this.friendRepo.save(block);
   }
 
+  /**
+   * Signalement d'un autre membre depuis son réseau.
+   *
+   * Il créait une ligne dans `friendships`, avec le motif encodé dans la
+   * colonne `status` — une amitié au statut `report:…`. L'administrateur, qui
+   * ne lit que la table `reports`, n'en voyait jamais rien, et le signalement
+   * atterrissait parmi les demandes d'amitié.
+   */
   async reportUser(reporterId: string, targetId: string, reason: string) {
     if (reporterId === targetId) throw new BadRequestException('Action invalide.');
-    // Store as a special record for admin review
-    const report = this.friendRepo.create({ requester_id: reporterId, receiver_id: targetId, status: `report:${reason.substring(0, 100)}` });
-    return this.friendRepo.save(report);
+    return this.reportsService.createReport(reporterId, 'eco_traveler', targetId, reason);
+  }
+
+  /**
+   * Complétion du profil éco-voyageur, calée sur les 5 étapes de son onboarding.
+   *
+   * `travel_styles` valait 7 points alors qu'il n'est jamais collecté — le
+   * champ est déclaré « conservé en state, non affiché ni envoyé ». Tous les
+   * voyageurs plafonnaient donc à 93 %. Ces 7 points sont redistribués sur les
+   * motivations et les valeurs, que l'étape 4 collecte séparément.
+   */
+  /** Le barème, ligne à ligne — c'est lui qui produit le pourcentage. */
+  private lignesCompletion(p: Partial<EcoTraveler>): LigneCompletion[] {
+    return [
+      lignePartielle('Identité', 'Nom, pays et langue', 20, [p.full_name, p.country, p.language]),
+      ligne('Identité', 'Photo de profil', 5, p.photo),
+      ligne('Identité', 'Biographie', 5, p.bio),
+      ligne('Profil voyageur', 'Type de voyageur', 15, p.traveler_types),
+      ligne('Intérêts', "Centres d'intérêt", 15, p.interests),
+      ligne('Intérêts', 'Paysages préférés', 10, p.landscapes),
+      ligne('Motivations', 'Motivations de voyage', 10, p.motivations),
+      ligne('Motivations', 'Valeurs de durabilité', 10, p.sustainability_values),
+      ligne('Objectifs', 'Objectifs durables', 10, p.sustainability_goals),
+    ];
   }
 
   private calculateCompletion(p: Partial<EcoTraveler>): number {
-    let score = 0;
-
-    const identityFields = [p.full_name, p.country, p.language];
-    score += (identityFields.filter(Boolean).length / identityFields.length) * 30;
-
-    if (p.traveler_types?.length) score += 10;
-    if (p.motivations?.length || p.sustainability_values?.length) score += 10;
-    if (p.interests?.length) score += 15;
-    if (p.landscapes?.length) score += 8;
-    if (p.travel_styles?.length) score += 7;
-    if (p.sustainability_goals?.length) score += 10;
-    if (p.photo) score += 10;
-
-    return Math.round(score);
+    return totalCompletion(this.lignesCompletion(p));
   }
 }

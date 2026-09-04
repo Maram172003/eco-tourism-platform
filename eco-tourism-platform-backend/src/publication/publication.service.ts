@@ -16,6 +16,8 @@ import { OfferService } from '../offer/offer.service';
 import { CircuitService } from '../circuit/circuit.service';
 import { ItemLike } from '../interactions/entities/item-like.entity';
 import { macrosOfTags } from '../common/constants/taxonomy';
+import { PlaceContribution } from '../place-contribution/entities/place-contribution.entity';
+import { PublicationShare } from './entities/publication-share.entity';
 
 const AMBASSADOR_BADGE = 'Ambassadeur Éco-Voyage';
 
@@ -34,6 +36,10 @@ export class PublicationService {
     private readonly ecoRepo: Repository<EcoTraveler>,
     @InjectRepository(Provider)
     private readonly providerRepo: Repository<Provider>,
+    @InjectRepository(PlaceContribution)
+    private readonly contribRepo: Repository<PlaceContribution>,
+    @InjectRepository(PublicationShare)
+    private readonly shareRepo: Repository<PublicationShare>,
     @InjectRepository(Follow)
     private readonly followRepo: Repository<Follow>,
     @InjectRepository(Friendship)
@@ -47,6 +53,68 @@ export class PublicationService {
   ) {}
 
   // ─── CRUD ─────────────────────────────────────────────────────────────────
+
+  /**
+   * Enregistre un partage.
+   *
+   * Sans contrainte d'unicité : partager deux fois est deux partages, là où
+   * aimer deux fois n'a pas de sens. Le visiteur non connecté compte aussi,
+   * c'est justement lui que le partage cherche à atteindre.
+   */
+  async recordShare(publicationId: string, userId?: string | null): Promise<{ shares: number }> {
+    await this.shareRepo.save(
+      this.shareRepo.create({ publication_id: publicationId, user_id: userId ?? null }),
+    );
+    return { shares: await this.shareRepo.count({ where: { publication_id: publicationId } }) };
+  }
+
+  /**
+   * Retombées de la dernière expérience et du dernier lieu publiés.
+   *
+   * L'auteur voyait le nombre de ses publications, jamais ce qu'elles avaient
+   * suscité. Ces compteurs viennent des tables d'interaction — il n'y a pas de
+   * champ dénormalisé à maintenir, et donc rien qui puisse dériver.
+   */
+  async getMyEngagement(userId: string): Promise<{
+    experience: Record<string, any> | null;
+    place: Record<string, any> | null;
+  }> {
+    const derniere = async (type: 'experience' | 'place') =>
+      this.repo.findOne({
+        where: { author_id: userId, type } as any,
+        order: { created_at: 'DESC' },
+      });
+
+    const [experience, place] = await Promise.all([derniere('experience'), derniere('place')]);
+
+    const resume = async (pub: Publication | null, avecContributions: boolean) => {
+      if (!pub) return null;
+      const [likes, commentaires, partages, contributions] = await Promise.all([
+        this.likeRepo.count({ where: { publication_id: pub.id } }),
+        this.commentRepo.count({ where: { publication_id: pub.id } }),
+        this.shareRepo.count({ where: { publication_id: pub.id } }),
+        avecContributions
+          ? this.contribRepo.count({ where: { publication_id: pub.id } })
+          : Promise.resolve(0),
+      ]);
+      return {
+        id: pub.id,
+        title: (pub as any).title ?? (pub as any).place_name ?? null,
+        image: Array.isArray((pub as any).images) ? (pub as any).images[0] ?? null : null,
+        status: (pub as any).status,
+        created_at: pub.created_at,
+        likes,
+        comments: commentaires,
+        shares: partages,
+        ...(avecContributions ? { contributions } : {}),
+      };
+    };
+
+    return {
+      experience: await resume(experience, false),
+      place: await resume(place, true),
+    };
+  }
 
   async create(authorId: string, dto: CreatePublicationDto): Promise<Publication> {
     let status = 'approved';

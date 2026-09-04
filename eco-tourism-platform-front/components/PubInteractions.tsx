@@ -248,6 +248,9 @@ export default function PubInteractions({ pubId, token, viewerId, shareUrl, pubT
     e.stopPropagation();
     setShareDropdown(false);
     navigator.clipboard.writeText(shareUrl).then(() => { setCopied(true); setTimeout(() => setCopied(false), 2000); });
+    // Le partage n'était jusqu'ici qu'une copie dans le presse-papier : rien
+    // ne le comptait. Best-effort, il ne doit pas gêner le geste s'il échoue.
+    apiFetch(`${itemApiBase}/${pubId}/share`, { method: "POST" }).catch(() => {});
   }
 
   async function openShareModal(e: React.MouseEvent) {
@@ -344,6 +347,7 @@ export default function PubInteractions({ pubId, token, viewerId, shareUrl, pubT
         body: JSON.stringify({ conversation_id: conv.id, content: shareMsg }),
       });
       setShareSent(true);
+      apiFetch(`${itemApiBase}/${pubId}/share`, { method: "POST" }).catch(() => {});
     } catch {} finally { setSendingShare(false); }
   }
 

@@ -5,9 +5,11 @@ import { useRouter } from "next/navigation";
 import { Leaf, Plus, CheckCircle, XCircle } from "lucide-react";
 import { logoutUser } from "@/lib/auth";
 import { apiFetch } from "@/lib/api";
-import BadgeGrid from "@/components/common/BadgeGrid";
 import ProviderProfilePage from "@/app/profile/provider/page";
 import BadgeChip from "@/components/common/BadgeChip";
+import { DemandesRecuesPanel, type ReservationDashboard } from "@/components/reservation/DashboardReservations";
+import ScoreBadgeCard from "@/components/common/ScoreBadgeCard";
+import DetailCompletion from "@/components/common/DetailCompletion";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -61,27 +63,12 @@ type Offer = {
   region?: string | null;
 };
 
-type Reservation = {
-  id: string;
-  status: string;
-  participant_count: number;
-  total_price: number | null;
-  created_at: string;
-  offer: { title: string };
-};
+// Le type du bloc partagé fait foi : la définition locale ne portait que six
+// champs et ne pouvait pas décrire ce que la route renvoie réellement.
+type Reservation = ReservationDashboard;
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-const PROVIDER_TYPE_LABELS: Record<string, string> = {
-  guide: "Guide nature",
-  agence: "Agence de voyage",
-  ecolodge: "Écolodge / Hébergement",
-  restaurant: "Restauration",
-  artisan: "Artisan",
-  association: "Association",
-  bien_etre: "Bien-être",
-  transport: "Transport",
-};
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -93,51 +80,8 @@ function getScoreLabel(score: number | null) {
   return "Prestataire en Développement";
 }
 
-function getScoreColor(score: number | null) {
-  if (score === null) return "text-slate-400";
-  if (score >= 80) return "text-green-600";
-  if (score >= 60) return "text-primary";
-  if (score >= 40) return "text-orange-500";
-  return "text-red-500";
-}
 
-function getBarColor(score: number | null) {
-  if (score === null) return "bg-slate-300";
-  if (score >= 80) return "bg-green-500";
-  if (score >= 60) return "bg-primary";
-  if (score >= 40) return "bg-orange-400";
-  return "bg-red-400";
-}
 
-// ─── ScoreBreakdown ────────────────────────────────────────────────────────────
-
-function ScoreBreakdown({ provider }: { provider: Provider }) {
-  const components = [
-    { label: "Questionnaire", weight: "40%", value: provider.score_questionnaire, color: "bg-green-500" },
-    { label: "Réservations", weight: "40%", value: provider.score_reservations, color: "bg-blue-500" },
-    { label: "Feedbacks", weight: "20%", value: provider.score_feedbacks, color: "bg-orange-400" },
-  ];
-  return (
-    <div className="mt-4 space-y-2.5">
-      {components.map((c) => (
-        <div key={c.label}>
-          <div className="flex justify-between items-center mb-1">
-            <div className="flex items-center gap-1.5">
-              <span className="text-xs font-bold text-slate-600">{c.label}</span>
-              <span className="text-[10px] font-bold text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded-full">{c.weight}</span>
-            </div>
-            <span className="text-xs font-extrabold text-slate-700">
-              {c.value !== null && c.value !== undefined ? `${c.value}%` : "—"}
-            </span>
-          </div>
-          <div className="w-full h-1.5 bg-slate-100 rounded-full overflow-hidden">
-            <div className={`h-full ${c.color} rounded-full transition-all duration-700`} style={{ width: `${c.value ?? 0}%` }} />
-          </div>
-        </div>
-      ))}
-    </div>
-  );
-}
 
 // ─── Main Page ─────────────────────────────────────────────────────────────────
 
@@ -148,6 +92,17 @@ export default function ProviderDashboardPage() {
   const [orgLogo, setOrgLogo] = useState<string | null>(null);
   const [offers, setOffers] = useState<Offer[]>([]);
   const [reservations, setReservations] = useState<Reservation[]>([]);
+  /** Ce qui appelle une décision de sa part. */
+  const enAttente = reservations.filter((r) => r.status === "pending").length;
+  // Circuits et collaborations : les mêmes routes que côté guide, qui acceptent
+  // toutes deux le rôle prestataire.
+  const [nbCircuits, setNbCircuits] = useState(0);
+  const [nbCollabs, setNbCollabs] = useState(0);
+  useEffect(() => {
+    const n = (v: unknown) => (Array.isArray(v) ? v.length : 0);
+    apiFetch<unknown[]>("/circuits/mine").then((r) => setNbCircuits(n(r))).catch(() => {});
+    apiFetch<unknown[]>("/guide/collaborations/mine").then((r) => setNbCollabs(n(r))).catch(() => {});
+  }, []);
   const [loading, setLoading] = useState(true);
   const [activeItem, setActiveItem] = useState("Tableau de bord");
 
@@ -160,7 +115,6 @@ export default function ProviderDashboardPage() {
     const s = new URLSearchParams(window.location.search).get("section");
     if (s === "Offres" || s === "Circuits") setActiveItem(s);
   }, []);
-  const [showScoreDetail, setShowScoreDetail] = useState(false);
   const [notifications, setNotifications] = useState<DashNotif[]>([]);
   const [notifOpen, setNotifOpen] = useState(false);
   const [notifVisible, setNotifVisible] = useState(5);
@@ -173,7 +127,6 @@ export default function ProviderDashboardPage() {
     { label: "Offres",          icon: "storefront",      section: true as const },
     { label: "Circuits",        icon: "route",           section: true as const },
     { label: "Réservations",    icon: "event_available", href: "/dashboard/provider/reservations" },
-    { label: "Avis",            icon: "star",            href: "/profile/provider?tab=apropos" },
     { label: "Paramètres",      icon: "settings",        href: "/dashboard/profile" },
     { label: "Messagerie",      icon: "forum",           href: "/messagerie" },
   ];
@@ -327,7 +280,6 @@ export default function ProviderDashboardPage() {
   }
 
   const score = provider?.sustainability_score ?? null;
-  const scoreWidth = score !== null ? `${score}%` : "0%";
   const approvedOffers = offers.filter((o) => o.status === "approved");
 
   if (loading || !provider) {
@@ -399,13 +351,13 @@ export default function ProviderDashboardPage() {
               </div>
             </div>
 
-            <button
-              onClick={() => router.push("/questionnaire/provider")}
-              className="mt-4 w-full bg-primary hover:bg-primary/90 text-slate-900 font-bold py-3 rounded-xl transition-all shadow-lg shadow-primary/20 flex items-center justify-center gap-2"
-            >
-              <span className="material-symbols-outlined">quiz</span>
-              {score === null ? "Passer l'évaluation" : "Voir mon score"}
-            </button>
+            {/* Le grand bouton menait au questionnaire quel que soit son
+                libellé. Il ouvre maintenant ce que la jauge juste au-dessus
+                laisse deviner : ce qui manque au profil. */}
+            <DetailCompletion
+              lignes={(provider as any)?.completion_details ?? []}
+              total={provider?.profile_completion ?? 0}
+            />
           </div>
         </aside>
 
@@ -581,24 +533,6 @@ export default function ProviderDashboardPage() {
           <div className="p-8">
 
             {activeItem === "Tableau de bord" && (<>
-            {/* Bannière questionnaire non complété */}
-            {score === null && (
-              <div className="mb-6 p-5 bg-primary/10 border border-primary/20 rounded-2xl flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <span className="material-symbols-outlined text-primary text-2xl">quiz</span>
-                  <div>
-                    <p className="font-bold text-slate-800">Passez l'évaluation de durabilité</p>
-                    <p className="text-sm text-slate-500 font-medium">Obtenez votre score et valorisez vos activités auprès des voyageurs éco-responsables.</p>
-                  </div>
-                </div>
-                <button
-                  onClick={() => router.push("/questionnaire/provider")}
-                  className="px-5 py-2.5 bg-primary text-slate-900 font-bold rounded-xl text-sm shadow-lg shadow-primary/20 hover:-translate-y-0.5 transition-all"
-                >
-                  Commencer →
-                </button>
-              </div>
-            )}
 
             {/* Profil refusé — compte désactivé sous 24h */}
             {provider.status === "rejected" && (
@@ -630,367 +564,95 @@ export default function ProviderDashboardPage() {
             )}
 
             {/* ── Stats Grid ───────────────────────────────────────────── */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-
-              {/* Score durabilité — col-span-2 */}
-              <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-primary/10 flex flex-col justify-between lg:col-span-2">
-                <div className="flex justify-between items-start mb-2">
+            {/* Bannière questionnaire non complété.
+                 La condition portait sur le score final, qui vaut désormais 0
+                 et jamais `null` : la bannière ne pouvait plus s'afficher.
+                 Elle porte maintenant sur le fait réel — le questionnaire est
+                 passé ou il ne l'est pas. */}
+            {!((provider?.score_questionnaire ?? 0) > 0) && (
+              <div className="mb-6 p-5 bg-primary/10 border border-primary/20 rounded-2xl flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <span className="material-symbols-outlined text-primary text-2xl">quiz</span>
                   <div>
-                    <p className="text-slate-500 text-sm font-medium">Score de durabilité</p>
-                    <h3 className={`text-3xl font-extrabold mt-1 ${getScoreColor(score)}`}>
-                      {score !== null ? score : "—"}
-                      {score !== null && <span className="text-slate-400 text-lg font-normal">/100</span>}
-                    </h3>
+                    <p className="font-bold text-slate-800">Passez votre évaluation de durabilité</p>
+                    <p className="text-sm text-slate-500 font-medium">Obtenez votre score et valorisez votre profil auprès des voyageurs.</p>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <div className="bg-primary/20 p-2 rounded-lg text-primary">
-                      <span className="material-symbols-outlined">analytics</span>
+                </div>
+                <button
+                  onClick={() => router.push("/questionnaire/provider")}
+                  className="px-5 py-2.5 bg-primary text-slate-900 font-bold rounded-xl text-sm shadow-lg shadow-primary/20 hover:-translate-y-0.5 transition-all"
+                >
+                  Commencer →
+                </button>
+              </div>
+            )}
+
+            {/* Trois colonnes : la carte de progression en occupe deux, les
+                 compteurs s'empilent dans la troisième plutôt que de flotter
+                 à côté d'une carte deux fois plus haute qu'eux. */}
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8 items-start">
+
+              {/* Score et badge réunis : le badge nomme, le score chiffre,
+                  et le palier en cours dit ce qui reste à faire. */}
+              <ScoreBadgeCard role="provider" scoreInitial={provider.score_questionnaire} />
+
+              <div className="space-y-3">
+
+                {/* Réservations reçues — celles de ses offres et celles des
+                    offres où il collabore, comme sur le tableau guide. */}
+                <div className="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-primary/10">
+                  <div className="flex justify-between items-start">
+                    <div>
+                      <p className="text-slate-500 text-sm font-medium">Réservations reçues</p>
+                      <h3 className="text-2xl font-extrabold mt-0.5">{reservations.length}</h3>
+                      {enAttente > 0 && (
+                        <p className="text-xs font-bold text-amber-600 mt-1">
+                          {enAttente} en attente de réponse
+                        </p>
+                      )}
                     </div>
+                    <div className="bg-blue-500/10 p-2 rounded-lg text-blue-500">
+                      <span className="material-symbols-outlined">event_available</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Offres, circuits et collaborations : trois comptes courts,
+                    côte à côte plutôt qu'empilés, pour tenir dans la colonne. */}
+                <div className="grid grid-cols-3 gap-3">
+                  {[
+                    { label: "Offres", valeur: approvedOffers.length, icone: "storefront", teinte: "text-emerald-500 bg-emerald-500/10", href: "/profile/provider?tab=offres" },
+                    { label: "Circuits", valeur: nbCircuits, icone: "route", teinte: "text-teal-500 bg-teal-500/10", href: "/profile/provider?tab=circuits" },
+                    { label: "Collabs", valeur: nbCollabs, icone: "handshake", teinte: "text-violet-500 bg-violet-500/10", href: "/profile/provider?tab=collaborations" },
+                  ].map((c) => (
                     <button
-                      onClick={() => setShowScoreDetail((v) => !v)}
-                      className="text-xs text-slate-400 hover:text-primary font-bold transition-colors"
+                      key={c.label}
+                      onClick={() => router.push(c.href)}
+                      className="bg-white dark:bg-slate-900 p-3 rounded-2xl border border-primary/10 text-left hover:border-primary/30 transition-colors"
                     >
-                      <span className="material-symbols-outlined text-lg">
-                        {showScoreDetail ? "expand_less" : "expand_more"}
+                      <span className={`inline-flex p-1.5 rounded-lg ${c.teinte}`}>
+                        <span className="material-symbols-outlined text-lg">{c.icone}</span>
                       </span>
+                      <p className="text-xl font-extrabold mt-1.5 leading-none">{c.valeur}</p>
+                      <p className="text-[11px] text-slate-500 font-medium mt-0.5">{c.label}</p>
                     </button>
-                  </div>
-                </div>
-                <div className="w-full bg-slate-100 dark:bg-slate-800 h-2 rounded-full overflow-hidden">
-                  <div className={`h-full ${getBarColor(score)} rounded-full transition-all duration-1000`} style={{ width: scoreWidth }} />
-                </div>
-                <p className="text-xs font-bold mt-2" style={{ color: score !== null ? (score >= 60 ? "#22c55e" : "#f97316") : "#94a3b8" }}>
-                  {score !== null ? getScoreLabel(score) : "Évaluation non complétée"}
-                </p>
-                {showScoreDetail && <ScoreBreakdown provider={provider} />}
-              </div>
-
-              {/* Offres actives */}
-              <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-primary/10 flex flex-col self-start">
-                <div className="flex justify-between items-start">
-                  <div>
-                    <p className="text-slate-500 text-sm font-medium">Offres actives</p>
-                    <h3 className="text-3xl font-extrabold mt-1">{approvedOffers.length}</h3>
-                  </div>
-                  <div className="bg-blue-500/10 p-2 rounded-lg text-blue-500">
-                    <span className="material-symbols-outlined">storefront</span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Réservations */}
-              <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-primary/10 flex flex-col self-start">
-                <div className="flex justify-between items-start">
-                  <div>
-                    <p className="text-slate-500 text-sm font-medium">Réservations reçues</p>
-                    <h3 className="text-3xl font-extrabold mt-1">{provider.total_reservations ?? reservations.length}</h3>
-                  </div>
-                  <div className="bg-green-500/10 p-2 rounded-lg text-green-500">
-                    <span className="material-symbols-outlined">event_available</span>
-                  </div>
+                  ))}
                 </div>
               </div>
             </div>
 
-            {/* ── Informations + Activités + Badges ─────────────────── */}
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+            {/* ── Réservations + Badges ─────────────────────────────── */}
+            <div className="grid grid-cols-1 gap-8">
 
               {/* Colonne gauche */}
-              <div className="lg:col-span-2 space-y-6">
-
-                {/* Informations du prestataire */}
-                <div>
-                  <h3 className="text-xl font-bold mb-4">Informations</h3>
-                  <div className="bg-white dark:bg-slate-900 rounded-2xl border border-primary/5 p-6 space-y-4">
-                    <div className="flex items-start gap-4">
-                      <div className="w-16 h-16 rounded-2xl bg-slate-100 dark:bg-slate-800 flex-shrink-0 overflow-hidden border-2 border-primary/20">
-                        {(orgLogo ?? provider.photo) ? (
-                          <img src={(orgLogo ?? provider.photo)!} alt="Photo" className="w-full h-full object-cover" />
-                        ) : (
-                          <div className="w-full h-full flex items-center justify-center">
-                            <span className="material-symbols-outlined text-slate-400 text-3xl">person</span>
-                          </div>
-                        )}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <h4 className="font-extrabold text-slate-900 dark:text-slate-100 text-lg leading-tight">
-                          {provider.full_name ?? provider.organization ?? "—"}
-                        </h4>
-                        {provider.organization && provider.full_name && (
-                          <p className="text-sm text-slate-500 font-medium mt-0.5">{provider.organization}</p>
-                        )}
-                        {provider.provider_type && (
-                          <span className="inline-flex items-center gap-1 text-xs font-bold text-primary bg-primary/10 px-2.5 py-1 rounded-full mt-1.5">
-                            <span className="material-symbols-outlined text-sm">eco</span>
-                            {PROVIDER_TYPE_LABELS[provider.provider_type] ?? provider.provider_type}
-                          </span>
-                        )}
-                      </div>
-                      <span className={`text-xs font-bold px-3 py-1.5 rounded-full flex-shrink-0 ${
-                        provider.status === "active" ? "bg-green-100 text-green-700" : "bg-amber-100 text-amber-700"
-                      }`}>
-                        {provider.status === "active" ? "Actif" : "En attente"}
-                      </span>
-                    </div>
-
-                    {provider.bio && (
-                      <p className="text-sm text-slate-600 font-medium leading-relaxed border-t border-slate-100 pt-4">{provider.bio}</p>
-                    )}
-
-                    <div className="grid grid-cols-2 gap-3 text-sm">
-                      {provider.region && (
-                        <div className="flex items-center gap-2 text-slate-600">
-                          <span className="material-symbols-outlined text-slate-400 text-base">location_on</span>
-                          <span className="font-medium">{provider.region}</span>
-                        </div>
-                      )}
-                      {provider.years_experience != null && (
-                        <div className="flex items-center gap-2 text-slate-600">
-                          <span className="material-symbols-outlined text-slate-400 text-base">work_history</span>
-                          <span className="font-medium">{provider.years_experience} ans d'expérience</span>
-                        </div>
-                      )}
-                      {provider.phone && (
-                        <div className="flex items-center gap-2 text-slate-600">
-                          <span className="material-symbols-outlined text-slate-400 text-base">phone</span>
-                          <span className="font-medium">{provider.phone}</span>
-                        </div>
-                      )}
-                      {provider.website && (
-                        <div className="flex items-center gap-2 text-slate-600 overflow-hidden">
-                          <span className="material-symbols-outlined text-slate-400 text-base flex-shrink-0">language</span>
-                          <a
-                            href={provider.website}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="font-medium text-primary hover:underline truncate"
-                          >
-                            {provider.website.replace(/^https?:\/\//, "")}
-                          </a>
-                        </div>
-                      )}
-                    </div>
-
-                    {(provider.languages_spoken ?? []).length > 0 && (
-                      <div className="flex items-center flex-wrap gap-2 border-t border-slate-100 pt-3">
-                        <span className="material-symbols-outlined text-slate-400 text-base">translate</span>
-                        {(provider.languages_spoken ?? []).map((lang) => (
-                          <span key={lang} className="text-xs font-bold px-2.5 py-1 bg-slate-100 text-slate-600 rounded-full">{lang}</span>
-                        ))}
-                      </div>
-                    )}
-
-                    {(provider.certifications ?? []).length > 0 && (
-                      <div className="flex flex-wrap gap-2 border-t border-slate-100 pt-3">
-                        {(provider.certifications ?? []).map((cert) => (
-                          <span key={cert} className="flex items-center gap-1 text-xs font-bold px-2.5 py-1 bg-green-50 text-green-700 rounded-full">
-                            <span className="material-symbols-outlined text-sm">verified</span>
-                            {cert}
-                          </span>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                {/* Activités */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-
-                  {/* Activité Principale */}
-                  <div>
-                    <h3 className="text-lg font-bold mb-3 flex items-center gap-2">
-                      <span className="material-symbols-outlined text-primary text-xl">local_activity</span>
-                      Activité Principale
-                    </h3>
-                    <div className="bg-white dark:bg-slate-900 rounded-2xl border border-primary/10 p-4 min-h-[100px] flex items-start">
-                      {(provider.activity_types ?? []).length === 0 ? (
-                        <div className="flex flex-col items-center justify-center w-full py-6 text-center">
-                          <span className="material-symbols-outlined text-slate-200 text-3xl mb-1">category</span>
-                          <p className="text-xs text-slate-300 font-bold">Aucune activité principale</p>
-                        </div>
-                      ) : (
-                        <div className="flex flex-wrap gap-2">
-                          {(provider.activity_types ?? []).map((act) => (
-                            <span key={act} className="flex items-center gap-1.5 text-sm font-bold px-3 py-1.5 bg-primary/10 text-primary rounded-xl">
-                              <span className="material-symbols-outlined text-sm">eco</span>
-                              {act}
-                            </span>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Activité Secondaire */}
-                  <div>
-                    <h3 className="text-lg font-bold mb-3 flex items-center gap-2">
-                      <span className="material-symbols-outlined text-slate-400 text-xl">category</span>
-                      Activité Secondaire
-                    </h3>
-                    <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-100 p-4 min-h-[100px] flex items-start">
-                      {(provider.secondary_activity_types ?? []).length === 0 ? (
-                        <div className="flex flex-col items-center justify-center w-full py-6 text-center">
-                          <span className="material-symbols-outlined text-slate-200 text-3xl mb-1">add_circle</span>
-                          <p className="text-xs text-slate-300 font-bold">Aucune activité secondaire</p>
-                        </div>
-                      ) : (
-                        <div className="flex flex-wrap gap-2">
-                          {(provider.secondary_activity_types ?? []).map((act) => (
-                            <span key={act} className="flex items-center gap-1.5 text-sm font-bold px-3 py-1.5 bg-slate-100 text-slate-600 rounded-xl">
-                              <span className="material-symbols-outlined text-sm">category</span>
-                              {act}
-                            </span>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </div>
-
-                {/* Mes Offres */}
-                <div>
-                  <div className="flex items-center justify-between mb-4">
-                    <h3 className="text-xl font-bold">Mes Offres</h3>
-                    <button
-                      onClick={() => router.push("/profile/provider")}
-                      className="flex items-center gap-2 px-4 py-2 bg-primary text-slate-900 font-bold rounded-xl text-xs shadow-lg shadow-primary/20 hover:-translate-y-0.5 transition-all"
-                    >
-                      <span className="material-symbols-outlined text-base">add</span>
-                      Créer une offre
-                    </button>
-                  </div>
-
-                  {offers.length === 0 ? (
-                    <div className="bg-white dark:bg-slate-900 rounded-2xl border border-dashed border-slate-200 dark:border-slate-700 p-10 text-center">
-                      <span className="material-symbols-outlined text-slate-300 text-5xl mb-3 block">storefront</span>
-                      <p className="text-slate-700 font-bold mb-1">Aucune offre publiée</p>
-                      <p className="text-slate-400 text-sm mb-5">Créez votre première prestation et proposez-la aux voyageurs.</p>
-                      <button
-                        onClick={() => router.push("/profile/provider")}
-                        className="inline-flex items-center gap-2 px-5 py-2.5 bg-primary text-slate-900 rounded-xl text-sm font-bold hover:bg-primary/90 shadow-sm"
-                      >
-                        <span className="material-symbols-outlined text-lg">add</span>
-                        Créer ma première offre
-                      </button>
-                    </div>
-                  ) : (
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      {offers.map((offer) => (
-                        <div
-                          key={offer.id}
-                          onClick={() => router.push("/profile/provider")}
-                          className="bg-white dark:bg-slate-900 rounded-2xl border border-primary/10 overflow-hidden hover:shadow-md transition-shadow cursor-pointer"
-                        >
-                          {offer.images?.[0] ? (
-                            <img src={offer.images[0]} alt={offer.title} className="w-full h-36 object-cover" />
-                          ) : (
-                            <div className="w-full h-36 bg-primary/10 flex items-center justify-center">
-                              <span className="material-symbols-outlined text-primary text-4xl">storefront</span>
-                            </div>
-                          )}
-                          <div className="p-4">
-                            <div className="flex items-start justify-between gap-2 mb-2">
-                              <h4 className="font-bold text-slate-800 dark:text-slate-100 text-sm leading-snug">{offer.title}</h4>
-                              <span className={`shrink-0 text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                                offer.status === "approved"            ? "bg-green-100 text-green-700"  :
-                                offer.status === "pending"             ? "bg-amber-100 text-amber-700"  :
-                                offer.status === "draft"               ? "bg-slate-100 text-slate-500"  :
-                                offer.status === "attente_publication" ? "bg-teal-100 text-teal-700"    :
-                                "bg-red-100 text-red-600"
-                              }`}>
-                                {offer.status === "approved"            ? "Approuvée"       :
-                                 offer.status === "pending"             ? "En attente"      :
-                                 offer.status === "draft"               ? "Brouillon"       :
-                                 offer.status === "attente_publication" ? "Prêt à publier"  :
-                                 "Refusée"}
-                              </span>
-                            </div>
-                            {offer.region && (
-                              <p className="text-xs text-slate-400 flex items-center gap-1">
-                                <span className="material-symbols-outlined text-sm">location_on</span>
-                                {offer.region}
-                              </p>
-                            )}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-
-                {/* Réservations récentes */}
-                {reservations.length > 0 && (
-                  <div>
-                    <div className="flex items-center justify-between mb-4">
-                      <h3 className="text-xl font-bold">Réservations récentes</h3>
-                      <button
-                        onClick={() => router.push("/dashboard/provider/reservations")}
-                        className="text-xs font-bold text-primary hover:underline"
-                      >
-                        Voir tout
-                      </button>
-                    </div>
-                    <div className="space-y-3">
-                      {reservations.slice(0, 3).map((r) => (
-                        <div
-                          key={r.id}
-                          className="bg-white dark:bg-slate-900 rounded-2xl border border-primary/5 p-4 cursor-pointer hover:border-primary/30"
-                          onClick={() => router.push(`/dashboard/provider/reservations/${r.id}`)}
-                        >
-                          <div className="flex items-start justify-between gap-3 mb-2">
-                            <div className="flex-1 min-w-0">
-                              <p className="font-extrabold text-slate-900 dark:text-slate-100 text-sm line-clamp-1">{r.offer?.title}</p>
-                              <p className="text-xs text-slate-500 font-medium mt-0.5">
-                                {r.participant_count} participant{r.participant_count > 1 ? "s" : ""} · {new Date(r.created_at).toLocaleDateString("fr-FR")}
-                              </p>
-                              {r.total_price && (
-                                <p className="text-primary font-bold text-sm mt-1">{Number(r.total_price).toFixed(0)} TND</p>
-                              )}
-                            </div>
-                            <span className={`text-xs font-bold px-2.5 py-1 rounded-full flex-shrink-0 ${
-                              r.status === "pending" ? "bg-amber-100 text-amber-700"
-                              : r.status === "confirmed" ? "bg-green-100 text-green-700"
-                              : r.status === "cancelled" ? "bg-red-100 text-red-700"
-                              : "bg-blue-100 text-blue-700"
-                            }`}>
-                              {r.status === "pending" ? "En attente"
-                                : r.status === "confirmed" ? "Confirmée"
-                                : r.status === "cancelled" ? "Annulée"
-                                : "Terminée"}
-                            </span>
-                          </div>
-                          {r.status === "pending" && (
-                            <div className="flex gap-2 mt-2" onClick={(e) => e.stopPropagation()}>
-                              <button
-                                onClick={() => handleReservationAction(r.id, "confirmed")}
-                                className="flex-1 py-2 bg-primary text-slate-900 text-xs font-bold rounded-xl hover:bg-primary/90 flex items-center justify-center gap-1.5"
-                              >
-                                <CheckCircle className="w-3.5 h-3.5" /> Confirmer
-                              </button>
-                              <button
-                                onClick={() => handleReservationAction(r.id, "rejected")}
-                                className="flex-1 py-2 bg-red-50 text-red-600 text-xs font-bold rounded-xl hover:bg-red-100 flex items-center justify-center gap-1.5 border border-red-200"
-                              >
-                                <XCircle className="w-3.5 h-3.5" /> Refuser
-                              </button>
-                            </div>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              {/* Colonne droite : Badges */}
-              <div>
-                <h3 className="text-xl font-bold mb-6">Mes Badges</h3>
-                <div className="bg-white dark:bg-slate-900 rounded-2xl p-6 border border-primary/10">
-                  <BadgeGrid role="provider" details={false} />
-                  <a href="/dashboard/profile?onglet=badges" className="mt-3 inline-flex items-center gap-1 text-[11px] font-bold text-primary hover:underline">Voir le détail des paliers →</a>
-
-                  
-                </div>
+              <div className="space-y-6">
+                {/* Demandes de réservation — même bloc que le tableau de
+                    bord guide, avec un état vide qui explique la suite. */}
+                <DemandesRecuesPanel
+                  role="provider"
+                  reservations={reservations}
+                  onRepondre={handleReservationAction}
+                />
               </div>
 
             </div>

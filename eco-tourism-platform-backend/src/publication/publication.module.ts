@@ -14,10 +14,12 @@ import { Friendship } from '../eco-traveler/entities/friendship.entity';
 import { OfferModule } from '../offer/offer.module';
 import { CircuitModule } from '../circuit/circuit.module';
 import { ItemLike } from '../interactions/entities/item-like.entity';
+import { PlaceContribution } from '../place-contribution/entities/place-contribution.entity';
+import { PublicationShare } from './entities/publication-share.entity';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Publication, PublicationLike, PublicationComment, CommentLike, EcoTraveler, Provider, Follow, Friendship, ItemLike]),
+    TypeOrmModule.forFeature([Publication, PublicationLike, PublicationComment, CommentLike, EcoTraveler, Provider, Follow, Friendship, ItemLike, PlaceContribution, PublicationShare]),
     EcoTravelerModule,
     OfferModule,
     CircuitModule,

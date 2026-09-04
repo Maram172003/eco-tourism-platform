@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter, useParams } from "next/navigation";
 import { apiFetch } from "@/lib/api";
+import { confirmationDe } from "@/lib/confirmation";
 import { goToReservation } from "@/lib/auth";
 import { formatSubtypeLabel, formatOfferCapacityLabel, getBookingUnitPrice, hasSelectableFormulas, isPackageOffer, defaultPackageSubtypes } from "@/lib/offer-variant";
 import {
@@ -289,7 +290,7 @@ export default function OfferDetailPage() {
                 {FULFILLMENT_LABELS[offer.fulfillment_mode]}
               </span>
             )}
-            {offer.confirmation_mode === "instant" && (
+            {confirmationDe(offer as any).mode === "instant" && (
               <span className="flex items-center gap-1 bg-amber-100 rounded-full px-3 py-1 text-amber-700 font-medium">
                 <Zap size={11} /> Confirmation instantanée
               </span>

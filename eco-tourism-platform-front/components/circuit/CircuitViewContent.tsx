@@ -285,7 +285,9 @@ export default function CircuitViewContent({ circuit, collabsMap = {}, ownerName
                                   </span>
                                 )}
                                 {etape.collaborator_name && (etape.author_type as string) !== "self" && (() => {
-                                  const stKey = etape.collaborator_status ?? collabsMap[etape.id] ?? "pending";
+                                  // Comme pour les offres : sans statut connu on
+                                  // affiche le partenaire, sans inventer « En attente ».
+                                  const stKey = etape.collaborator_status ?? collabsMap[etape.id] ?? null;
                                   const cls = stKey === "declined" ? "bg-red-50 border-red-200 text-red-600"
                                     : stKey === "pending" ? "bg-amber-50 border-amber-200 text-amber-600"
                                     : "bg-teal-50 border-teal-200 text-teal-700";

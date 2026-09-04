@@ -8,6 +8,7 @@ import { PlaceContribution } from '../place-contribution/entities/place-contribu
 import { Guide } from '../guide/entities/guide.entity';
 import { Provider } from '../provider/entities/provider.entity';
 import { EcoTraveler } from '../eco-traveler/entities/eco-traveler.entity';
+import { scoreDurabilite } from '../common/badge-ladder.util';
 
 /**
  * Compteurs bruts servant à décerner les badges.
@@ -85,10 +86,44 @@ export class BadgeService {
   ) {}
 
   async getStats(userId: string, role: string): Promise<BadgeStats> {
-    if (role === 'guide')        return this.statsPro(userId, 'guide');
-    if (role === 'provider')     return this.statsPro(userId, 'provider');
-    if (role === 'eco_traveler') return this.statsVoyageur(userId);
-    return { ...VIDE };
+    const stats =
+      role === 'guide' ? await this.statsPro(userId, 'guide')
+      : role === 'provider' ? await this.statsPro(userId, 'provider')
+      : role === 'eco_traveler' ? await this.statsVoyageur(userId)
+      : { ...VIDE };
+    // Le score est désormais produit par la progression : on le recalcule ici,
+    // seul endroit qui dispose de tous les compteurs, et on le persiste pour
+    // les écrans qui le lisent sur le profil.
+    return this.rafraichirScore(userId, role, stats);
+  }
+
+  /**
+   * Recalcule le score de durabilité depuis l'échelle et l'enregistre.
+   *
+   * Le score du guide et du prestataire n'était écrit qu'à la soumission du
+   * questionnaire, et ne bougeait plus jamais ensuite. Il suit maintenant leur
+   * progression, comme celui de l'éco-voyageur.
+   */
+  private async rafraichirScore(
+    userId: string,
+    role: string,
+    stats: BadgeStats,
+  ): Promise<BadgeStats> {
+    const depot =
+      role === 'guide' ? this.guideRepo
+      : role === 'provider' ? this.providerRepo
+      : role === 'eco_traveler' ? this.ecoRepo
+      : null;
+    if (!depot) return stats;
+
+    const profil: any = await (depot as any).findOne({ where: { user_id: userId } });
+    if (!profil) return stats;
+
+    const score = scoreDurabilite(role, stats, profil.score_questionnaire);
+    if (score !== profil.sustainability_score) {
+      await (depot as any).update({ user_id: userId }, { sustainability_score: score });
+    }
+    return { ...stats, sustainability_score: score };
   }
 
   /** Guides et prestataires : questionnaire de profil, offres, circuits. */

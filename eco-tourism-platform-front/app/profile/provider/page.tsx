@@ -13,6 +13,7 @@ import {
   MoreVertical, UserX, ShieldBan, Flag, Route, Trash2, Loader2,
 } from "lucide-react";
 import { apiFetch } from "@/lib/api";
+import { intituleDepuisCode } from "@/lib/confirmation";
 import { logoutUser } from "@/lib/auth";
 import MessagerieWidget from "@/components/MessagerieWidget";
 import PubInteractions from "@/components/PubInteractions";
@@ -2250,6 +2251,16 @@ export default function ProviderProfilePage({ embedded = false, forcedTab, openE
       if (!form.title.trim()) { setTitleError("Le titre est obligatoire pour inviter un collaborateur."); return; }
       setProviderCollabSaving(true);
       try {
+        // `POST /offers` exige les dates de disponibilité — elles sont
+        // obligatoires dans le DTO. Or l'invitation part de l'étape 5, avant
+        // que l'auteur ait renseigné son calendrier : la requête repartait donc
+        // en 400 et le collaborateur ne pouvait jamais être invité.
+        // On pose une fenêtre provisoire, écrasée par l'étape « disponibilités »
+        // au moment de la finalisation — même principe que le brouillon guide.
+        const aujourdhui = new Date();
+        const dansSixMois = new Date(aujourdhui.getTime() + 180 * 24 * 60 * 60 * 1000);
+        const iso = (d: Date) => d.toISOString().slice(0, 10);
+
         const savedOffer = await apiFetch<Offer>("/offers", {
           method: "POST",
           headers: { Authorization: `Bearer ${token}` },
@@ -2258,6 +2269,8 @@ export default function ProviderProfilePage({ embedded = false, forcedTab, openE
             title: form.title.trim(),
             offer_type: form.offer_type || offerActivity?.category || undefined,
             description: offerDescCourte.trim() || undefined,
+            availability_start: offerAvail.start_date || iso(aujourdhui),
+            availability_end: offerAvail.end_date || iso(dansSixMois),
             details: offerTypePrestation ? { type_prestation: offerTypePrestation } : undefined,
           }),
         });
@@ -2265,7 +2278,10 @@ export default function ProviderProfilePage({ embedded = false, forcedTab, openE
         setOfferEditId(id);
         setOfferEditMode(true);
         setOffers((prev) => [savedOffer, ...prev]);
-      } catch {
+      } catch (e: any) {
+        // L'échec partait dans un catch muet : le bouton se réarmait sans rien
+        // dire, d'où les six 400 empilés dans la console.
+        setTitleError(e?.message || "Impossible de préparer l'offre pour l'invitation.");
         setProviderCollabSaving(false);
         return;
       }
@@ -2532,7 +2548,11 @@ export default function ProviderProfilePage({ embedded = false, forcedTab, openE
     setOfferAvail(reconAvail.type ? reconAvail : { ...EMPTY_OFFER_AVAIL });
 
     // 15e – ConfirmationData
-    const rawMode = offer.confirmation_mode ?? "";
+    // L'intitulé choisi vit dans les détails ; la colonne ne garde qu'un code
+    // depuis qu'elle est normalisée à l'enregistrement, d'où la relecture par
+    // `intituleDepuisCode` pour les offres publiées avant ce changement.
+    const rawMode = (details.type_confirmation as string | undefined)
+      || intituleDepuisCode(offer.confirmation_mode);
     const rawPol  = offer.cancellation_policy ?? "";
     const polLabel = rawPol === "flexible" ? "Flexible (100% remboursé jusqu'à 24h avant)"
       : rawPol === "moderate" ? "Modérée (50% remboursé jusqu'à 48h avant)"

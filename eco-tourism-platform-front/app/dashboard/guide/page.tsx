@@ -5,10 +5,12 @@ import { useRouter } from "next/navigation";
 import { Leaf } from "lucide-react";
 import { logoutUser } from "@/lib/auth";
 import { apiFetch } from "@/lib/api";
-import BadgeGrid from "@/components/common/BadgeGrid";
-import GuideOfferModal from "@/components/GuideOfferModal";
 import GuideProfilePage from "@/app/profile/guide/page";
 import BadgeChip from "@/components/common/BadgeChip";
+import { useDemandesRecues, DemandesRecuesPanel } from "@/components/reservation/DashboardReservations";
+import ScoreBadgeCard from "@/components/common/ScoreBadgeCard";
+import CreneauxDuJour from "@/components/guide/CreneauxDuJour";
+import DetailCompletion from "@/components/common/DetailCompletion";
 
 type DashNotif = {
   id: string;
@@ -21,12 +23,6 @@ type DashNotif = {
 type User = { id: string; email: string; role: string; full_name: string };
 type Badge = { label: string; obtained_at: string };
 
-type Offer = {
-  id: string; title: string; description: string | null;
-  offer_type: string | null; offer_subtype: string | null;
-  status: string; created_at: string;
-  region: string | null; images?: string[] | null;
-};
 
 type GuideProfile = {
   user_id: string;
@@ -67,79 +63,27 @@ function getScoreLabel(score: number | null) {
   return "Guide en Développement";
 }
 
-function getScoreColor(score: number | null) {
-  if (score === null) return "text-slate-400";
-  if (score >= 80) return "text-green-600";
-  if (score >= 60) return "text-primary";
-  if (score >= 40) return "text-orange-500";
-  return "text-red-500";
-}
 
-function getBarColor(score: number | null) {
-  if (score === null) return "bg-slate-300";
-  if (score >= 80) return "bg-green-500";
-  if (score >= 60) return "bg-primary";
-  if (score >= 40) return "bg-orange-400";
-  return "bg-red-400";
-}
 
-function ScoreBreakdown({ profile }: { profile: GuideProfile }) {
-  const components = [
-    { label: "Questionnaire", weight: "40%", value: profile.score_questionnaire, color: "bg-green-500" },
-    { label: "Réservations", weight: "40%", value: profile.score_reservations, color: "bg-blue-500" },
-    { label: "Feedbacks", weight: "20%", value: profile.score_feedbacks, color: "bg-orange-400" },
-  ];
-
-  return (
-    <div className="mt-4 space-y-2.5">
-      {components.map((c) => (
-        <div key={c.label}>
-          <div className="flex justify-between items-center mb-1">
-            <div className="flex items-center gap-1.5">
-              <span className="text-xs font-bold text-slate-600">{c.label}</span>
-              <span className="text-[10px] font-bold text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded-full">{c.weight}</span>
-            </div>
-            <span className="text-xs font-extrabold text-slate-700">
-              {c.value !== null && c.value !== undefined ? `${c.value}%` : "—"}
-            </span>
-          </div>
-          <div className="w-full h-1.5 bg-slate-100 rounded-full overflow-hidden">
-            <div className={`h-full ${c.color} rounded-full transition-all duration-700`} style={{ width: `${c.value ?? 0}%` }} />
-          </div>
-        </div>
-      ))}
-    </div>
-  );
-}
 
 export default function GuideDashboardPage() {
   const router = useRouter();
+  // Le guide n'avait aucun accès à ses demandes depuis son tableau de bord :
+  // il devait deviner qu'une réservation attendait sa réponse.
+  const { reservations: demandes, enAttente, repondre } = useDemandesRecues();
+  // Trois comptes courts, chacun servi par la route qui fait déjà autorité.
+  const [nbOffres, setNbOffres] = useState(0);
+  const [nbCircuits, setNbCircuits] = useState(0);
+  const [nbCollabs, setNbCollabs] = useState(0);
+  useEffect(() => {
+    const n = (v: unknown) => (Array.isArray(v) ? v.length : 0);
+    apiFetch<unknown[]>("/guide/offers").then((r) => setNbOffres(n(r))).catch(() => {});
+    apiFetch<unknown[]>("/circuits/mine").then((r) => setNbCircuits(n(r))).catch(() => {});
+    apiFetch<unknown[]>("/guide/collaborations/mine").then((r) => setNbCollabs(n(r))).catch(() => {});
+  }, []);
   const [user, setUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<GuideProfile | null>(null);
 
-  // Le formulaire d'offre permet d'inviter des collaborateurs : il reste fermé
-  // tant que l'administrateur n'a pas validé le profil.
-  async function blockIfNotApproved(): Promise<boolean> {
-    let status = profile?.status;
-    try {
-      const token = localStorage.getItem("access_token") || "";
-      const fresh = await apiFetch<GuideProfile>("/guide/profile", {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      status = fresh?.status;
-      setProfile((prev) => (prev ? { ...prev, ...fresh } : fresh));
-    } catch {
-      // Serveur injoignable : on s'en tient au dernier statut connu.
-    }
-
-    if (status === "active") return false;
-    alert(
-      status === "rejected"
-        ? "Votre profil a été refusé. Contactez l'équipe Éco-Voyage pour le régulariser."
-        : "Votre profil doit être validé par un administrateur avant de créer une offre. La validation intervient sous 48h.",
-    );
-    return true;
-  }
   const [activeItem, setActiveItem] = useState("Tableau de bord");
 
   // ?section=Offres — arriver directement sur une section depuis une autre page.
@@ -151,9 +95,6 @@ export default function GuideDashboardPage() {
     const s = new URLSearchParams(window.location.search).get("section");
     if (s === "Offres" || s === "Circuits") setActiveItem(s);
   }, []);
-  const [showScoreDetail, setShowScoreDetail] = useState(false);
-  const [offers, setOffers] = useState<Offer[]>([]);
-  const [showCreateOffer, setShowCreateOffer] = useState(false);
   const [notifications, setNotifications] = useState<DashNotif[]>([]);
   const [notifOpen, setNotifOpen] = useState(false);
   const [notifVisible, setNotifVisible] = useState(5);
@@ -166,7 +107,6 @@ export default function GuideDashboardPage() {
     { label: "Offres",          icon: "storefront",      section: true as const },
     { label: "Circuits",        icon: "route",           section: true as const },
     { label: "Réservations",    icon: "event_available", href: "/dashboard/guide/reservations" },
-    { label: "Avis",            icon: "star",            href: "/profile/guide?tab=apropos" },
     { label: "Paramètres",      icon: "settings",        href: "/dashboard/profile" },
     { label: "Messagerie",      icon: "forum",           href: "/messagerie" },
   ];
@@ -193,11 +133,6 @@ export default function GuideDashboardPage() {
         })
         .catch(() => router.push("/onboarding/guide"));
 
-      apiFetch<Offer[]>("/guide/offers", {
-        headers: { Authorization: `Bearer ${token}` },
-      })
-        .then(setOffers)
-        .catch(() => {});
     } catch {
       router.push("/auth/login");
     }
@@ -307,7 +242,6 @@ export default function GuideDashboardPage() {
   }
 
   const score = profile?.sustainability_score ?? null;
-  const scoreWidth = score !== null ? `${score}%` : "0%";
 
   return (
     <div className="bg-background-light dark:bg-background-dark text-slate-900 dark:text-slate-100 min-h-screen">
@@ -373,13 +307,13 @@ export default function GuideDashboardPage() {
               </div>
             )}
 
-            <button
-              onClick={() => router.push("/questionnaire/guide")}
-              className="mt-4 w-full bg-primary hover:bg-primary/90 text-slate-900 font-bold py-3 rounded-xl transition-all shadow-lg shadow-primary/20 flex items-center justify-center gap-2"
-            >
-              <span className="material-symbols-outlined">quiz</span>
-              {score === null ? "Passer l'évaluation" : "Voir mon score"}
-            </button>
+            {/* Le grand bouton menait au questionnaire quel que soit son
+                libellé. Il ouvre maintenant ce que la jauge juste au-dessus
+                laisse deviner : ce qui manque au profil. */}
+            <DetailCompletion
+              lignes={(profile as any)?.completion_details ?? []}
+              total={profile?.profile_completion ?? 0}
+            />
           </div>
         </aside>
 
@@ -554,24 +488,6 @@ export default function GuideDashboardPage() {
           <div className="p-8">
 
             {activeItem === "Tableau de bord" && (<>
-            {/* Bannière questionnaire non complété */}
-            {score === null && (
-              <div className="mb-6 p-5 bg-primary/10 border border-primary/20 rounded-2xl flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <span className="material-symbols-outlined text-primary text-2xl">quiz</span>
-                  <div>
-                    <p className="font-bold text-slate-800">Passez votre évaluation de guide éco-responsable</p>
-                    <p className="text-sm text-slate-500 font-medium">Obtenez votre score et valorisez votre profil auprès des voyageurs.</p>
-                  </div>
-                </div>
-                <button
-                  onClick={() => router.push("/questionnaire/guide")}
-                  className="px-5 py-2.5 bg-primary text-slate-900 font-bold rounded-xl text-sm shadow-lg shadow-primary/20 hover:-translate-y-0.5 transition-all"
-                >
-                  Commencer →
-                </button>
-              </div>
-            )}
 
             {/* Validation en attente — publication d'offres et de circuits bloquée */}
             {profile?.status === "pending" && profile?.full_name && (
@@ -602,228 +518,96 @@ export default function GuideDashboardPage() {
             )}
 
             {/* ── Stats Grid ───────────────────────────────────────────── */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-
-              {/* Score durabilité */}
-              <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-primary/10 flex flex-col justify-between lg:col-span-2">
-                <div className="flex justify-between items-start mb-2">
+            {/* Bannière questionnaire non complété.
+                 La condition portait sur le score final, qui vaut désormais 0
+                 et jamais `null` : la bannière ne pouvait plus s'afficher.
+                 Elle porte maintenant sur le fait réel — le questionnaire est
+                 passé ou il ne l'est pas. */}
+            {!((profile?.score_questionnaire ?? 0) > 0) && (
+              <div className="mb-6 p-5 bg-primary/10 border border-primary/20 rounded-2xl flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <span className="material-symbols-outlined text-primary text-2xl">quiz</span>
                   <div>
-                    <p className="text-slate-500 text-sm font-medium">Score de durabilité</p>
-                    <h3 className={`text-3xl font-extrabold mt-1 ${getScoreColor(score)}`}>
-                      {score !== null ? score : "—"}
-                      {score !== null && <span className="text-slate-400 text-lg font-normal">/100</span>}
-                    </h3>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <div className="bg-primary/20 p-2 rounded-lg text-primary">
-                      <span className="material-symbols-outlined">analytics</span>
-                    </div>
-                    <button
-                      onClick={() => setShowScoreDetail((v) => !v)}
-                      className="text-xs text-slate-400 hover:text-primary font-bold transition-colors"
-                    >
-                      <span className="material-symbols-outlined text-lg">
-                        {showScoreDetail ? "expand_less" : "expand_more"}
-                      </span>
-                    </button>
+                    <p className="font-bold text-slate-800">Passez votre évaluation de guide éco-responsable</p>
+                    <p className="text-sm text-slate-500 font-medium">Obtenez votre score et valorisez votre profil auprès des voyageurs.</p>
                   </div>
                 </div>
-                <div className="w-full bg-slate-100 dark:bg-slate-800 h-2 rounded-full overflow-hidden">
-                  <div className={`h-full ${getBarColor(score)} rounded-full transition-all duration-1000`} style={{ width: scoreWidth }} />
-                </div>
-                <p className="text-xs font-bold mt-2" style={{ color: score !== null ? (score >= 60 ? "#22c55e" : "#f97316") : "#94a3b8" }}>
-                  {score !== null ? getScoreLabel(score) : "Évaluation non complétée"}
-                </p>
-                {showScoreDetail && profile && <ScoreBreakdown profile={profile} />}
-              </div>
-
-              {/* Réservations gérées */}
-              <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-primary/10 flex flex-col self-start">
-                <div className="flex justify-between items-start">
-                  <div>
-                    <p className="text-slate-500 text-sm font-medium">Réservations gérées</p>
-                    <h3 className="text-3xl font-extrabold mt-1">{profile?.reservations_handled ?? 0}</h3>
-                  </div>
-                  <div className="bg-blue-500/10 p-2 rounded-lg text-blue-500">
-                    <span className="material-symbols-outlined">event_available</span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Avis reçus */}
-              <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-primary/10 flex flex-col self-start">
-                <div className="flex justify-between items-start">
-                  <div>
-                    <p className="text-slate-500 text-sm font-medium">Avis reçus</p>
-                    <h3 className="text-3xl font-extrabold mt-1">{profile?.feedback_received ?? 0}</h3>
-                  </div>
-                  <div className="bg-green-500/10 p-2 rounded-lg text-green-500">
-                    <span className="material-symbols-outlined">star</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* ── Mes Offres ───────────────────────────────────────── */}
-            <div className="mb-8">
-              <div className="flex items-center justify-between mb-6">
-                <h3 className="text-xl font-bold">Mes Offres</h3>
                 <button
-                  onClick={async () => { if (!(await blockIfNotApproved())) setShowCreateOffer(true); }}
-                  className="flex items-center gap-2 px-5 py-2.5 bg-primary text-slate-900 font-bold rounded-xl text-sm shadow-lg shadow-primary/20 hover:-translate-y-0.5 transition-all"
+                  onClick={() => router.push("/questionnaire/guide")}
+                  className="px-5 py-2.5 bg-primary text-slate-900 font-bold rounded-xl text-sm shadow-lg shadow-primary/20 hover:-translate-y-0.5 transition-all"
                 >
-                  <span className="material-symbols-outlined text-lg">add</span>
-                  Créer une offre
+                  Commencer →
                 </button>
               </div>
+            )}
 
-              {offers.length === 0 ? (
-                <div className="bg-white dark:bg-slate-900 rounded-2xl border border-primary/10 p-10 text-center">
-                  <span className="material-symbols-outlined text-slate-300 text-5xl mb-3 block">hiking</span>
-                  <p className="text-slate-700 font-bold mb-1">Aucune offre publiée</p>
-                  <p className="text-slate-400 text-sm mb-5">Créez votre première expérience guidée et proposez-la aux voyageurs.</p>
-                  <button
-                    onClick={async () => { if (!(await blockIfNotApproved())) setShowCreateOffer(true); }}
-                    className="inline-flex items-center gap-2 px-5 py-2.5 bg-primary text-slate-900 rounded-xl text-sm font-bold hover:bg-primary/90 shadow-sm"
-                  >
-                    <span className="material-symbols-outlined text-lg">add</span>
-                    Créer ma première offre
-                  </button>
-                </div>
-              ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                  {offers.map((offer) => (
-                    <div key={offer.id} className="bg-white dark:bg-slate-900 rounded-2xl border border-primary/10 overflow-hidden hover:shadow-md transition-shadow">
-                      {offer.images?.[0] ? (
-                        <img src={offer.images[0]} alt={offer.title} className="w-full h-36 object-cover" />
-                      ) : (
-                        <div className="w-full h-36 bg-primary/10 flex items-center justify-center">
-                          <span className="material-symbols-outlined text-primary text-4xl">hiking</span>
-                        </div>
-                      )}
-                      <div className="p-4">
-                        <div className="flex items-start justify-between gap-2 mb-2">
-                          <h4 className="font-bold text-slate-800 dark:text-slate-100 text-sm leading-snug">{offer.title}</h4>
-                          <span className={`shrink-0 text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                            offer.status === "approved" ? "bg-green-100 text-green-700" :
-                            offer.status === "pending"  ? "bg-amber-100 text-amber-700" :
-                            "bg-slate-100 text-slate-500"
-                          }`}>
-                            {offer.status === "approved" ? "Approuvée" : offer.status === "pending" ? "En attente" : offer.status}
-                          </span>
-                        </div>
-                        {offer.region && (
-                          <p className="text-xs text-slate-400 flex items-center gap-1">
-                            <span className="material-symbols-outlined text-sm">location_on</span>
-                            {offer.region}
-                          </p>
-                        )}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
+            {/* Trois colonnes : la carte de progression en occupe deux, les
+                 compteurs s'empilent dans la troisième plutôt que de flotter
+                 à côté d'une carte deux fois plus haute qu'eux. */}
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8 items-start">
 
-            {/* ── Circuits + Badges ─────────────────────────────────── */}
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+              {/* Score et badge réunis : le badge nomme, le score chiffre,
+                  et le palier en cours dit ce qui reste à faire. */}
+              <ScoreBadgeCard role="guide" scoreInitial={profile?.score_questionnaire} />
 
-              {/* Circuits / Spécialités */}
-              <div className="lg:col-span-2">
-                <div className="flex items-center justify-between mb-6">
-                  <h3 className="text-xl font-bold">Mes Spécialités & Circuits</h3>
-                  <a className="text-primary font-bold text-sm hover:underline" href="#">Voir tout</a>
-                </div>
-                <div className="space-y-4">
-                  {/* Zone d'activité card */}
-                  <div className="bg-white dark:bg-slate-900 rounded-2xl p-5 border border-primary/5">
-                    <div className="flex items-center gap-4">
-                      <div className="w-14 h-14 rounded-xl bg-primary/10 flex items-center justify-center flex-shrink-0">
-                        <span className="material-symbols-outlined text-primary text-2xl">location_on</span>
-                      </div>
-                      <div className="flex-1">
-                        <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">Zone d'activité</p>
-                        <p className="text-lg font-bold text-slate-900">{profile?.zone ?? "Non renseignée"}</p>
-                        <p className="text-sm text-slate-500 mt-1">
-                          {profile?.guide_type === "local" ? "Guide Local" : profile?.guide_type === "professionnel" ? "Guide Professionnel" : "—"}
-                          {profile?.years_experience !== null && profile?.years_experience !== undefined
-                            ? ` • ${profile.years_experience} an${profile.years_experience > 1 ? "s" : ""} d'expérience`
-                            : ""}
+              <div className="space-y-3">
+
+                {/* Réservations reçues */}
+                <div className="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-primary/10">
+                  <div className="flex justify-between items-start">
+                    <div>
+                      <p className="text-slate-500 text-sm font-medium">Réservations reçues</p>
+                      <h3 className="text-2xl font-extrabold mt-0.5">{demandes.length}</h3>
+                      {enAttente > 0 && (
+                        <p className="text-xs font-bold text-amber-600 mt-1">
+                          {enAttente} en attente de réponse
                         </p>
-                      </div>
-                      <span className={`text-xs font-bold px-2.5 py-1 rounded-full ${
-                        profile?.status === "active" ? "bg-green-100 text-green-700" : "bg-amber-100 text-amber-700"
-                      }`}>
-                        {profile?.status === "active" ? "Actif" : "En attente"}
-                      </span>
+                      )}
+                    </div>
+                    <div className="bg-blue-500/10 p-2 rounded-lg text-blue-500">
+                      <span className="material-symbols-outlined">event_available</span>
                     </div>
                   </div>
-
-                  {/* Spécialités */}
-                  {(profile?.specialties?.length ?? 0) > 0 && (
-                    <div className="bg-white dark:bg-slate-900 rounded-2xl p-5 border border-primary/5">
-                      <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">Spécialités</p>
-                      <div className="flex flex-wrap gap-2">
-                        {profile!.specialties!.map((s) => (
-                          <span key={s} className="px-3 py-1.5 bg-primary/10 text-primary text-sm font-bold rounded-full">
-                            {s}
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Certifications */}
-                  {(profile?.certifications?.length ?? 0) > 0 && (
-                    <div className="bg-white dark:bg-slate-900 rounded-2xl p-5 border border-primary/5">
-                      <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">Certifications</p>
-                      <div className="space-y-2">
-                        {profile!.certifications.map((cert) => (
-                          <div key={cert.label} className="flex items-center gap-3 p-3 bg-slate-50 dark:bg-slate-800 rounded-xl">
-                            <span className="material-symbols-outlined text-primary text-xl">verified</span>
-                            <span className="text-sm font-bold text-slate-800 dark:text-slate-200">{cert.label}</span>
-                            {cert.proof && (
-                              <button type="button" onClick={() => {
-                                if (cert.proof.startsWith("data:")) {
-                                  const w = window.open(); w?.document.write(`<img src="${cert.proof}" style="max-width:100%">`);
-                                } else { window.open(cert.proof, "_blank"); }
-                              }} className="ml-auto text-xs text-primary font-bold flex items-center gap-1 hover:underline">
-                                <span className="material-symbols-outlined text-sm">open_in_new</span>
-                                Justificatif
-                              </button>
-                            )}
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Langues */}
-                  {(profile?.languages_spoken?.length ?? 0) > 0 && (
-                    <div className="bg-white dark:bg-slate-900 rounded-2xl p-5 border border-primary/5">
-                      <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">Langues parlées</p>
-                      <div className="flex flex-wrap gap-2">
-                        {profile!.languages_spoken!.map((l) => (
-                          <span key={l} className="px-3 py-1.5 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-sm font-bold rounded-full uppercase">
-                            {l}
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-                  )}
                 </div>
+
+                {/* Offres, circuits et collaborations : trois comptes courts,
+                    côte à côte plutôt qu'empilés, pour tenir dans la colonne. */}
+                <div className="grid grid-cols-3 gap-3">
+                  {[
+                    { label: "Offres", valeur: nbOffres, icone: "storefront", teinte: "text-emerald-500 bg-emerald-500/10", href: "/profile/guide?tab=offres" },
+                    { label: "Circuits", valeur: nbCircuits, icone: "route", teinte: "text-teal-500 bg-teal-500/10", href: "/profile/guide?tab=circuits" },
+                    { label: "Collabs", valeur: nbCollabs, icone: "handshake", teinte: "text-violet-500 bg-violet-500/10", href: "/profile/guide?tab=collaborations" },
+                  ].map((c) => (
+                    <button
+                      key={c.label}
+                      onClick={() => router.push(c.href)}
+                      className="bg-white dark:bg-slate-900 p-3 rounded-2xl border border-primary/10 text-left hover:border-primary/30 transition-colors"
+                    >
+                      <span className={`inline-flex p-1.5 rounded-lg ${c.teinte}`}>
+                        <span className="material-symbols-outlined text-lg">{c.icone}</span>
+                      </span>
+                      <p className="text-xl font-extrabold mt-1.5 leading-none">{c.valeur}</p>
+                      <p className="text-[11px] text-slate-500 font-medium mt-0.5">{c.label}</p>
+                    </button>
+                  ))}
+                </div>
+
+              </div>
+            </div>
+
+
+            {/* ── Réservations ──────────────────────────────────────── */}
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-start">
+
+              <div className="lg:col-span-2 space-y-10">
+                <DemandesRecuesPanel role="guide" reservations={demandes} onRepondre={repondre} />
               </div>
 
-              {/* Badges */}
-              <div>
-                <h3 className="text-xl font-bold mb-6">Mes Badges</h3>
-                <div className="bg-white dark:bg-slate-900 rounded-2xl p-6 border border-primary/10">
-                  <BadgeGrid role="guide" details={false} />
-                  <a href="/dashboard/profile?onglet=badges" className="mt-3 inline-flex items-center gap-1 text-[11px] font-bold text-primary hover:underline">Voir le détail des paliers →</a>
+              {/* L'agenda du jour plutôt qu'une liste de prestations à venir :
+                  ce qu'un guide cherche en ouvrant son tableau de bord, c'est
+                  ce qui l'attend aujourd'hui. */}
+              <CreneauxDuJour hrefAgenda="/profile/guide?tab=agenda" />
 
-                  
-                </div>
-              </div>
             </div>
             </>)}
 
@@ -841,24 +625,6 @@ export default function GuideDashboardPage() {
         </main>
       </div>
 
-      {showCreateOffer && (
-        <GuideOfferModal
-          open={showCreateOffer}
-          onClose={() => setShowCreateOffer(false)}
-          onSuccess={(newOffer) => {
-            setOffers((prev) => [newOffer, ...prev]);
-            setShowCreateOffer(false);
-          }}
-          profile={{
-            domaines: profile?.domaines ?? null,
-            expertises: profile?.expertises ?? null,
-            zones_couvertes: profile?.zones_couvertes ?? null,
-            publics_accueillis: profile?.publics_accueillis ?? null,
-            languages_spoken: profile?.languages_spoken ?? null,
-          }}
-          token={localStorage.getItem("access_token") ?? ""}
-        />
-      )}
     </div>
   );
 }

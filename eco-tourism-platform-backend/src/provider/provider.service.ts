@@ -4,6 +4,8 @@ import { ILike, In, Repository } from 'typeorm';
 import { Provider } from './entities/provider.entity';
 import { Organization } from '../organization/entities/organization.entity';
 import { OnboardingProviderDto, UpdateProviderDto } from './dto/provider.dto';
+import { BadgeService } from '../badge/badge.service';
+import { ligne, lignePartielle, totalCompletion, type LigneCompletion } from '../common/completion.util';
 
 @Injectable()
 export class ProviderService {
@@ -12,6 +14,7 @@ export class ProviderService {
     private readonly repo: Repository<Provider>,
     @InjectRepository(Organization)
     private readonly orgRepo: Repository<Organization>,
+    private readonly badgeService: BadgeService,
   ) {}
 
   async findOrCreate(userId: string): Promise<Provider> {
@@ -24,7 +27,33 @@ export class ProviderService {
   }
 
   async getMyProfile(userId: string): Promise<Provider> {
-    return this.findOrCreate(userId);
+    const provider = await this.findOrCreate(userId);
+
+    // La complétion n'était calculée que dans `update()` : un prestataire qui
+    // terminait son inscription sans jamais rééditer son profil restait à 0 %
+    // pour toujours. On la recalcule à la lecture, comme le fait le guide.
+    const completion = this.calculateCompletion(provider);
+    if (completion !== provider.profile_completion) {
+      provider.profile_completion = completion;
+      await this.repo.save(provider);
+    }
+
+    // Le score de durabilité se déduit désormais de la progression dans
+    // l'échelle de badges : le questionnaire donne le départ, les paliers
+    // prennent le relais. Il n'était jusqu'ici écrit qu'à la soumission du
+    // questionnaire et ne bougeait plus jamais ensuite.
+    try {
+      const stats = await this.badgeService.getStats(userId, 'provider');
+      if (stats.sustainability_score !== provider.sustainability_score) {
+        provider.sustainability_score = stats.sustainability_score;
+        await this.repo.save(provider);
+      }
+    } catch { /* le score reste celui déjà enregistré */ }
+
+    // Le détail accompagne le pourcentage : sans lui, un profil à 45 % laisse
+    // son propriétaire deviner ce qui manque.
+    (provider as any).completion_details = this.lignesCompletion(provider);
+    return provider;
   }
 
   async getPublicProfile(userId: string): Promise<Provider> {
@@ -43,7 +72,38 @@ export class ProviderService {
   async update(userId: string, dto: UpdateProviderDto): Promise<Provider> {
     const provider = await this.findOrCreate(userId);
     Object.assign(provider, dto);
+    provider.profile_completion = this.calculateCompletion(provider);
     return this.repo.save(provider);
+  }
+
+  /**
+   * Complétion du profil prestataire, calée sur les 4 étapes de son onboarding.
+   *
+   * Ce rôle n'avait aucun calcul — ni méthode, ni colonne — contrairement aux
+   * trois autres. Le barème suit l'ordre du parcours : identité et médias,
+   * localisation et contact, activité principale, activités secondaires.
+   */
+  /** Le barème, ligne à ligne — c'est lui qui produit le pourcentage. */
+  lignesCompletion(p: Provider): LigneCompletion[] {
+    return [
+      lignePartielle('Identité & médias', 'Nom, organisation, type, présentation', 20,
+        [p.full_name, p.organization, p.provider_type, p.bio]),
+      ligne('Identité & médias', 'Photo de profil', 5, p.photo),
+      ligne('Identité & médias', 'Photos de la prestation', 5, p.photos),
+      lignePartielle('Localisation & contact', 'Téléphone, région, adresse', 20,
+        [p.phone, p.region, p.address]),
+      ligne('Localisation & contact', 'Position sur la carte', 5, p.lat),
+      ligne('Localisation & contact', 'Site web ou réseau social', 5,
+        p.website || p.facebook || p.instagram || p.whatsapp),
+      ligne('Activité principale', "Types d'activité", 15, p.activity_types),
+      ligne('Activité principale', 'Spécialités', 10, p.specialties),
+      ligne('Activité principale', "Années d'expérience", 5, p.years_experience),
+      ligne('Activités secondaires', 'Activités secondaires', 10, p.secondary_activity_types),
+    ];
+  }
+
+  private calculateCompletion(p: Provider): number {
+    return totalCompletion(this.lignesCompletion(p));
   }
 
   async search(q: string): Promise<(Provider & { org_logo: string | null })[]> {

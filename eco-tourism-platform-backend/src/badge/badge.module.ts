@@ -16,5 +16,7 @@ import { BadgeController } from './badge.controller';
   ])],
   controllers: [BadgeController],
   providers: [BadgeService],
+  // Les services de profil s'en servent pour rafraîchir le score à la lecture.
+  exports: [BadgeService],
 })
 export class BadgeModule {}

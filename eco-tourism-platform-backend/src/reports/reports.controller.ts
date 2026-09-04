@@ -10,7 +10,9 @@ import { Role } from '../common/enums/roles.enum';
 export class ReportsController {
   constructor(private readonly service: ReportsService) {}
 
-  @Roles(Role.ECO_TRAVELER, Role.GUIDE, Role.PROJECT)
+  // `Role.PROVIDER` manquait : un prestataire recevait un 403 en signalant,
+  // et l'écran lui annonçait quand même que le signalement était parti.
+  @Roles(Role.ECO_TRAVELER, Role.GUIDE, Role.PROVIDER, Role.PROJECT)
   @Post()
   create(@Req() req: any, @Body() body: { reported_id: string; reason: string }) {
     return this.service.createReport(req.user.sub, req.user.role, body.reported_id, body.reason ?? '');

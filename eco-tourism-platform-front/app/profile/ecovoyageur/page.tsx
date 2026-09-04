@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import dynamic from "next/dynamic";
 import {
   Plus, Edit3, MapPin, ArrowLeft, Leaf, ArrowRight, Send, X,
@@ -218,6 +218,7 @@ export default function EcoTravelerProfilePage({ embedded = false, forcedTab, op
 } = {}) {
   const router = useRouter();
 
+  const parametres = useSearchParams();
   const [profile,       setProfile]       = useState<EcoTravelerProfile | null>(null);
   const profileUserIdRef = useRef<string | undefined>(undefined);
   const [publications,  setPublications]  = useState<Publication[]>([]);
@@ -227,6 +228,17 @@ export default function EcoTravelerProfilePage({ embedded = false, forcedTab, op
   const [token,        setToken]        = useState("");
   const [loading,      setLoading]      = useState(true);
   const [activeTab,    setActiveTab]    = useState<Tab>(forcedTab ?? "tout");
+
+  // Onglet demandé par l'URL : /profile/ecovoyageur?tab=lieux.
+  // Lu dans un effet et non dans l'initialiseur de useState — celui-ci ne
+  // rejoue pas à l'hydratation, d'où l'onglet par défaut au premier clic.
+  useEffect(() => {
+    if (forcedTab) { setActiveTab(forcedTab); return; }
+    const tab = parametres.get("tab");
+    if (tab && ["tout", "experiences", "lieux", "amis", "apropos"].includes(tab)) {
+      setActiveTab(tab as Tab);
+    }
+  }, [parametres, forcedTab]);
 
   // ── Add publication modal ────────────────────────────────────────────────
   const [addPubOpen,   setAddPubOpen]   = useState(false);

@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { apiFetch } from "@/lib/api";
 import { getConsistentSession } from "@/lib/auth";
 import {
-  Calendar, Clock, MapPin, ChevronLeft, ChevronRight, CheckCircle,
+  ArrowLeft, Calendar, Clock, MapPin, ChevronRight, CheckCircle,
   XCircle, Users, User, Leaf, PackageSearch,
 } from "lucide-react";
 
@@ -58,9 +58,9 @@ const STATUS: Record<string, { label: string; color: string; bg: string; icon: R
   },
   confirmed: {
     label: "Confirmée",
-    color: "text-secondary",
-    bg: "bg-primary/10",
-    icon: <CheckCircle size={13} className="text-primary" />,
+    color: "text-emerald-700",
+    bg: "bg-emerald-50",
+    icon: <CheckCircle size={13} className="text-emerald-500" />,
   },
   rejected: {
     label: "Refusée",
@@ -76,9 +76,9 @@ const STATUS: Record<string, { label: string; color: string; bg: string; icon: R
   },
   completed: {
     label: "Terminée",
-    color: "text-tertiary",
-    bg: "bg-tertiary-container/40",
-    icon: <CheckCircle size={13} className="text-tertiary" />,
+    color: "text-blue-700",
+    bg: "bg-blue-50",
+    icon: <CheckCircle size={13} className="text-blue-700" />,
   },
 };
 
@@ -119,29 +119,33 @@ export default function AuthorReservationsList({ role }: { role: Role }) {
   const pendingCount = rows.filter((r) => r.status === "pending").length;
 
   return (
-    <div className="min-h-screen bg-background">
-      <div className="bg-surface border-b border-surface-container-highest sticky top-0 z-10 shadow-sm">
-        <div className="max-w-3xl mx-auto px-4 py-4 flex items-center gap-3">
+    <div className="min-h-screen bg-slate-50">
+      {/* Barre supérieure — identique au profil et aux écrans voyageur. */}
+      <div className="sticky top-0 z-40 bg-white/80 backdrop-blur-md border-b border-slate-200 px-6 py-3">
+        <div className="max-w-3xl mx-auto flex items-center justify-between">
           <button
             onClick={() => router.push(dashboard)}
-            className="w-9 h-9 flex items-center justify-center rounded-full hover:bg-surface-container text-outline"
+            className="flex items-center gap-2 rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100 transition-all"
           >
-            <ChevronLeft size={20} />
+            <ArrowLeft size={16} />Retour
           </button>
-          <div className="flex-1">
-            <h1 className="text-lg font-extrabold text-on-surface flex items-center gap-2">
-              <Calendar size={20} className="text-primary" />
-              Demandes de réservation
-            </h1>
-            <p className="text-xs text-outline">
-              {pendingCount} demande{pendingCount !== 1 ? "s" : ""} en attente
-            </p>
+          <div className="flex items-center gap-2 text-slate-900">
+            <Leaf className="text-primary w-6 h-6" />
+            <span className="text-base font-extrabold tracking-tight">Éco-Voyage</span>
           </div>
         </div>
       </div>
 
+      {/* Titre dans le flux de la page, comme côté voyageur. */}
+      <div className="max-w-3xl mx-auto w-full px-6 pt-7">
+        <h1 className="text-2xl font-extrabold text-slate-800">Demandes de réservation</h1>
+        <p className="text-sm text-slate-500 font-medium mt-0.5">
+          {pendingCount} demande{pendingCount !== 1 ? "s" : ""} en attente
+        </p>
+      </div>
+
       <div className="max-w-3xl mx-auto px-4 py-5 space-y-4">
-        <div className="flex gap-2 overflow-x-auto pb-1">
+        <div className="flex gap-1.5 overflow-x-auto scrollbar-none pb-0.5">
           {FILTERS.map((f) => {
             const count = f.value === "all" ? rows.length : rows.filter((r) => r.status === f.value).length;
             const active = filter === f.value;
@@ -149,13 +153,18 @@ export default function AuthorReservationsList({ role }: { role: Role }) {
               <button
                 key={f.value}
                 onClick={() => setFilter(f.value)}
-                className={`shrink-0 px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
+                className={`flex-shrink-0 flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-bold transition-all ${
                   active
                     ? "bg-primary text-slate-900"
-                    : "bg-surface border border-surface-container-highest text-outline hover:border-primary/40"
+                    : "bg-slate-100 text-slate-500 hover:bg-slate-200"
                 }`}
               >
-                {f.label} ({count})
+                {f.label}
+                {count > 0 && (
+                  <span className={`text-[10px] font-black px-1.5 py-0.5 rounded-full ${
+                    active ? "bg-white/30 text-slate-900" : "bg-white text-slate-600"
+                  }`}>{count}</span>
+                )}
               </button>
             );
           })}
@@ -164,13 +173,13 @@ export default function AuthorReservationsList({ role }: { role: Role }) {
         {loading ? (
           <div className="space-y-3">
             {[1, 2, 3].map((i) => (
-              <div key={i} className="h-28 rounded-2xl bg-surface-container animate-pulse" />
+              <div key={i} className="h-28 rounded-2xl bg-white border border-slate-100 animate-pulse" />
             ))}
           </div>
         ) : filtered.length === 0 ? (
-          <div className="text-center py-16 text-outline">
+          <div className="text-center py-16 text-slate-400">
             <PackageSearch size={40} className="mx-auto mb-3 opacity-30" />
-            <p className="font-semibold text-on-surface">Aucune réservation</p>
+            <p className="font-semibold text-slate-800">Aucune réservation</p>
             <p className="text-sm mt-1">Les demandes des voyageurs apparaîtront ici.</p>
           </div>
         ) : (
@@ -182,24 +191,24 @@ export default function AuthorReservationsList({ role }: { role: Role }) {
                 <button
                   key={r.id}
                   onClick={() => router.push(`${detailBase}/${r.id}`)}
-                  className="w-full text-left bg-surface rounded-2xl border border-surface-container-highest p-4 hover:border-primary/40 hover:shadow-sm transition-all"
+                  className="w-full text-left bg-white rounded-2xl border border-slate-100 shadow-sm p-4 hover:shadow-md hover:border-primary/20 transition-all"
                 >
                   <div className="flex gap-3">
-                    <div className="w-14 h-14 rounded-xl bg-primary/10 overflow-hidden flex items-center justify-center shrink-0">
+                    <div className="w-14 h-14 rounded-xl bg-emerald-50 overflow-hidden flex items-center justify-center shrink-0">
                       {r.offer?.images?.[0] || r.circuit?.cover_image ? (
                         <img src={(r.offer?.images?.[0] ?? r.circuit?.cover_image)!} alt="" className="w-full h-full object-cover" />
                       ) : (
-                        <Leaf size={20} className="text-primary" />
+                        <Leaf size={20} className="text-emerald-500" />
                       )}
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-start justify-between gap-2">
-                        <p className="font-bold text-on-surface text-sm line-clamp-1">{r.offer?.title ?? r.circuit?.title}</p>
+                        <p className="font-bold text-slate-800 text-sm line-clamp-1">{r.offer?.title ?? r.circuit?.title}</p>
                         <span className={`flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0 ${st.bg} ${st.color}`}>
                           {st.icon} {st.label}
                         </span>
                       </div>
-                      <div className="flex flex-wrap gap-x-3 gap-y-1 mt-1 text-xs text-outline">
+                      <div className="flex flex-wrap gap-x-3 gap-y-1 mt-1 text-xs text-slate-400">
                         {r.traveler?.full_name && (
                           <span className="flex items-center gap-1">
                             <User size={11} /> {r.traveler.full_name}
@@ -222,20 +231,20 @@ export default function AuthorReservationsList({ role }: { role: Role }) {
                         )}
                       </div>
                       {r.total_price != null && (
-                        <p className="text-sm font-extrabold text-secondary mt-1">
+                        <p className="text-sm font-extrabold text-emerald-700 mt-1">
                           {Number(r.total_price).toFixed(0)} TND
                         </p>
                       )}
                       {r.status === "pending" && r.availability && r.availability.spots_total != null && (
                         <p className={`text-[11px] font-semibold mt-1 ${
-                          r.can_confirm === false ? "text-red-600" : "text-outline"
+                          r.can_confirm === false ? "text-red-600" : "text-slate-400"
                         }`}>
                           {r.availability.spots_available} place{r.availability.spots_available !== 1 ? "s" : ""} dispo
                           {r.can_confirm === false ? " — trop de participants" : ""}
                         </p>
                       )}
                     </div>
-                    <ChevronRight size={18} className="text-outline shrink-0 self-center" />
+                    <ChevronRight size={18} className="text-slate-400 shrink-0 self-center" />
                   </div>
                 </button>
               );

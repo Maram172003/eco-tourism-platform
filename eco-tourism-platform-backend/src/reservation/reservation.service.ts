@@ -19,7 +19,10 @@ import {
   ConfirmReservationDto,
   CreateReservationDto,
   RespondToInvitationDto,
+  UpdateReservationDto,
 } from './dto/reservation.dto';
+import { isInstantConfirmation } from '../common/confirmation.util';
+import { partsEgales, resoudreRepartition, type Repartition } from '../common/payment-split.util';
 import { MailService } from '../mail/mail.service';
 import { NotificationService } from '../notifications/notification.service';
 import {
@@ -28,6 +31,7 @@ import {
   sortSubtypeKeys,
 } from '../offer/offer-variant.util';
 import { ReservationCircuitService } from './reservation-circuit.service';
+import { OfferCollaboration } from '../offer/entities/offer-collaboration.entity';
 
 /** Statuses that occupy capacity (pending does NOT hold seats). */
 const HELD_STATUSES = ['confirmed'];
@@ -53,6 +57,8 @@ export class ReservationService {
     private readonly guideRepo: Repository<Guide>,
     @InjectRepository(Provider)
     private readonly providerRepo: Repository<Provider>,
+    @InjectRepository(OfferCollaboration)
+    private readonly offerCollabRepo: Repository<OfferCollaboration>,
     @InjectRepository(User)
     private readonly userRepo: Repository<User>,
     private readonly mailService: MailService,
@@ -133,7 +139,7 @@ export class ReservationService {
       const circuit = enriched.circuit;
       return {
         ...enriched,
-        confirmation_mode: circuit?.confirmation_mode ?? 'manual',
+        confirmation_mode: isInstantConfirmation(circuit) ? 'instant' : 'manual',
         message:
           saved.status === 'confirmed'
             ? 'Votre réservation est confirmée.'
@@ -201,57 +207,8 @@ export class ReservationService {
       );
     }
 
-    const dispo = ((offer as any).details as any)?.disponibilite as
-      | {
-          type?: string;
-          dates?: string[];
-          start_date?: string;
-          end_date?: string;
-          days_of_week?: string[];
-        }
-      | undefined;
-
-    // Dates spécifiques : la date doit être dans la liste
-    const specificDates = (dispo?.dates ?? [])
-      .map((d) => String(d).slice(0, 10))
-      .filter(Boolean);
-    if (
-      (dispo?.type === 'specific' || specificDates.length > 0) &&
-      specificDates.length > 0 &&
-      !specificDates.includes(reservationDateStr)
-    ) {
-      throw new BadRequestException(
-        "Cette date n'est pas parmi les dates disponibles de l'offre.",
-      );
-    }
-
-    // Récurrent : respecter les jours de la semaine (0=Lun … 6=Dim)
-    if (dispo?.type === 'recurring' && Array.isArray(dispo.days_of_week) && dispo.days_of_week.length) {
-      const js = new Date(`${reservationDateStr}T12:00:00`).getDay(); // 0=Dim
-      const agenda = js === 0 ? '6' : String(js - 1);
-      const allowed = dispo.days_of_week.map(String);
-      if (!allowed.includes(agenda)) {
-        throw new BadRequestException(
-          "Cette date ne correspond pas aux jours disponibles de l'offre.",
-        );
-      }
-    }
-
+    this.assertDateReservable(offer, reservationDateStr);
     const reservationDate = new Date(`${reservationDateStr}T12:00:00`);
-    const startBound = offer.availability_start
-      ? new Date(`${String(offer.availability_start).slice(0, 10)}T00:00:00`)
-      : null;
-    const endBound = offer.availability_end
-      ? new Date(`${String(offer.availability_end).slice(0, 10)}T23:59:59`)
-      : null;
-
-    // Respecter la fenêtre de disponibilité de l'offre
-    if (startBound && reservationDate < startBound) {
-      throw new BadRequestException("Cette date est avant la période de disponibilité de l'offre.");
-    }
-    if (endBound && reservationDate > endBound) {
-      throw new BadRequestException("Cette date est après la période de disponibilité de l'offre.");
-    }
 
     const chosenSubtypes = this.resolveChosenSubtypes(offer, dto);
 
@@ -305,8 +262,21 @@ export class ReservationService {
         ? Math.round(((totalPrice * offer.deposit_percentage) / 100) * 100) / 100
         : null;
 
-    const isInstant = offer.confirmation_mode === 'instant';
-    const initialStatus = isInstant ? 'confirmed' : 'pending';
+    // Le type de confirmation choisi sur l'offre fait foi, qu'il soit rangé
+    // dans la colonne ou dans `details.type_confirmation`.
+    // Qui paie quoi. En solo la question ne se pose pas ; en groupe c'est
+    // l'organisateur qui a tranché dans le formulaire.
+    const repartition = this.resoudreParts(dto, totalPrice, invitedIds, emailOnly);
+
+    const isInstant = isInstantConfirmation(offer as any);
+    // Une réservation de groupe n'est transmise au prestataire qu'une fois le
+    // groupe fixé : tant qu'un invité n'a pas répondu, le nombre de
+    // participants et le prix peuvent encore changer. Ni notification, ni
+    // confirmation immédiate avant cela.
+    const attendLeGroupe =
+      dto.reservation_type === 'group' && invitedIds.length + emailOnly.length > 0;
+    const confirmeMaintenant = isInstant && !attendLeGroupe;
+    const initialStatus = confirmeMaintenant ? 'confirmed' : 'pending';
 
     const reservation = this.reservationRepo.create({
       offer_id: dto.offer_id,
@@ -321,6 +291,9 @@ export class ReservationService {
       deposit_amount: depositAmount,
       deposit_paid: false,
       payment_status: 'unpaid',
+      payment_split: dto.reservation_type === 'group' ? repartition.mode : null,
+      organizer_share: repartition.organisateur,
+      submitted_at: attendLeGroupe ? null : new Date(),
       notes: dto.notes ?? null,
       chosen_subtypes: chosenSubtypes?.length ? chosenSubtypes : null,
       reservation_details: chosenSubtypes?.length
@@ -340,7 +313,7 @@ export class ReservationService {
     const saved = await this.reservationRepo.save(reservation);
 
     // Only confirmed bookings occupy capacity (instant confirm claims seats now)
-    if (isInstant) {
+    if (confirmeMaintenant) {
       await this.claimSpots(saved, offer);
       const dateStr = String(reservationDateStr).slice(0, 10);
       await this.sweepPendingOverCapacity(
@@ -358,6 +331,7 @@ export class ReservationService {
           user_id: userId,
           email: null,
           status: 'pending',
+          share_amount: repartition.invites[userId] ?? null,
         }),
       );
     }
@@ -368,22 +342,29 @@ export class ReservationService {
           user_id: null,
           email: ep.email,
           status: 'pending',
+          share_amount: repartition.invites[`email:${ep.email}`] ?? null,
         }),
       );
     }
     if (participantRows.length) await this.participantRepo.save(participantRows);
 
     // Notifications & emails (best-effort)
-    await this.notifyAfterCreate(saved, offer, organizerId, invitedIds, emailOnly, isInstant, shareAmount);
+    await this.notifyAfterCreate(
+      saved, offer, organizerId, invitedIds, emailOnly, confirmeMaintenant, repartition, attendLeGroupe,
+    );
 
     const enriched = await this.enrichReservation(await this.findOneRaw(saved.id));
     return {
       ...enriched,
-      share_amount: shareAmount,
-      confirmation_mode: offer.confirmation_mode,
-      message: isInstant
-        ? 'Votre réservation est confirmée.'
-        : 'Votre réservation est en attente de confirmation du prestataire.',
+      share_amount: repartition.organisateur,
+      payment_split: dto.reservation_type === 'group' ? repartition.mode : null,
+      confirmation_mode: isInstant ? 'instant' : 'manual',
+      awaiting_group: attendLeGroupe,
+      message: attendLeGroupe
+        ? 'Votre réservation part au prestataire dès que tous vos invités auront répondu.'
+        : confirmeMaintenant
+          ? 'Votre réservation est confirmée.'
+          : 'Votre réservation est en attente de confirmation du prestataire.',
     };
   }
 
@@ -434,10 +415,63 @@ export class ReservationService {
       .orderBy('r.created_at', 'DESC')
       .getMany();
 
-    const merged = [...offerList, ...circuitList].sort(
-      (a, b) => b.created_at.getTime() - a.created_at.getTime(),
+    // Les offres auxquelles il collabore : la prestation le concerne, elle doit
+    // figurer dans sa liste — mais la décision reste à l'auteur.
+    const collabs = await this.offerCollabRepo.find({
+      where: { invited_user_id: authorId, status: In(['accepted', 'completed']) },
+    });
+    const offresCollab = [...new Set(collabs.map((c) => c.offer_id))];
+    const dejaLa = new Set([...offerList, ...circuitList].map((r) => r.id));
+    const collabList = offresCollab.length
+      ? (await this.reservationRepo
+          .createQueryBuilder('r')
+          .where('r.offer_id IN (:...ids)', { ids: offresCollab })
+          .leftJoinAndSelect('r.offer', 'offer')
+          .leftJoinAndSelect('r.circuit', 'circuit')
+          .leftJoinAndSelect('r.session', 'session')
+          .leftJoinAndSelect('r.participants', 'participants')
+          .orderBy('r.created_at', 'DESC')
+          .getMany()
+        ).filter((r) => !dejaLa.has(r.id))
+      : [];
+    const idsCollab = new Set(collabList.map((r) => r.id));
+
+    const merged = [...offerList, ...circuitList, ...collabList]
+      // Une réservation de groupe dont un invité n'a pas répondu n'est pas
+      // encore une demande : son nombre de participants et son prix peuvent
+      // encore changer. Le prestataire la verra quand elle sera arrêtée.
+      // Une fois transmise, elle ne disparaît plus de sa liste, même si
+      // l'organisateur invite quelqu'un de plus.
+      .filter((r) => r.submitted_at != null || !(r.participants ?? []).some((p) => p.status === 'pending'))
+      .sort((a, b) => b.created_at.getTime() - a.created_at.getTime());
+    return Promise.all(
+      merged.map(async (r) => ({
+        ...this.vuePourAuteur(await this.enrichReservation(r)),
+        // Marque la ligne comme informative : le collaborateur la voit, il ne
+        // la confirme pas. Le client s'en sert pour masquer les actions.
+        as_collaborator: idsCollab.has(r.id),
+        // Ne remplacer `can_confirm` que sur les lignes de collaboration :
+        // l'écraser partout effacerait la valeur calculée pour l'auteur.
+        ...(idsCollab.has(r.id) ? { can_confirm: false } : {}),
+      })),
     );
-    return Promise.all(merged.map((r) => this.enrichReservation(r)));
+  }
+
+  /**
+   * La réservation telle que son prestataire doit la voir.
+   *
+   * Qui a refusé l'invitation ne viendra pas : le faire figurer dans la liste
+   * des participants laissait le prestataire compter des personnes qu'il ne
+   * verra pas, et exposait au passage un échange privé entre l'organisateur et
+   * ses proches. Seuls les membres qui ont accepté sont transmis.
+   */
+  private vuePourAuteur(enrichie: any): any {
+    return {
+      ...enrichie,
+      invited_members: (enrichie.invited_members ?? []).filter(
+        (m: any) => m.status === 'accepted',
+      ),
+    };
   }
 
   async findPendingInvitations(userId: string): Promise<any[]> {
@@ -454,8 +488,43 @@ export class ReservationService {
     );
   }
 
-  async findOne(id: string): Promise<any> {
-    return this.enrichReservation(await this.findOneRaw(id));
+  /**
+   * Une réservation n'est lisible que par les personnes qu'elle concerne :
+   * son organisateur, les invités, et l'auteur de la prestation qui doit la
+   * confirmer. La route ne vérifiait rien — n'importe quel compte pouvait lire
+   * la réservation d'un autre, avec le nom de ses participants et leurs parts.
+   */
+  async findOne(id: string, userId?: string): Promise<any> {
+    const reservation = await this.findOneRaw(id);
+    if (userId) {
+      const invite = await this.participantRepo.findOne({
+        where: { reservation_id: id, user_id: userId },
+      });
+      // L'offre et le circuit sont déjà chargés par findOneRaw.
+      const estAuteur =
+        reservation.offer?.author_id === userId ||
+        (reservation.circuit as any)?.provider_id === userId;
+      // Un collaborateur fournit une partie de la prestation : la réservation
+      // le concerne, il doit pouvoir la consulter — sans pouvoir la trancher.
+      const estCollaborateur = reservation.offer_id
+        ? !!(await this.offerCollabRepo.findOne({
+            where: {
+              offer_id: reservation.offer_id,
+              invited_user_id: userId,
+              status: In(['accepted', 'completed']),
+            },
+          }))
+        : false;
+      if (reservation.organizer_id !== userId && !invite && !estAuteur && !estCollaborateur) {
+        throw new ForbiddenException('Cette réservation ne vous concerne pas.');
+      }
+      // L'auteur et ses collaborateurs ne voient que le groupe final.
+      if ((estAuteur || estCollaborateur) && reservation.organizer_id !== userId && !invite) {
+        const vue = this.vuePourAuteur(await this.enrichReservation(reservation));
+        return estAuteur ? vue : { ...vue, as_collaborator: true, can_confirm: false };
+      }
+    }
+    return this.enrichReservation(reservation);
   }
 
   async confirmByAuthor(
@@ -580,8 +649,470 @@ export class ReservationService {
     await this.participantRepo.save(participant);
 
     if (dto.status === 'accepted') await this.checkAndConfirm(reservationId);
+    if (dto.status === 'declined') await this.libererPlaceApresRefus(reservationId);
+
+    await this.notifyOrganizerOfResponse(reservationId, userId, dto.status);
+    await this.soumettreAuPrestataire(reservationId);
 
     return participant;
+  }
+
+  /**
+   * Prévient les collaborateurs d'une offre qu'elle vient d'être réservée.
+   *
+   * Ils fournissent une partie de la prestation : ils doivent savoir qu'elle
+   * aura lieu, avec combien de personnes et à quelle date. En revanche
+   * l'acceptation reste à l'auteur seul — la notification les informe, elle ne
+   * leur demande rien.
+   */
+  private async notifierCollaborateurs(
+    reservation: Reservation,
+    offer: Offer,
+  ): Promise<void> {
+    try {
+      const collabs = await this.offerCollabRepo.find({
+        where: { offer_id: offer.id, status: In(['accepted', 'completed']) },
+      });
+      const date = String(reservation.reservation_date).slice(0, 10);
+      for (const c of collabs) {
+        const invite = (c as any).invited_user_id as string | undefined;
+        if (!invite || invite === offer.author_id) continue;
+        await this.notifService
+          .create(invite, 'reservation_collab', {
+            reservation_id: reservation.id,
+            offer_id: offer.id,
+            offer_title: offer.title,
+            section: (c as any).section ?? null,
+            participant_count: reservation.participant_count,
+            reservation_date: date,
+            message:
+              `« ${offer.title} », à laquelle vous collaborez, vient d'être réservée `
+              + `pour ${reservation.participant_count} personne(s).`,
+          })
+          .catch(() => {});
+      }
+    } catch {
+      // Informer ne doit jamais faire échouer la réservation elle-même.
+    }
+  }
+
+  /**
+   * Transmet la réservation au prestataire une fois le groupe fixé.
+   *
+   * Tant qu'un invité n'a pas répondu, le nombre de participants et le prix
+   * peuvent encore bouger : soumettre au prestataire une demande qui va changer
+   * lui aurait fait confirmer autre chose que ce qui sera réservé. On attend
+   * donc la dernière réponse, puis on le prévient — ou l'on confirme
+   * directement si l'offre est en confirmation immédiate.
+   *
+   * `submitted_at` sert de garde : si l'organisateur invite quelqu'un de plus
+   * après coup, le prestataire ne sera pas notifié une seconde fois.
+   */
+  private async soumettreAuPrestataire(reservationId: string): Promise<void> {
+    const reservation = await this.findOneRaw(reservationId);
+    if (reservation.status !== 'pending' || reservation.submitted_at) return;
+
+    const participants = await this.participantRepo.find({
+      where: { reservation_id: reservationId },
+    });
+    if (participants.some((p) => p.status === 'pending')) return;
+
+    const offer = reservation.offer ?? null;
+    const source: { confirmation_mode?: string | null; details?: any } | null =
+      offer ?? (reservation.circuit as any) ?? null;
+    const instant = source ? isInstantConfirmation(source) : false;
+    const titre = offer?.title ?? reservation.circuit?.title ?? 'votre réservation';
+    const listUrl = `${process.env.FRONTEND_URL}/dashboard/ecovoyageur/reservations/${reservationId}`;
+    const organizer = await this.userRepo.findOne({ where: { id: reservation.organizer_id } });
+
+    await this.reservationRepo.update(reservationId, {
+      submitted_at: new Date(),
+      ...(instant ? { status: 'confirmed' } : {}),
+    } as any);
+
+    if (instant) {
+      // La place n'était pas retenue tant que le groupe hésitait : elle l'est
+      // maintenant que la composition est arrêtée.
+      if (offer) {
+        const aJour = await this.findOneRaw(reservationId);
+        await this.claimSpots(aJour, offer);
+      }
+      await this.notifService
+        .create(reservation.organizer_id, 'reservation_confirmed', {
+          reservation_id: reservationId,
+          offer_id: reservation.offer_id,
+          circuit_id: reservation.circuit_id,
+          offer_title: titre,
+          message: `Votre réservation pour « ${titre} » est confirmée.`,
+        })
+        .catch(() => {});
+      return;
+    }
+
+    if (offer) await this.notifierCollaborateurs(reservation, offer);
+
+    const auteurId = offer?.author_id ?? (reservation.circuit as any)?.provider_id ?? null;
+    if (auteurId) {
+      await this.notifService
+        .create(auteurId, 'reservation_pending', {
+          reservation_id: reservationId,
+          offer_id: reservation.offer_id,
+          circuit_id: reservation.circuit_id,
+          offer_title: titre,
+          message: `Nouvelle réservation en attente pour « ${titre} ».`,
+        })
+        .catch(() => {});
+    }
+    if (organizer?.email) {
+      this.mailService.sendReservationPendingEmail(organizer.email, titre, listUrl).catch(() => {});
+    }
+  }
+
+  /**
+   * Un refus libère la place et retire son prix de l'addition.
+   *
+   * Sans cela, le groupe gardait un participant qui ne viendra pas : le
+   * prestataire bloquait un siège pour personne, et l'organisateur restait
+   * redevable d'une part qu'il n'avait jamais acceptée de payer.
+   *
+   * Seules les réservations encore en attente sont recalculées. Une fois
+   * confirmée, la réservation est un engagement pris avec le prestataire : on
+   * ne rejoue pas son prix après coup, la place reste réservée et payée.
+   */
+  private async libererPlaceApresRefus(reservationId: string): Promise<void> {
+    const reservation = await this.findOneRaw(reservationId);
+    if (reservation.status !== 'pending') return;
+
+    const participants = await this.participantRepo.find({
+      where: { reservation_id: reservationId },
+    });
+    const restants = participants.filter((p) => p.status !== 'declined');
+    const partants = participants.filter((p) => p.status === 'declined');
+    const nouveauNombre = 1 + restants.length;
+    if (nouveauNombre >= reservation.participant_count) return;
+
+    // Qui a refusé ne doit plus rien : garder sa part l'aurait laissée
+    // s'afficher à côté de « Décliné ».
+    // Zéro, et non `null` : une part absente est relue comme « part héritée »
+    // pour les réservations d'avant ce champ, ce qui la ferait réapparaître.
+    const aRemettreAZero = partants.filter((p) => Number(p.share_amount ?? -1) !== 0);
+    if (aRemettreAZero.length) {
+      for (const p of aRemettreAZero) p.share_amount = 0;
+      await this.participantRepo.save(aRemettreAZero);
+    }
+
+    const unitPrice =
+      reservation.price_per_person != null ? Number(reservation.price_per_person) : null;
+    const nouveauTotal =
+      unitPrice !== null ? Math.round(unitPrice * nouveauNombre * 100) / 100 : null;
+
+    // Les parts sont rejouées selon le mode que l'organisateur avait choisi.
+    const mode = reservation.payment_split ?? 'equal';
+    let partOrganisateur: number | null = null;
+    if (nouveauTotal !== null) {
+      if (mode === 'organizer') {
+        partOrganisateur = nouveauTotal;
+        for (const p of restants) p.share_amount = 0;
+      } else if (mode === 'custom') {
+        // L'organisateur avait fixé le montant de chacun : ces montants-là
+        // tiennent toujours. C'est sa propre part qui absorbe la différence.
+        const sommeInvites = restants.reduce(
+          (t, p) => t + (p.share_amount != null ? Number(p.share_amount) : 0),
+          0,
+        );
+        partOrganisateur = Math.max(0, Math.round((nouveauTotal - sommeInvites) * 100) / 100);
+      } else {
+        const parts = partsEgales(nouveauTotal, nouveauNombre);
+        partOrganisateur = parts[0];
+        restants.forEach((p, i) => { p.share_amount = parts[i + 1]; });
+      }
+      if (restants.length) await this.participantRepo.save(restants);
+    }
+
+    const pourcentageAcompte =
+      reservation.offer?.deposit_percentage ?? (reservation.circuit as any)?.deposit_percentage ?? null;
+    const nouvelAcompte =
+      nouveauTotal !== null && pourcentageAcompte
+        ? Math.round(((nouveauTotal * Number(pourcentageAcompte)) / 100) * 100) / 100
+        : null;
+
+    await this.reservationRepo.update(reservationId, {
+      participant_count: nouveauNombre,
+      total_price: nouveauTotal,
+      deposit_amount: nouvelAcompte,
+      organizer_share: partOrganisateur,
+    } as any);
+  }
+
+  /**
+   * Prévient l'organisateur qu'un invité a répondu.
+   *
+   * Sans cela, il devait rouvrir la réservation pour découvrir qui avait
+   * accepté — et pour un refus, rien ne l'alertait qu'une place se libérait.
+   * Le décompte des réponses restantes lui évite de recompter à la main.
+   */
+  private async notifyOrganizerOfResponse(
+    reservationId: string,
+    participantId: string,
+    statut: string,
+  ): Promise<void> {
+    try {
+      const reservation = await this.findOneRaw(reservationId);
+      if (!reservation.organizer_id || reservation.organizer_id === participantId) return;
+
+      const traveler = await this.travelerRepo.findOne({ where: { user_id: participantId } });
+      let nom = traveler?.full_name ?? null;
+      if (!nom) {
+        const user = await this.userRepo.findOne({ where: { id: participantId } });
+        nom = user?.email ?? 'Un invité';
+      }
+
+      const titre = reservation.offer?.title ?? reservation.circuit?.title ?? 'votre réservation';
+      const participants = await this.participantRepo.find({
+        where: { reservation_id: reservationId },
+      });
+      const enAttente = participants.filter((p) => p.status === 'pending').length;
+
+      await this.notifService.create(
+        reservation.organizer_id,
+        statut === 'accepted' ? 'reservation_accepted' : 'reservation_declined',
+        {
+          reservation_id: reservationId,
+          offer_id: reservation.offer_id,
+          circuit_id: reservation.circuit_id,
+          offer_title: titre,
+          participant_name: nom,
+          pending_count: enAttente,
+          // Relu après le recalcul : un refus a pu faire baisser l'addition.
+          participant_count: reservation.participant_count,
+          total_price: reservation.total_price != null ? Number(reservation.total_price) : null,
+          message:
+            statut === 'accepted'
+              ? `${nom} a accepté votre invitation pour « ${titre} ».`
+              : `${nom} a refusé votre invitation pour « ${titre} ».`,
+        },
+      );
+    } catch {
+      // Une notification qui échoue ne doit pas annuler une réponse déjà
+      // enregistrée : le reste du flux vaut mieux que rien.
+    }
+  }
+
+  /**
+   * Modification d'une réservation par son organisateur.
+   *
+   * Tant que le prestataire n'a pas confirmé, rien n'est engagé : la date, la
+   * formule, le groupe et la répartition du paiement restent négociables. Une
+   * fois confirmée, la réservation est un accord — elle ne se modifie plus, on
+   * l'annule.
+   *
+   * Les mêmes contrôles qu'à la création s'appliquent : disponibilité de la
+   * date, capacité restante, invités réellement inscrits. Une modification ne
+   * doit pas être une porte dérobée vers ce que la création refusait.
+   */
+  async updateReservation(
+    userId: string,
+    reservationId: string,
+    dto: UpdateReservationDto,
+  ): Promise<any> {
+    const reservation = await this.findOneRaw(reservationId);
+    if (reservation.organizer_id !== userId) {
+      throw new ForbiddenException("Seul l'organisateur peut modifier la réservation.");
+    }
+    if (reservation.status !== 'pending') {
+      throw new BadRequestException(
+        reservation.status === 'confirmed'
+          ? 'Cette réservation est confirmée : annulez-la pour en créer une autre.'
+          : 'Cette réservation ne peut plus être modifiée.',
+      );
+    }
+
+    const offer = reservation.offer ?? null;
+    if (offer && offer.status !== 'approved') {
+      throw new BadRequestException("Cette offre n'est plus disponible à la réservation.");
+    }
+
+    // ── Date ────────────────────────────────────────────────────────────────
+    let dateStr = String(reservation.reservation_date).slice(0, 10);
+    let sessionId = reservation.session_id;
+    if (dto.session_id !== undefined) {
+      const session = await this.sessionRepo.findOne({ where: { id: dto.session_id } });
+      if (!session) throw new NotFoundException('Séance introuvable.');
+      if (session.status !== 'scheduled' && session.status !== 'full') {
+        throw new BadRequestException("Cette séance n'est plus disponible.");
+      }
+      sessionId = session.id;
+      dateStr = String(session.date).slice(0, 10);
+    } else if (dto.reservation_date) {
+      dateStr = String(dto.reservation_date).slice(0, 10);
+      sessionId = null;
+    }
+    if (offer) this.assertDateReservable(offer, dateStr);
+
+    // ── Invités ─────────────────────────────────────────────────────────────
+    const participants = await this.participantRepo.find({
+      where: { reservation_id: reservationId },
+    });
+    let invitedIds = participants
+      .filter((p) => p.user_id && p.status !== 'declined')
+      .map((p) => p.user_id!);
+    if (dto.invited_user_ids !== undefined) {
+      invitedIds = [...new Set(dto.invited_user_ids)].filter((id) => id !== userId);
+      for (const id of invitedIds) {
+        const traveler = await this.travelerRepo.findOne({ where: { user_id: id } });
+        if (!traveler) {
+          throw new BadRequestException(
+            'Les invitations de groupe sont réservées aux profils éco-voyageurs existants.',
+          );
+        }
+      }
+      if (reservation.reservation_type === 'group' && invitedIds.length === 0) {
+        throw new BadRequestException(
+          'Invitez au moins un éco-voyageur inscrit pour une réservation de groupe.',
+        );
+      }
+    }
+
+    // ── Formule et prix unitaire ────────────────────────────────────────────
+    let chosenSubtypes = reservation.chosen_subtypes ?? null;
+    let unitPrice =
+      reservation.price_per_person != null ? Number(reservation.price_per_person) : null;
+    if (dto.chosen_subtypes !== undefined) {
+      if (offer) {
+        chosenSubtypes = this.resolveChosenSubtypes(offer, { chosen_subtypes: dto.chosen_subtypes });
+        const resolu = resolveBookingUnitPrice(offer, chosenSubtypes);
+        if (resolu === null && (offer.offer_mode === 'variant' || offer.offer_mode === 'package')) {
+          throw new BadRequestException('Formule invalide ou prix manquant pour cette option.');
+        }
+        unitPrice = resolu ?? (offer.price != null ? Number(offer.price) : null);
+      } else if (reservation.circuit_id) {
+        const resolu = await this.circuitBooking.resolveUnitPrice(
+          reservation.circuit_id,
+          dto.chosen_subtypes,
+        );
+        chosenSubtypes = resolu.keys;
+        unitPrice = resolu.price;
+      }
+    }
+
+    // ── Nombre de participants ──────────────────────────────────────────────
+    const participantCount =
+      reservation.reservation_type === 'group'
+        ? 1 + invitedIds.length
+        : (dto.participant_count ?? reservation.participant_count);
+    if (participantCount < 1) {
+      throw new BadRequestException('Au moins un participant est requis.');
+    }
+
+    const availability = await this.getAvailability({
+      offer_id: reservation.offer_id ?? undefined,
+      circuit_id: reservation.circuit_id ?? undefined,
+      session_id: sessionId ?? undefined,
+      date: dateStr,
+    } as AvailabilityQueryDto);
+    const maxAcceptable = this.maxAcceptableParticipants(availability);
+    if (participantCount > maxAcceptable) {
+      throw new BadRequestException(
+        `Plus assez de places disponibles (${availability.spots_available} restante${availability.spots_available > 1 ? 's' : ''}).`,
+      );
+    }
+
+    // ── Montants ────────────────────────────────────────────────────────────
+    const totalPrice = unitPrice !== null ? Math.round(unitPrice * participantCount * 100) / 100 : null;
+    const repartition = this.resoudreParts(
+      {
+        reservation_type: reservation.reservation_type,
+        payment_split: dto.payment_split ?? reservation.payment_split ?? undefined,
+        organizer_share: dto.organizer_share,
+        custom_shares: dto.custom_shares,
+      } as CreateReservationDto,
+      totalPrice,
+      invitedIds,
+      [],
+    );
+
+    const pourcentageAcompte =
+      offer?.deposit_percentage ?? (reservation.circuit as any)?.deposit_percentage ?? null;
+    const depositAmount =
+      totalPrice !== null && pourcentageAcompte
+        ? Math.round(((totalPrice * Number(pourcentageAcompte)) / 100) * 100) / 100
+        : null;
+
+    // ── Écriture ────────────────────────────────────────────────────────────
+    await this.reservationRepo.update(reservationId, {
+      session_id: sessionId,
+      reservation_date: new Date(`${dateStr}T12:00:00`),
+      participant_count: participantCount,
+      price_per_person: unitPrice,
+      total_price: totalPrice,
+      deposit_amount: depositAmount,
+      chosen_subtypes: chosenSubtypes?.length ? chosenSubtypes : null,
+      notes: dto.notes !== undefined ? (dto.notes || null) : reservation.notes,
+      payment_split: reservation.reservation_type === 'group' ? repartition.mode : null,
+      organizer_share: repartition.organisateur,
+    } as any);
+
+    await this.appliquerNouveauxInvites(reservationId, participants, invitedIds, repartition, offer);
+
+    return this.enrichReservation(await this.findOneRaw(reservationId));
+  }
+
+  /**
+   * Aligne la table des participants sur la nouvelle liste d'invités.
+   *
+   * Les personnes retirées sont supprimées, les nouvelles invitées et
+   * notifiées, et les parts de tout le monde remises à jour — une modification
+   * de date ou de formule change ce que chacun doit.
+   */
+  private async appliquerNouveauxInvites(
+    reservationId: string,
+    existants: ReservationParticipant[],
+    invitedIds: string[],
+    repartition: Repartition,
+    offer: Offer | null,
+  ): Promise<void> {
+    const aRetirer = existants.filter((p) => p.user_id && !invitedIds.includes(p.user_id));
+    if (aRetirer.length) await this.participantRepo.remove(aRetirer);
+
+    const dejaLa = new Map(
+      existants.filter((p) => p.user_id).map((p) => [p.user_id!, p]),
+    );
+    const aSauver: ReservationParticipant[] = [];
+    const nouveaux: string[] = [];
+
+    for (const id of invitedIds) {
+      const existant = dejaLa.get(id);
+      if (existant) {
+        // Sa réponse est conservée ; seule sa part suit la nouvelle addition.
+        existant.share_amount = repartition.invites[id] ?? null;
+        aSauver.push(existant);
+      } else {
+        nouveaux.push(id);
+        aSauver.push(
+          this.participantRepo.create({
+            reservation_id: reservationId,
+            user_id: id,
+            email: null,
+            status: 'pending',
+            share_amount: repartition.invites[id] ?? null,
+          }),
+        );
+      }
+    }
+    if (aSauver.length) await this.participantRepo.save(aSauver);
+
+    const titre = offer?.title ?? 'une expérience';
+    for (const id of nouveaux) {
+      await this.notifService
+        .create(id, 'reservation_invite', {
+          reservation_id: reservationId,
+          offer_id: offer?.id ?? null,
+          offer_title: titre,
+          message: `Vous êtes invité(e) à rejoindre une réservation pour « ${titre} ».`,
+          share_amount: repartition.invites[id] ?? null,
+        })
+        .catch(() => {});
+    }
   }
 
   async cancelReservation(userId: string, reservationId: string): Promise<any> {
@@ -756,6 +1287,65 @@ export class ReservationService {
     }
   }
 
+  /**
+   * Une date est-elle ouverte à la réservation sur cette offre ?
+   *
+   * Extrait de `create` pour que la modification d'une réservation applique
+   * exactement les mêmes règles : changer une date après coup ne doit pas
+   * permettre ce que la création interdisait.
+   */
+  private assertDateReservable(offer: Offer, dateStr: string): void {
+    const dispo = ((offer as any).details as any)?.disponibilite as
+      | {
+          type?: string;
+          dates?: string[];
+          start_date?: string;
+          end_date?: string;
+          days_of_week?: string[];
+        }
+      | undefined;
+
+    // Dates spécifiques : la date doit être dans la liste
+    const specificDates = (dispo?.dates ?? [])
+      .map((d) => String(d).slice(0, 10))
+      .filter(Boolean);
+    if (
+      (dispo?.type === 'specific' || specificDates.length > 0) &&
+      specificDates.length > 0 &&
+      !specificDates.includes(dateStr)
+    ) {
+      throw new BadRequestException(
+        "Cette date n'est pas parmi les dates disponibles de l'offre.",
+      );
+    }
+
+    // Récurrent : respecter les jours de la semaine (0=Lun … 6=Dim)
+    if (dispo?.type === 'recurring' && Array.isArray(dispo.days_of_week) && dispo.days_of_week.length) {
+      const js = new Date(`${dateStr}T12:00:00`).getDay(); // 0=Dim
+      const agenda = js === 0 ? '6' : String(js - 1);
+      const allowed = dispo.days_of_week.map(String);
+      if (!allowed.includes(agenda)) {
+        throw new BadRequestException(
+          "Cette date ne correspond pas aux jours disponibles de l'offre.",
+        );
+      }
+    }
+
+    const date = new Date(`${dateStr}T12:00:00`);
+    const startBound = offer.availability_start
+      ? new Date(`${String(offer.availability_start).slice(0, 10)}T00:00:00`)
+      : null;
+    const endBound = offer.availability_end
+      ? new Date(`${String(offer.availability_end).slice(0, 10)}T23:59:59`)
+      : null;
+    if (startBound && date < startBound) {
+      throw new BadRequestException("Cette date est avant la période de disponibilité de l'offre.");
+    }
+    if (endBound && date > endBound) {
+      throw new BadRequestException("Cette date est après la période de disponibilité de l'offre.");
+    }
+  }
+
   private resolveChosenSubtypes(
     offer: Offer,
     dto: { chosen_subtypes?: string[]; chosen_subtype?: string },
@@ -899,7 +1489,7 @@ export class ReservationService {
     const reservation = await this.findOneRaw(reservationId);
     if (!reservation.offer_id) return;
     const offer = await this.offerRepo.findOne({ where: { id: reservation.offer_id } });
-    if (!offer || offer.confirmation_mode !== 'instant') return;
+    if (!offer || !isInstantConfirmation(offer as any)) return;
     if (reservation.status !== 'pending') return;
 
     const participants = await this.participantRepo.find({ where: { reservation_id: reservationId } });
@@ -911,7 +1501,11 @@ export class ReservationService {
   private async enrichReservation(reservation: Reservation): Promise<any> {
     const count = reservation.participant_count || 1;
     const total = reservation.total_price != null ? Number(reservation.total_price) : null;
-    const shareAmount = total !== null ? Math.round((total / count) * 100) / 100 : null;
+    // Repli pour les réservations antérieures au choix de répartition : elles
+    // étaient toutes à parts égales, sans que le montant soit enregistré.
+    const partHeritee = total !== null ? Math.round((total / count) * 100) / 100 : null;
+    const shareAmount =
+      reservation.organizer_share != null ? Number(reservation.organizer_share) : partHeritee;
 
     const invited_members = await Promise.all(
       (reservation.participants ?? []).map(async (p) => {
@@ -934,7 +1528,9 @@ export class ReservationService {
           full_name,
           photo,
           status: p.status,
-          share_amount: shareAmount,
+          // Sa part à lui : en répartition personnalisée, deux invités de la
+          // même réservation ne doivent pas le même montant.
+          share_amount: p.share_amount != null ? Number(p.share_amount) : partHeritee,
         };
       }),
     );
@@ -1054,8 +1650,15 @@ export class ReservationService {
       }
     }
 
+    // Vrai tant qu'un invité n'a pas répondu : la réservation n'est pas encore
+    // partie chez le prestataire, et l'écran du voyageur doit le dire.
+    const awaiting_group =
+      reservation.submitted_at == null
+      && (reservation.participants ?? []).some((p) => p.status === 'pending');
+
     return {
       ...reservation,
+      awaiting_group,
       share_amount: shareAmount,
       invited_members,
       provider,
@@ -1079,6 +1682,38 @@ export class ReservationService {
     };
   }
 
+  /**
+   * Traduit le choix de l'organisateur en montants, ou refuse la réservation.
+   *
+   * Le contrôle vit ici et pas seulement dans le formulaire : une répartition
+   * personnalisée dont la somme ne fait pas le total laisserait une réservation
+   * dont personne ne sait qui doit le reliquat.
+   */
+  private resoudreParts(
+    dto: CreateReservationDto,
+    totalPrice: number | null,
+    invitedIds: string[],
+    emailOnly: Array<{ userId: string | null; email: string }>,
+  ): Repartition {
+    const cles = [...invitedIds, ...emailOnly.map((e) => `email:${e.email}`)];
+    // En solo, l'organisateur est seul : il règle la totalité.
+    if (dto.reservation_type !== 'group') {
+      return { mode: 'equal', organisateur: totalPrice ?? 0, invites: {} };
+    }
+    const saisie = {
+      organisateur: dto.organizer_share ?? null,
+      invites: Object.fromEntries(
+        (dto.custom_shares ?? []).map((p) => [
+          p.user_id ?? `email:${p.email}`,
+          Number(p.amount),
+        ]),
+      ),
+    };
+    const resultat = resoudreRepartition(dto.payment_split, totalPrice, cles, saisie);
+    if (!resultat.ok) throw new BadRequestException(resultat.message);
+    return resultat.repartition;
+  }
+
   private async notifyAfterCreate(
     reservation: Reservation,
     offer: Offer,
@@ -1086,7 +1721,9 @@ export class ReservationService {
     invitedIds: string[],
     emailOnly: Array<{ userId: string | null; email: string }>,
     isInstant: boolean,
-    shareAmount: number | null,
+    repartition: Repartition,
+    /** Le groupe n'a pas fini de répondre : le prestataire n'est pas encore concerné. */
+    attendLeGroupe = false,
   ): Promise<void> {
     const organizer = await this.userRepo.findOne({ where: { id: organizerId } });
     const listUrl = `${process.env.FRONTEND_URL}/dashboard/ecovoyageur/reservations/${reservation.id}`;
@@ -1096,7 +1733,7 @@ export class ReservationService {
         .sendReservationConfirmedEmail(organizer.email, offer.title, {
           total: reservation.total_price,
           participants: reservation.participant_count,
-          share: shareAmount,
+          share: repartition.organisateur,
           url: listUrl,
         })
         .catch(() => {});
@@ -1108,7 +1745,8 @@ export class ReservationService {
           message: `Votre réservation pour « ${offer.title} » est confirmée.`,
         })
         .catch(() => {});
-    } else if (!isInstant) {
+    } else if (!isInstant && !attendLeGroupe) {
+      await this.notifierCollaborateurs(reservation, offer);
       await this.notifService
         .create(offer.author_id, 'reservation_pending', {
           reservation_id: reservation.id,
@@ -1131,13 +1769,15 @@ export class ReservationService {
           offer_id: offer.id,
           offer_title: offer.title,
           message: `Vous êtes invité(e) à rejoindre une réservation pour « ${offer.title} ».`,
-          share_amount: shareAmount,
+          // Le montant annoncé est celui de cet invité : en répartition
+          // personnalisée, chacun doit une somme différente.
+          share_amount: repartition.invites[uid] ?? null,
         })
         .catch(() => {});
       const user = await this.userRepo.findOne({ where: { id: uid } });
       if (user?.email) {
         this.mailService
-          .sendReservationInviteEmail(user.email, offer.title, shareAmount, listUrl)
+          .sendReservationInviteEmail(user.email, offer.title, repartition.invites[uid] ?? null, listUrl)
           .catch(() => {});
       }
     }
@@ -1147,7 +1787,7 @@ export class ReservationService {
         .sendReservationInviteEmail(
           ep.email,
           offer.title,
-          shareAmount,
+          repartition.invites[`email:${ep.email}`] ?? null,
           `${process.env.FRONTEND_URL}/auth/register?redirect=${encodeURIComponent(listUrl)}`,
         )
         .catch(() => {});

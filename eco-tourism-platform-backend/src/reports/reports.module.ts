@@ -7,10 +7,11 @@ import { Provider } from '../provider/entities/provider.entity';
 import { ReportsService } from './reports.service';
 import { ReportsController } from './reports.controller';
 import { MailModule } from '../mail/mail.module';
+import { Guide } from '../guide/entities/guide.entity';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Report, User, EcoTraveler, Provider]),
+    TypeOrmModule.forFeature([Report, User, EcoTraveler, Provider, Guide]),
     MailModule,
   ],
   providers: [ReportsService],

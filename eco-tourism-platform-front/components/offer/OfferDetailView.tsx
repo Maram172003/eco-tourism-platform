@@ -628,7 +628,7 @@ export default function OfferDetailView({ offer }: { offer: OfferFull }) {
         {/* ── Ce que vous fournissez ───────────────────────────────────────── */}
         {(() => {
           const sectionCollabs = Array.isArray(d.collaborators)
-            ? (d.collaborators as Array<{ id: string; name: string; section: string; status?: string }>)
+            ? (d.collaborators as Array<{ id?: string; name: string; section: string; status?: string }>)
             : [];
           const collabFor = (section: string) => {
             const candidates = sectionCollabs.filter((c) => c.section === section);
@@ -637,18 +637,24 @@ export default function OfferDetailView({ offer }: { offer: OfferFull }) {
           const CollabBadge = ({ section }: { section: string }) => {
             const c = collabFor(section);
             if (!c) return null;
-            const st = c.status ?? "pending";
-            const cls = st === "declined"
+            // Un statut absent veut dire « rien à signaler », pas « en attente » :
+            // la liste publique ne transporte plus l'état des invitations, et
+            // l'annoncer par défaut faisait passer une offre publiée pour une
+            // offre inachevée.
+            const st = c.status ?? null;
+            const enAttente = st === "pending";
+            const refuse = st === "declined";
+            const cls = refuse
               ? "bg-red-50 border-red-200 text-red-600"
-              : st === "pending"
+              : enAttente
               ? "bg-amber-50 border-amber-200 text-amber-600"
               : "bg-teal-50 border-teal-200 text-teal-700";
-            const icon = st === "declined" ? "cancel" : st === "pending" ? "schedule" : "check_circle";
-            const label = st === "declined" ? "Refusé" : st === "pending" ? "En attente" : c.name;
+            const icon = refuse ? "cancel" : enAttente ? "schedule" : "check_circle";
+            const mention = refuse ? "Refusé" : enAttente ? "En attente" : null;
             return (
               <span className={`ml-auto flex items-center gap-1 text-[10px] font-bold px-2.5 py-1 rounded-full border ${cls}`}>
                 <span className="material-symbols-outlined text-[11px]">{icon}</span>
-                {st === "declined" || st === "pending" ? `${c.name} · ${label}` : label}
+                {mention ? `${c.name} · ${mention}` : c.name}
               </span>
             );
           };

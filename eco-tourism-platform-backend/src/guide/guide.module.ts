@@ -16,9 +16,12 @@ import { GuideSkills, GuideSkillsSchema } from './schemas/guide-skills.schema';
 import { GuideEngagement, GuideEngagementSchema } from './schemas/guide-engagement.schema';
 import { CircuitModule } from '../circuit/circuit.module';
 import { ProfileApprovalModule } from '../common/services/profile-approval.module';
+import { BadgeModule } from '../badge/badge.module';
 
 @Module({
   imports: [
+    // Le score de durabilité se déduit de la progression des badges.
+    BadgeModule,
     ProfileApprovalModule,
     TypeOrmModule.forFeature([Guide, Offer, GuideAvailabilitySlot, OfferCollaboration, Organization, Provider]),
     MongooseModule.forFeature([

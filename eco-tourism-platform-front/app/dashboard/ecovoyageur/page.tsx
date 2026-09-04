@@ -5,11 +5,11 @@ import { useRouter } from "next/navigation";
 import { Leaf, Plus, MapPin, ArrowRight } from "lucide-react";
 import { logoutUser } from "@/lib/auth";
 import { apiFetch } from "@/lib/api";
-import BadgeGrid from "@/components/common/BadgeGrid";
 import SharedAddPublicationModal from "@/components/publication/AddPublicationModal";
 import ViewPublicationModal from "@/components/publication/ViewPublicationModal";
 import PubInteractions from "@/components/PubInteractions";
 import BadgeChip from "@/components/common/BadgeChip";
+import ScoreBadgeCard from "@/components/common/ScoreBadgeCard";
 
 type Publication = {
   id: string;
@@ -74,81 +74,12 @@ function getScoreLabel(score: number | null): string {
   return "Voyageur classique";
 }
 
-function getScoreColor(score: number | null): string {
-  if (score === null) return "text-slate-400";
-  if (score >= 80) return "text-green-600";
-  if (score >= 60) return "text-primary";
-  if (score >= 40) return "text-orange-500";
-  return "text-red-500";
-}
 
-function getBarColor(score: number | null): string {
-  if (score === null) return "bg-slate-300";
-  if (score >= 80) return "bg-green-500";
-  if (score >= 60) return "bg-primary";
-  if (score >= 40) return "bg-orange-400";
-  return "bg-red-400";
-}
 
 // ─── Config des badges (tous les badges possibles de la plateforme) ────────────
 
 // ─── Composant Score Décomposé ────────────────────────────────────────────────
 
-function ScoreBreakdown({ profile }: { profile: EcoProfile }) {
-  const components = [
-    {
-      label: "Questionnaire",
-      weight: "20%",
-      value: profile.score_questionnaire,
-      color: "bg-green-500",
-      sprint: null,
-    },
-    {
-      label: "Réservations",
-      weight: "40%",
-      value: profile.score_reservations,
-      color: "bg-blue-500",
-    },
-    {
-      label: "Feedbacks",
-      weight: "20%",
-      value: profile.score_feedbacks,
-      color: "bg-orange-400",
-    },
-    {
-      label: "Partages",
-      weight: "20%",
-      value: profile.score_partages,
-      color: "bg-purple-400",
-    },
-  ];
-
-  return (
-    <div className="mt-4 space-y-2.5">
-      {components.map((c) => (
-        <div key={c.label}>
-          <div className="flex justify-between items-center mb-1">
-            <div className="flex items-center gap-1.5">
-              <span className="text-xs font-bold text-slate-600">{c.label}</span>
-              <span className="text-[10px] font-bold text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded-full">
-                {c.weight}
-              </span>
-            </div>
-            <span className="text-xs font-extrabold text-slate-700">
-              {c.value !== null && c.value !== undefined ? `${c.value}%` : "—"}
-            </span>
-          </div>
-          <div className="w-full h-1.5 bg-slate-100 rounded-full overflow-hidden">
-            <div
-              className={`h-full ${c.color} rounded-full transition-all duration-700`}
-              style={{ width: `${c.value ?? 0}%` }}
-            />
-          </div>
-        </div>
-      ))}
-    </div>
-  );
-}
 
 // ─── Page principale ──────────────────────────────────────────────────────────
 
@@ -157,7 +88,6 @@ export default function EcoVoyageurDashboardPage() {
   const [user, setUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<EcoProfile | null>(null);
   const [activeItem, setActiveItem] = useState("Tableau de bord");
-  const [showScoreDetail, setShowScoreDetail] = useState(false);
   const [publications, setPublications] = useState<Publication[]>([]);
   const [showAddPub, setShowAddPub] = useState(false);
   const [pubType, setPubType] = useState<"experience" | "place">("experience");
@@ -169,7 +99,7 @@ export default function EcoVoyageurDashboardPage() {
     { label: "Explorer",        icon: "explore",      action: () => router.push("/explorer") },
     { label: "Expériences",     icon: "auto_stories", action: () => setActiveItem("Expériences") },
     { label: "Lieux",           icon: "location_on",  action: () => setActiveItem("Lieux") },
-    { label: "Séjour",          icon: "hotel",        action: () => router.push("/offers") },
+    { label: "Catalogue",       icon: "travel_explore", action: () => router.push("/catalogue") },
     { label: "Réservations",    icon: "book_online",  action: () => router.push("/dashboard/ecovoyageur/reservations") },
     { label: "Paramètres",      icon: "settings",     action: () => router.push("/dashboard/profile") },
     { label: "Messagerie",      icon: "forum",        action: () => router.push("/messagerie") },
@@ -497,50 +427,10 @@ export default function EcoVoyageurDashboardPage() {
             {/* ── Stats Grid ────────────────────────────────────────────── */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
 
-              {/* Score de durabilité — avec décomposition */}
-              <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-primary/10 flex flex-col justify-between lg:col-span-2">
-                <div className="flex justify-between items-start mb-2">
-                  <div>
-                    <p className="text-slate-500 text-sm font-medium">Score de durabilité</p>
-                    <h3 className={`text-3xl font-extrabold mt-1 ${getScoreColor(score)}`}>
-                      {score !== null ? score : "—"}
-                      {score !== null && <span className="text-slate-400 text-lg font-normal">/100</span>}
-                    </h3>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <div className="bg-primary/20 p-2 rounded-lg text-primary">
-                      <span className="material-symbols-outlined">analytics</span>
-                    </div>
-                    {/* Bouton afficher/masquer détail */}
-                    <button
-                      onClick={() => setShowScoreDetail((v) => !v)}
-                      className="text-xs text-slate-400 hover:text-primary font-bold transition-colors"
-                      title="Voir la décomposition"
-                    >
-                      <span className="material-symbols-outlined text-lg">
-                        {showScoreDetail ? "expand_less" : "expand_more"}
-                      </span>
-                    </button>
-                  </div>
-                </div>
+              {/* Score et badge réunis : le badge nomme, le score chiffre,
+                  et le palier en cours dit ce qui reste à faire. */}
+              <ScoreBadgeCard role="eco_traveler" scoreInitial={profile?.score_questionnaire} />
 
-                {/* Barre score global */}
-                <div className="w-full bg-slate-100 dark:bg-slate-800 h-2 rounded-full overflow-hidden">
-                  <div
-                    className={`h-full ${getBarColor(score)} rounded-full transition-all duration-1000`}
-                    style={{ width: scoreWidth }}
-                  />
-                </div>
-                <p className="text-xs font-bold mt-2" style={{ color: score !== null ? (score >= 60 ? "#22c55e" : "#f97316") : "#94a3b8" }}>
-                  {score !== null ? getScoreLabel(score) : "Questionnaire non complété"}
-                </p>
-
-                {/* Décomposition des 4 composants */}
-                {showScoreDetail && profile && (
-                  <ScoreBreakdown profile={profile} />
-                )}
-
-              </div>
 
               {/* Plans partagés */}
               <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-primary/10 flex flex-col self-start">
@@ -574,7 +464,7 @@ export default function EcoVoyageurDashboardPage() {
             </div>
 
             {/* ── Plans + Badges ────────────────────────────────────────── */}
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+            <div className="grid grid-cols-1 gap-8">
                 
 
               {/* Plans de voyage */}
@@ -634,18 +524,6 @@ export default function EcoVoyageurDashboardPage() {
                 </div>
               </div>
 
-              {/* ── Badges dynamiques depuis MongoDB ──────────────────── */}
-              <div>
-                <h3 className="text-xl font-bold mb-6">Mes Badges</h3>
-                <div className="bg-white dark:bg-slate-900 rounded-2xl p-6 border border-primary/10">
-
-                  <BadgeGrid role="eco_traveler" details={false} />
-                  <a href="/dashboard/profile?onglet=badges" className="mt-3 inline-flex items-center gap-1 text-[11px] font-bold text-primary hover:underline">Voir le détail des paliers →</a>
-
-                  
-
-                </div>
-              </div>
 
             </div>
           </>}

@@ -17,6 +17,7 @@ import {
   ConfirmReservationDto,
   CreateReservationDto,
   RespondToInvitationDto,
+  UpdateReservationDto,
 } from './dto/reservation.dto';
 
 @ApiTags('Reservations')
@@ -57,8 +58,8 @@ export class ReservationController {
 
   @Roles(Role.ECO_TRAVELER, Role.PROVIDER, Role.GUIDE)
   @Get(':id')
-  findOne(@Param('id') id: string) {
-    return this.service.findOne(id);
+  findOne(@Req() req: any, @Param('id') id: string) {
+    return this.service.findOne(id, req.user.sub);
   }
 
   @Roles(Role.ECO_TRAVELER)
@@ -69,6 +70,16 @@ export class ReservationController {
     @Body() dto: RespondToInvitationDto,
   ) {
     return this.service.respondToInvitation(req.user.sub, id, dto);
+  }
+
+  @Roles(Role.ECO_TRAVELER)
+  @Patch(':id')
+  update(
+    @Req() req: any,
+    @Param('id') id: string,
+    @Body() dto: UpdateReservationDto,
+  ) {
+    return this.service.updateReservation(req.user.sub, id, dto);
   }
 
   @Roles(Role.ECO_TRAVELER)

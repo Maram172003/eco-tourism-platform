@@ -129,6 +129,10 @@ export class Provider {
   @Column({ type: 'int', nullable: true })
   score_feedbacks!: number | null;
 
+  /** Complétion du profil, en pourcentage — recalculée à chaque enregistrement. */
+  @Column({ type: 'int', default: 0 })
+  profile_completion!: number;
+
   // ── Histoire / À propos ───────────────────────────────────────────────────
   @Column({ type: 'text', nullable: true })
   history!: string | null;

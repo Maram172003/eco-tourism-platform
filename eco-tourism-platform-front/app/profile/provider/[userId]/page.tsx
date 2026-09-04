@@ -327,6 +327,7 @@ export default function PublicProviderProfile() {
   const [reportOpen, setReportOpen] = useState(false);
   const [reportReason, setReportReason] = useState("");
   const [reportSent, setReportSent] = useState(false);
+  const [reportError, setReportError] = useState<string | null>(null);
 
   const offerRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const highlightedOfferId = searchParams.get("offer");
@@ -439,12 +440,18 @@ export default function PublicProviderProfile() {
 
   async function reportUser() {
     if (!token || !reportReason) return;
-    await apiFetch(`/reports`, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${token}` },
-      body: JSON.stringify({ reported_id: userId, reason: reportReason }),
-    }).catch(() => {});
-    setReportSent(true);
+    // Le `.catch` muet annonçait « signalement envoyé » même sur un refus.
+    try {
+      await apiFetch(`/reports`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ reported_id: userId, reason: reportReason }),
+      });
+      setReportError(null);
+      setReportSent(true);
+    } catch (e: any) {
+      setReportError(e?.message || "Le signalement n'a pas pu être envoyé.");
+    }
   }
 
   function openDoc(url: string) {
@@ -1440,6 +1447,11 @@ export default function PublicProviderProfile() {
                       className={`w-full text-left px-4 py-2.5 rounded-xl border text-sm font-semibold transition-all ${reportReason === r ? "border-red-400 bg-red-50 text-red-700" : "border-slate-200 text-slate-600 hover:border-slate-300"}`}>{r}</button>
                   ))}
                 </div>
+                {reportError && (
+                  <p className="mb-3 text-xs font-semibold text-red-600 bg-red-50 border border-red-100 rounded-xl px-3 py-2 text-center">
+                    {reportError}
+                  </p>
+                )}
                 <div className="flex gap-3">
                   <button onClick={() => setReportOpen(false)} className="flex-1 py-3 border-2 border-slate-200 text-slate-600 font-bold rounded-2xl text-sm">Annuler</button>
                   <button onClick={reportUser} disabled={!reportReason} className="flex-1 py-3 bg-red-500 text-white font-extrabold rounded-2xl text-sm disabled:opacity-50">Signaler</button>

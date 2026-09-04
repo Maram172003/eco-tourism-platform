@@ -97,6 +97,25 @@ export class Reservation {
   @Column({ type: 'varchar', default: 'unpaid' })
   payment_status!: string;
 
+  // Répartition du paiement d'une réservation de groupe :
+  // organizer (l'organisateur règle tout) | equal | custom.
+  // Nullable : les réservations créées avant l'introduction de ce choix
+  // étaient toutes en division équitable, et le lire ainsi évite de devoir
+  // réécrire leurs lignes.
+  @Column({ type: 'varchar', nullable: true })
+  payment_split!: string | null;
+
+  // Part de l'organisateur. Il n'a pas de ligne dans reservation_participants,
+  // sa part n'aurait sinon nulle part où être rangée.
+  @Column({ type: 'decimal', precision: 10, scale: 2, nullable: true })
+  organizer_share!: number | null;
+
+  // Date à laquelle la réservation a été transmise au prestataire.
+  // Une réservation de groupe n'est soumise qu'une fois tous les invités
+  // fixés ; ce jalon évite de le notifier deux fois si le groupe rebouge.
+  @Column({ type: 'timestamp', nullable: true })
+  submitted_at!: Date | null;
+
   @Column({ type: 'text', nullable: true })
   notes!: string | null;
 

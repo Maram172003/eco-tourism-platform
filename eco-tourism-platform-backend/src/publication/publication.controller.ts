@@ -23,6 +23,16 @@ export class PublicationController {
   @ApiBearerAuth('bearer') @Roles(Role.ECO_TRAVELER) @Get('mine')
   findMine(@Req() req: any) { return this.service.findByAuthor(req.user.sub); }
 
+  @Public() @Post(':id/share')
+  recordShare(@Req() req: any, @Param('id') id: string) {
+    return this.service.recordShare(id, req.user?.sub ?? null);
+  }
+
+  @ApiBearerAuth('bearer') @Roles(Role.ECO_TRAVELER) @Get('mine/engagement')
+  getMyEngagement(@Req() req: any) {
+    return this.service.getMyEngagement(req.user.sub);
+  }
+
   @ApiBearerAuth('bearer') @Roles(Role.ECO_TRAVELER) @Get('feed')
   getFeed(@Req() req: any) { return this.service.getFeedEcoTraveler(req.user.sub); }
 

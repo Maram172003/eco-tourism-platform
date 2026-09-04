@@ -4,9 +4,10 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { apiFetch } from "@/lib/api";
 import {
-  Calendar, Users, User, ChevronLeft, Leaf, MapPin, Clock,
+  ArrowLeft, Leaf, Calendar, Users, User, MapPin, Clock,
   CheckCircle, XCircle, AlertCircle, Clock3, Plus, ArrowRight,
 } from "lucide-react";
+import { monTableauDeBord } from "@/lib/dashboard-path";
 
 interface Offer {
   id: string;
@@ -125,25 +126,39 @@ export default function ReservationsPage() {
   return (
     <div className="min-h-screen bg-background">
       {/* Header */}
-      <div className="bg-surface border-b border-surface-container-highest sticky top-0 z-10 shadow-sm">
-        <div className="max-w-3xl mx-auto px-4 py-4 flex items-center justify-between">
+      {/* Barre supérieure — même style que le reste de la plateforme. */}
+      <div className="sticky top-0 z-40 bg-white/80 backdrop-blur-md border-b border-slate-200 px-6 py-3">
+        <div className="max-w-3xl mx-auto flex items-center justify-between">
+          {/* On revient au tableau de bord : `router.back()` ramenait à la page de
+              connexion quand c'est elle qui avait conduit ici. */}
           <button
-            onClick={() => router.back()}
-            className="flex items-center gap-1 text-outline hover:text-on-surface text-sm"
+            onClick={() => router.push(monTableauDeBord())}
+            className="flex items-center gap-2 rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100 transition-all"
           >
-            <ChevronLeft size={18} /> Retour
+            <ArrowLeft size={16} />Retour
           </button>
-          <h1 className="text-lg font-extrabold text-on-surface flex items-center gap-2">
-            <Calendar size={20} className="text-primary" />
+          <div className="flex items-center gap-2 text-slate-900">
+            <Leaf className="text-primary w-6 h-6" />
+            <span className="text-base font-extrabold tracking-tight">Éco-Voyage</span>
+          </div>
+        </div>
+      </div>
+
+      {/* Titre de la page */}
+      <div className="max-w-3xl mx-auto px-4 pt-7 flex items-end justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-extrabold text-slate-800 flex items-center gap-2">
+            <Calendar size={22} className="text-primary" />
             Mes réservations
           </h1>
-          <button
-            onClick={() => router.push("/destinations")}
-            className="flex items-center gap-1 text-xs px-3 py-1.5 bg-primary text-slate-900 rounded-xl font-extrabold hover:bg-primary/90"
-          >
-            <Plus size={14} /> Nouvelle
-          </button>
+          <p className="text-sm text-slate-500 font-medium mt-0.5">Vos séjours et sorties réservés.</p>
         </div>
+        <button
+          onClick={() => router.push("/destinations")}
+          className="shrink-0 flex items-center gap-1.5 text-sm px-4 py-2.5 bg-primary text-slate-900 rounded-xl font-extrabold shadow-lg shadow-primary/20 hover:-translate-y-0.5 transition-all"
+        >
+          <Plus size={15} /> Nouvelle
+        </button>
       </div>
 
       <div className="max-w-3xl mx-auto px-4 py-6">

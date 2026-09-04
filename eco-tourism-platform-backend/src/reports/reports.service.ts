@@ -5,6 +5,7 @@ import { Report } from './entities/report.entity';
 import { User } from '../users/entities/user.entity';
 import { EcoTraveler } from '../eco-traveler/entities/eco-traveler.entity';
 import { Provider } from '../provider/entities/provider.entity';
+import { Guide } from '../guide/entities/guide.entity';
 import { MailService } from '../mail/mail.service';
 
 @Injectable()
@@ -18,15 +19,36 @@ export class ReportsService {
     private readonly ecoRepo: Repository<EcoTraveler>,
     @InjectRepository(Provider)
     private readonly providerRepo: Repository<Provider>,
+    @InjectRepository(Guide)
+    private readonly guideRepo: Repository<Guide>,
     private readonly mailService: MailService,
   ) {}
 
+  /**
+   * Nom et photo de la personne, cherchés dans la table de son rôle.
+   *
+   * Tout ce qui n'était pas éco-voyageur était cherché chez les prestataires :
+   * le profil d'un guide vit dans `guides`, son nom revenait donc vide et
+   * l'administrateur voyait « — » à la place de la personne à sanctionner.
+   */
   private async getUserInfo(userId: string, role: string) {
     let entity: any = null;
-    if (role === 'eco_traveler') entity = await this.ecoRepo.findOne({ where: { user_id: userId } });
-    else entity = await this.providerRepo.findOne({ where: { user_id: userId } });
+    if (role === 'eco_traveler') {
+      entity = await this.ecoRepo.findOne({ where: { user_id: userId } });
+    } else if (role === 'guide') {
+      entity = await this.guideRepo.findOne({ where: { user_id: userId } });
+    } else {
+      entity = await this.providerRepo.findOne({ where: { user_id: userId } as any });
+    }
     const user = await this.userRepo.findOne({ where: { id: userId } });
-    return { user_id: userId, full_name: entity?.full_name ?? null, photo: entity?.photo ?? null, role, email: user?.email ?? null, status: user?.status ?? null };
+    return {
+      user_id: userId,
+      full_name: entity?.full_name ?? null,
+      photo: entity?.photo ?? null,
+      role,
+      email: user?.email ?? null,
+      status: user?.status ?? null,
+    };
   }
 
   async createReport(reporterId: string, reporterRole: string, reportedId: string, reason: string) {

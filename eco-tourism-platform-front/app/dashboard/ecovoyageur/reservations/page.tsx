@@ -3,8 +3,9 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { apiFetch } from "@/lib/api";
+import { monTableauDeBord } from "@/lib/dashboard-path";
 import {
-  Calendar, Clock, MapPin, ChevronRight, CheckCircle,
+  ArrowLeft, Calendar, Clock, MapPin, ChevronRight, CheckCircle,
   XCircle, AlertCircle, Star, Leaf, PackageSearch,
 } from "lucide-react";
 
@@ -16,7 +17,11 @@ interface ReservationSummary {
   total_price: number | null;
   reservation_date: string | null;
   created_at: string;
+  /** Vrai tant qu'un invité n'a pas répondu : rien n'est encore parti au prestataire. */
+  awaiting_group?: boolean;
   _role?: "organizer" | "invited";
+  /** Réponse de l'invité à sa propre invitation — absente pour l'organisateur. */
+  _myStatus?: string;
   offer?: {
     id: string;
     title: string;
@@ -78,7 +83,57 @@ const STATUS_CONFIG: Record<string, { label: string; color: string; bg: string; 
     dot: "bg-blue-400",
     icon: <Star size={13} className="text-blue-500" />,
   },
+  awaiting_group: {
+    label: "En attente de vos invités",
+    color: "text-violet-700",
+    bg: "bg-violet-50",
+    dot: "bg-violet-400",
+    icon: <Clock size={13} className="text-violet-500" />,
+  },
+  invitation: {
+    label: "Invitation à répondre",
+    color: "text-violet-700",
+    bg: "bg-violet-50",
+    dot: "bg-violet-400",
+    icon: <AlertCircle size={13} className="text-violet-500" />,
+  },
+  declined: {
+    label: "Vous avez refusé",
+    color: "text-slate-500",
+    bg: "bg-slate-50",
+    dot: "bg-slate-300",
+    icon: <XCircle size={13} className="text-slate-400" />,
+  },
 };
+
+/**
+ * Ce qu'une ligne annonce à celui qui la lit.
+ *
+ * L'organisateur voit l'état de sa réservation. Un invité voit d'abord sa
+ * propre réponse : tant qu'il n'a pas répondu, ou s'il a refusé, l'état de la
+ * réservation ne le concerne plus — il affichait « En attente » alors que
+ * l'attente ne portait plus sur lui.
+ */
+function statutAffiche(res: ReservationSummary): string {
+  if (res._role !== "invited" || !res._myStatus) {
+    // Pour l'organisateur, « En attente » sans plus de précision laissait
+    // croire que le prestataire tardait, alors que ce sont ses propres invités
+    // qui n'ont pas encore répondu — et que rien ne lui est encore parti.
+    if (res.status === "pending" && res.awaiting_group) return "awaiting_group";
+    return res.status;
+  }
+  if (res._myStatus === "pending") return "invitation";
+  if (res._myStatus === "declined") return "declined";
+  return res.status;
+}
+
+/** L'onglet sous lequel ranger une ligne, pour qu'aucune ne devienne introuvable. */
+function ongletDe(res: ReservationSummary): string {
+  const statut = statutAffiche(res);
+  if (statut === "invitation" || statut === "awaiting_group") return "pending";
+  if (statut === "declined") return "cancelled";
+  return statut;
+}
 
 const TYPE_EMOJI: Record<string, string> = {
   hebergement: "🏕️", activite: "🧗", circuit: "🗺️",
@@ -111,7 +166,7 @@ export default function ReservationsListPage() {
         const organized = (data.organized ?? []).map((r) => ({ ...r, _role: "organizer" as const }));
         const invited = (data.invited ?? [])
           .filter((p) => p.reservation)
-          .map((p) => ({ ...p.reservation, _role: "invited" as const }));
+          .map((p) => ({ ...p.reservation, _role: "invited" as const, _myStatus: p.status }));
         const all = [...organized, ...invited].sort(
           (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
         );
@@ -122,11 +177,14 @@ export default function ReservationsListPage() {
   }, [router]);
 
   const filtered = reservations.filter((r) =>
-    filter === "all" ? true : r.status === filter
+    filter === "all" ? true : ongletDe(r) === filter
   );
 
   const counts: Record<string, number> = {};
-  for (const r of reservations) counts[r.status] = (counts[r.status] ?? 0) + 1;
+  for (const r of reservations) {
+    const onglet = ongletDe(r);
+    counts[onglet] = (counts[onglet] ?? 0) + 1;
+  }
 
   function formatDate(res: ReservationSummary): string {
     const dateStr = res.session?.date ?? res.reservation_date;
@@ -138,48 +196,54 @@ export default function ReservationsListPage() {
 
   return (
     <div className="min-h-screen bg-slate-50">
-      {/* Header */}
-      <div className="bg-white border-b border-slate-100 sticky top-0 z-10 shadow-sm">
-        <div className="max-w-2xl mx-auto px-4 py-4 flex items-center gap-3">
-          <button onClick={() => router.push("/dashboard/ecovoyageur")}
-            className="w-9 h-9 flex items-center justify-center rounded-full hover:bg-slate-100 text-slate-500">
-            <span className="material-symbols-outlined text-[20px]">arrow_back</span>
+      {/* Barre supérieure — identique à celle du profil. */}
+      <div className="sticky top-0 z-40 bg-white/80 backdrop-blur-md border-b border-slate-200 px-6 py-3">
+        <div className="max-w-3xl mx-auto flex items-center justify-between">
+          <button
+            onClick={() => router.push(monTableauDeBord())}
+            className="flex items-center gap-2 rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100 transition-all"
+          >
+            <ArrowLeft size={16} />Retour
           </button>
-          <div className="flex-1">
-            <h1 className="font-bold text-slate-800">Mes réservations</h1>
-            {!loading && (
-              <p className="text-xs text-slate-400">{reservations.length} réservation{reservations.length !== 1 ? "s" : ""} au total</p>
-            )}
-          </div>
-          <Leaf size={20} className="text-primary" />
-        </div>
-
-        {/* Filter tabs */}
-        <div className="max-w-2xl mx-auto px-4 pb-3">
-          <div className="flex gap-1.5 overflow-x-auto scrollbar-none pb-0.5">
-            {FILTER_TABS.map(({ value, label }) => {
-              const count = value === "all" ? reservations.length : (counts[value] ?? 0);
-              return (
-                <button key={value} onClick={() => setFilter(value)}
-                  className={`flex-shrink-0 flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-bold transition-all ${
-                    filter === value
-                      ? "bg-primary text-slate-900"
-                      : "bg-slate-100 text-slate-500 hover:bg-slate-200"
-                  }`}>
-                  {label}
-                  {count > 0 && (
-                    <span className={`text-[10px] font-black px-1.5 py-0.5 rounded-full ${
-                      filter === value ? "bg-white/30 text-slate-900" : "bg-white text-slate-600"
-                    }`}>{count}</span>
-                  )}
-                </button>
-              );
-            })}
+          <div className="flex items-center gap-2 text-slate-900">
+            <Leaf className="text-primary w-6 h-6" />
+            <span className="text-base font-extrabold tracking-tight">Éco-Voyage</span>
           </div>
         </div>
       </div>
 
-      <div className="max-w-2xl mx-auto px-4 py-5 space-y-3">
+      {/* Titre et filtres — dans le flux, pas dans la barre collante. */}
+      <div className="max-w-3xl mx-auto w-full px-6 pt-7">
+        <h1 className="text-2xl font-extrabold text-slate-800">Mes réservations</h1>
+        {!loading && (
+          <p className="text-sm text-slate-500 font-medium mt-0.5">
+            {reservations.length} réservation{reservations.length !== 1 ? "s" : ""} au total
+          </p>
+        )}
+
+        <div className="flex gap-1.5 overflow-x-auto scrollbar-none pb-0.5 mt-5">
+          {FILTER_TABS.map(({ value, label }) => {
+            const count = value === "all" ? reservations.length : (counts[value] ?? 0);
+            return (
+              <button key={value} onClick={() => setFilter(value)}
+                className={`flex-shrink-0 flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-bold transition-all ${
+                  filter === value
+                    ? "bg-primary text-slate-900"
+                    : "bg-slate-100 text-slate-500 hover:bg-slate-200"
+                }`}>
+                {label}
+                {count > 0 && (
+                  <span className={`text-[10px] font-black px-1.5 py-0.5 rounded-full ${
+                    filter === value ? "bg-white/30 text-slate-900" : "bg-white text-slate-600"
+                  }`}>{count}</span>
+                )}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      <div className="max-w-3xl mx-auto w-full px-6 py-5 space-y-3">
         {loading ? (
           Array.from({ length: 4 }).map((_, i) => (
             <div key={i} className="bg-white rounded-2xl border border-slate-100 p-4 animate-pulse flex gap-4">
@@ -201,15 +265,15 @@ export default function ReservationsListPage() {
                 : `Aucune réservation avec le statut « ${FILTER_TABS.find((t) => t.value === filter)?.label} ».`}
             </p>
             {filter === "all" && (
-              <button onClick={() => router.push("/offers")}
+              <button onClick={() => router.push("/catalogue")}
                 className="mt-5 px-5 py-2.5 bg-primary/10 text-primary font-bold rounded-xl text-sm hover:bg-primary/20 transition-colors">
-                Explorer les offres
+                Voir le catalogue
               </button>
             )}
           </div>
         ) : (
           filtered.map((res) => {
-            const st = STATUS_CONFIG[res.status] ?? STATUS_CONFIG.pending;
+            const st = STATUS_CONFIG[statutAffiche(res)] ?? STATUS_CONFIG.pending;
             const img = res.offer?.images?.[0] ?? res.circuit?.cover_image;
             const emoji = res.circuit ? "🗺️" : TYPE_EMOJI[res.offer?.offer_type ?? ""] ?? "🌿";
             const title = res.offer?.title ?? res.circuit?.title ?? "Réservation";
@@ -252,7 +316,9 @@ export default function ReservationsListPage() {
                           {st.icon}
                           {st.label}
                         </span>
-                        {res._role === "invited" && (
+                        {/* Le badge principal dit déjà « invitation » ou « refusé » :
+                            on ne rappelle le rôle que lorsqu'il l'a acceptée. */}
+                        {res._role === "invited" && res._myStatus === "accepted" && (
                           <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-violet-50 text-violet-700">Invité</span>
                         )}
                       </div>

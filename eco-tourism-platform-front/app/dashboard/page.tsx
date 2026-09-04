@@ -6,7 +6,6 @@ import dynamic from "next/dynamic";
 import { Leaf, Plus, X, Check, MapPin, ArrowRight } from "lucide-react";
 import { logoutUser } from "@/lib/auth";
 import { apiFetch } from "@/lib/api";
-import BadgeGrid from "@/components/common/BadgeGrid";
 import { ECHELLE_PAR_ROLE } from "@/lib/constants/badges";
 import { cheminTableauDeBord } from "@/lib/dashboard-path";
 import OfferDetailView, { type OfferFull } from "@/components/offer/OfferDetailView";
@@ -17,6 +16,9 @@ import PubInteractions from "@/components/PubInteractions";
 import GuideProfilePage from "@/app/profile/guide/page";
 import ProjectOwnerProfilePage from "@/app/profile/project-owner/page";
 import BadgeChip from "@/components/common/BadgeChip";
+import { useMesReservations, MesReservationsPanel } from "@/components/reservation/DashboardReservations";
+import ScoreBadgeCard from "@/components/common/ScoreBadgeCard";
+import DetailCompletion from "@/components/common/DetailCompletion";
 
 const MapPicker = dynamic(
   () => import("@/components/map/MapPicker"),
@@ -27,6 +29,107 @@ const MapPicker = dynamic(
 
 type Role = "eco_traveler" | "guide" | "project";
 type Badge = { label: string; obtained_at: string };
+
+/** Retombées d'une publication : ce qu'elle a suscité, pas ce qu'elle contient. */
+type RetombeePub = {
+  id: string;
+  title: string | null;
+  image: string | null;
+  status: string;
+  likes: number;
+  comments: number;
+  shares: number;
+  contributions?: number;
+};
+type Engagement = { experience: RetombeePub | null; place: RetombeePub | null };
+
+/**
+ * Une publication et ses interactions, en une ligne.
+ *
+ * L'image identifie la publication à elle seule — son titre figure déjà partout
+ * ailleurs. La vignette pleine largeur était trop haute pour un tableau de bord
+ * qui doit tenir sans défilement : elle devient une pastille, et les compteurs
+ * passent à sa droite.
+ */
+function CarteInteractions({ eyebrow, icone, pub, mesures, onOuvrir }: {
+  eyebrow: string;
+  icone: string;
+  pub: RetombeePub;
+  mesures: { label: string; valeur: number; icone: string; teinte: string }[];
+  onOuvrir: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onOuvrir}
+      title={eyebrow}
+      className="group w-full text-left bg-white dark:bg-slate-900 rounded-2xl border border-primary/5 p-3 flex items-center gap-3 hover:border-primary/30 hover:shadow-md transition-all duration-300"
+    >
+      <div className="relative w-12 h-12 rounded-xl bg-slate-100 dark:bg-slate-800 shrink-0 overflow-hidden">
+        {pub.image ? (
+          <img
+            src={pub.image}
+            alt=""
+            className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
+          />
+        ) : (
+          <span className="w-full h-full flex items-center justify-center material-symbols-outlined text-slate-300 text-lg">
+            {icone}
+          </span>
+        )}
+        {/* Une publication non validée n'a été vue de personne : ses compteurs
+            à zéro n'ont rien d'anormal. */}
+        {pub.status !== "approved" && (
+          <span className="absolute inset-x-0 bottom-0 text-[7px] font-black uppercase text-center bg-amber-400 text-slate-900 leading-tight py-px">
+            attente
+          </span>
+        )}
+      </div>
+
+      <div className="flex-1 min-w-0 flex justify-between gap-1">
+        {mesures.map((m) => (
+          <div key={m.label} className="min-w-0 text-center px-1">
+            <span className={`material-symbols-outlined text-[15px] leading-none ${m.teinte} transition-transform duration-300 group-hover:scale-110`}>
+              {m.icone}
+            </span>
+            <p className="text-base font-black text-slate-800 dark:text-slate-100 leading-none tabular-nums">
+              <CompteurAnime valeur={m.valeur} />
+            </p>
+            <p className="text-[9px] font-semibold text-slate-400 truncate">{m.label}</p>
+          </div>
+        ))}
+      </div>
+    </button>
+  );
+}
+
+/**
+ * Compte de zéro jusqu'à la valeur.
+ *
+ * Le mouvement dure toujours le même temps quel que soit le nombre, pour que
+ * trois compteurs côte à côte finissent ensemble.
+ */
+function CompteurAnime({ valeur }: { valeur: number }) {
+  const [affiche, setAffiche] = useState(0);
+
+  useEffect(() => {
+    if (valeur <= 0) { setAffiche(0); return; }
+    const duree = 700;
+    const debut = performance.now();
+    let frame = 0;
+    const avancer = (t: number) => {
+      const p = Math.min(1, (t - debut) / duree);
+      // Décélération : le compteur ralentit en approchant de sa valeur.
+      setAffiche(Math.round(valeur * (1 - Math.pow(1 - p, 3))));
+      if (p < 1) frame = requestAnimationFrame(avancer);
+    };
+    frame = requestAnimationFrame(avancer);
+    return () => cancelAnimationFrame(frame);
+  }, [valeur]);
+
+  return <>{affiche}</>;
+}
+
 
 type Publication = {
   id: string;
@@ -157,26 +260,6 @@ const PROJECT_SERVICES = [
   { value: "animation", label: "Animation culturelle", icon: "celebration" },
 ];
 
-const BADGE_CONFIGS: Record<Role, { label: string; icon: string; description: string }[]> = {
-  eco_traveler: [
-    { label: "Explorateur Durable", icon: "explore", description: "Onboarding complété" },
-    { label: "Ambassadeur ", icon: "stars", description: "Score ≥ 80%" },
-    { label: "Contributeur Communautaire", icon: "groups", description: "3 plans partagés" },
-    { label: "Protecteur de la Nature", icon: "eco", description: "10 réservations durables" },
-  ],
-  guide: [
-    { label: "Guide Éco-Certifié", icon: "verified", description: "Onboarding complété" },
-    { label: "Guide Ambassadeur Éco-Voyage", icon: "stars", description: "Score ≥ 80%" },
-    { label: "Guide Expert", icon: "psychology", description: "10 réservations gérées" },
-    { label: "Formateur Durable", icon: "school", description: "5 évaluations reçues" },
-  ],
-  project: [
-    { label: "Prestataire Éco-Certifié", icon: "verified", description: "Onboarding complété" },
-    { label: "Ambassadeur Éco-Voyage", icon: "stars", description: "Score ≥ 80%" },
-    { label: "Projet d'Excellence", icon: "domain_verification", description: "10 réservations gérées" },
-    { label: "Champion Durable", icon: "eco", description: "5 évaluations reçues" },
-  ],
-};
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -194,21 +277,7 @@ function getScoreLabel(score: number | null, role: Role): string {
   return l[3];
 }
 
-function getScoreColor(score: number | null): string {
-  if (score === null) return "text-slate-400";
-  if (score >= 80) return "text-green-600";
-  if (score >= 60) return "text-primary";
-  if (score >= 40) return "text-orange-500";
-  return "text-red-500";
-}
 
-function getBarColor(score: number | null): string {
-  if (score === null) return "bg-slate-300";
-  if (score >= 80) return "bg-green-500";
-  if (score >= 60) return "bg-primary";
-  if (score >= 40) return "bg-orange-400";
-  return "bg-red-400";
-}
 
 // ─── StatusBadge ──────────────────────────────────────────────────────────────
 
@@ -227,43 +296,6 @@ function StatusBadge({ status, reason }: { status: string; reason?: string | nul
   return <span className="text-xs font-bold px-2.5 py-1 rounded-full bg-amber-100 text-amber-700">En attente</span>;
 }
 
-// ─── ScoreBreakdown ───────────────────────────────────────────────────────────
-
-function ScoreBreakdown({ profile, role }: { profile: AnyProfile; role: Role }) {
-  const components = role === "eco_traveler"
-    ? [
-        { label: "Questionnaire", weight: "20%", value: profile.score_questionnaire, color: "bg-green-500" },
-        { label: "Réservations", weight: "40%", value: profile.score_reservations, color: "bg-blue-500" },
-        { label: "Feedbacks", weight: "20%", value: profile.score_feedbacks, color: "bg-orange-400" },
-        { label: "Partages", weight: "20%", value: profile.score_partages ?? 0, color: "bg-purple-400" },
-      ]
-    : [
-        { label: "Questionnaire", weight: "40%", value: profile.score_questionnaire, color: "bg-green-500" },
-        { label: "Réservations", weight: "40%", value: profile.score_reservations, color: "bg-blue-500" },
-        { label: "Feedbacks", weight: "20%", value: profile.score_feedbacks, color: "bg-orange-400" },
-      ];
-
-  return (
-    <div className="mt-4 space-y-2.5">
-      {components.map((c) => (
-        <div key={c.label}>
-          <div className="flex justify-between items-center mb-1">
-            <div className="flex items-center gap-1.5">
-              <span className="text-xs font-bold text-slate-600">{c.label}</span>
-              <span className="text-[10px] font-bold text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded-full">{c.weight}</span>
-            </div>
-            <span className="text-xs font-extrabold text-slate-700">
-              {c.value !== null && c.value !== undefined ? `${c.value}%` : "—"}
-            </span>
-          </div>
-          <div className="w-full h-1.5 bg-slate-100 rounded-full overflow-hidden">
-            <div className={`h-full ${c.color} rounded-full transition-all duration-700`} style={{ width: `${c.value ?? 0}%` }} />
-          </div>
-        </div>
-      ))}
-    </div>
-  );
-}
 
 // ─── ProjectTypeIcon ──────────────────────────────────────────────────────────
 
@@ -971,9 +1003,14 @@ export default function DashboardPage() {
   const [role, setRole] = useState<Role | null>(null);
   const [profile, setProfile] = useState<AnyProfile | null>(null);
   const [activeItem, setActiveItem] = useState("Tableau de bord");
-  const [showScoreDetail, setShowScoreDetail] = useState(false);
   const [token, setToken] = useState("");
   const [publications, setPublications] = useState<Publication[]>([]);
+  // Les réservations réelles du voyageur : elles alimentent à la fois le
+  // compteur et la liste, qui ne peuvent donc plus se contredire.
+  const { organisees, invitations, total: totalReservations } = useMesReservations();
+  // Retombées des dernières publications : une seule requête, servie par la
+  // route qui compte les interactions plutôt qu'un champ dénormalisé.
+  const [engagement, setEngagement] = useState<Engagement | null>(null);
   const [showAddPublication, setShowAddPublication] = useState(false);
   const [pubModalInitialStep, setPubModalInitialStep] = useState<"place" | "experience" | undefined>(undefined);
   const [viewPub, setViewPub] = useState<Publication | null>(null);
@@ -1047,6 +1084,9 @@ export default function DashboardPage() {
             const pubs = await apiFetch<Publication[]>("/publications/mine", { headers: { Authorization: `Bearer ${tkn}` } });
             setPublications(pubs);
           } catch {}
+          apiFetch<Engagement>("/publications/mine/engagement", { headers: { Authorization: `Bearer ${tkn}` } })
+            .then(setEngagement)
+            .catch(() => setEngagement({ experience: null, place: null }));
         } else if (userRole === "guide") {
           try {
             const myOffers = await apiFetch<Offer[]>("/guide/offers", { headers: { Authorization: `Bearer ${tkn}` } });
@@ -1098,7 +1138,7 @@ export default function DashboardPage() {
         { label: "Explorer",        icon: "explore",         action: () => router.push("/explorer") },
         { label: "Expériences",     icon: "auto_stories",    action: () => setActiveItem("Expériences") },
         { label: "Lieux",           icon: "location_on",     action: () => setActiveItem("Lieux") },
-        { label: "Séjour",          icon: "hotel",           action: () => router.push("/offers") },
+        { label: "Catalogue",       icon: "travel_explore",  action: () => router.push("/catalogue") },
         { label: "Réservations",    icon: "book_online",     action: () => router.push("/dashboard/ecovoyageur/reservations") },
         { label: "Paramètres",      icon: "settings",        action: () => router.push("/dashboard/profile") },
       ]
@@ -1109,7 +1149,6 @@ export default function DashboardPage() {
         { label: "Offres",          icon: "storefront",      action: () => setActiveItem("Offres") },
         { label: "Circuits",        icon: "route",           action: () => router.push("/dashboard/guide?section=Circuits") },
         { label: "Réservations",    icon: "event_available", action: () => router.push("/dashboard/guide/reservations") },
-        { label: "Avis",            icon: "star",            action: () => router.push("/profile/guide?tab=apropos") },
         { label: "Paramètres",      icon: "settings",        action: () => router.push("/dashboard/profile") },
       ]
     : [
@@ -1118,14 +1157,10 @@ export default function DashboardPage() {
         { label: "Offres",          icon: "storefront",      action: () => setActiveItem("Offres") },
         { label: "Circuits",        icon: "route",           action: () => router.push("/dashboard/provider?section=Circuits") },
         { label: "Réservations",    icon: "event_available", action: () => router.push("/dashboard/provider/reservations") },
-        { label: "Avis",            icon: "star",            action: () => router.push("/profile/provider?tab=apropos") },
         { label: "Paramètres",      icon: "settings",        action: () => router.push("/dashboard/profile") },
       ];
 
   const score = profile?.sustainability_score ?? null;
-  const scoreWidth = score !== null ? `${score}%` : "0%";
-  const badgeConfig = role ? BADGE_CONFIGS[role] : [];
-  const obtainedBadgeLabels = new Set((profile?.badges ?? []).map((b) => b.label));
   const profilePath = role === "eco_traveler" ? "/profile/ecovoyageur"
     : role === "guide" ? "/profile/guide"
     : "/profile/project-owner";
@@ -1335,6 +1370,82 @@ export default function DashboardPage() {
       const circuitTitle = n.data?.circuit_title ?? "un circuit";
       return { title: "Circuit supprimé", body: `Le circuit « ${circuitTitle} » auquel vous collaboriez a été supprimé.` };
     }
+    if (n.type === "reservation_invite") {
+      const offerTitle = n.data?.offer_title ?? "une expérience";
+      const part = n.data?.share_amount;
+      return {
+        title: "Invitation à une réservation",
+        body: `Vous êtes invité(e) à rejoindre une réservation pour « ${offerTitle} »`
+          + (part != null ? ` — votre part : ${Number(part).toFixed(0)} TND` : "")
+          + ". Ouvrez-la pour accepter ou refuser.",
+      };
+    }
+    if (n.type === "reservation_collab") {
+      const offerTitle = n.data?.offer_title ?? "une offre";
+      const nb = n.data?.participant_count;
+      const date = n.data?.reservation_date
+        ? new Date(`${String(n.data.reservation_date).slice(0, 10)}T12:00:00`).toLocaleDateString("fr-FR", { day: "numeric", month: "long" })
+        : null;
+      return {
+        title: "Réservation sur votre collaboration",
+        body: `« ${offerTitle} », à laquelle vous collaborez, a été réservée`
+          + (nb ? ` pour ${nb} personne${nb > 1 ? "s" : ""}` : "")
+          + (date ? ` le ${date}` : "")
+          + ". Son auteur décidera de la réponse.",
+      };
+    }
+    if (n.type === "reservation_pending") {
+      const offerTitle = n.data?.offer_title ?? "une de vos prestations";
+      return {
+        title: "Nouvelle réservation",
+        body: `Une réservation est en attente de votre confirmation pour « ${offerTitle} ».`,
+      };
+    }
+    if (n.type === "reservation_confirmed") {
+      const offerTitle = n.data?.offer_title ?? "votre réservation";
+      return {
+        title: "Réservation confirmée ✓",
+        body: `Votre réservation pour « ${offerTitle} » a été confirmée par le prestataire.`,
+      };
+    }
+    if (n.type === "reservation_rejected") {
+      const offerTitle = n.data?.offer_title ?? "votre réservation";
+      return {
+        title: "Réservation refusée",
+        body: `Votre réservation pour « ${offerTitle} » a été refusée`
+          + (n.data?.reason ? ` — motif : ${n.data.reason}` : "") + ".",
+      };
+    }
+    if (n.type === "reservation_cancelled") {
+      const offerTitle = n.data?.offer_title ?? "une prestation";
+      return {
+        title: "Réservation annulée",
+        body: `Une réservation pour « ${offerTitle} » a été annulée`
+          + (n.data?.reason ? ` — motif : ${n.data.reason}` : "") + ".",
+      };
+    }
+    if (n.type === "reservation_accepted" || n.type === "reservation_declined") {
+      const nom = n.data?.participant_name ?? "Un invité";
+      const offerTitle = n.data?.offer_title ?? "votre réservation";
+      const restant = n.data?.pending_count;
+      const suite = typeof restant === "number" && restant > 0
+        ? ` Reste ${restant} réponse${restant > 1 ? "s" : ""} en attente.`
+        : " Tout le monde a répondu.";
+      // Un refus libère la place : le total a changé, autant l'annoncer.
+      const total = n.data?.total_price;
+      const nouveauTotal = total != null
+        ? ` Nouveau total : ${Number(total).toFixed(0)} TND pour ${n.data?.participant_count ?? "?"} personne${(n.data?.participant_count ?? 0) > 1 ? "s" : ""}.`
+        : "";
+      return n.type === "reservation_accepted"
+        ? {
+            title: "Invitation acceptée ✓",
+            body: `${nom} a accepté de rejoindre votre réservation pour « ${offerTitle} ».${suite}`,
+          }
+        : {
+            title: "Invitation refusée",
+            body: `${nom} a refusé votre invitation pour « ${offerTitle} ».${suite}${nouveauTotal}`,
+          };
+    }
     if (n.type === "collab_kicked") {
       const section = sectionLabel[n.data?.section ?? ""] ?? (n.data?.section ?? "");
       const resource = n.data?.offer_title ?? n.data?.circuit_title ?? "une offre";
@@ -1402,28 +1513,13 @@ export default function DashboardPage() {
               </div>
             </div>
 
-            {/* Role-specific CTAs */}
-            {role === "eco_traveler" && (
-              <button onClick={() => router.push(questionnairePath)}
-                className="mt-4 w-full bg-primary hover:bg-primary/90 text-slate-900 font-bold py-3 rounded-xl transition-all shadow-lg shadow-primary/20 flex items-center justify-center gap-2">
-                <span className="material-symbols-outlined">add_location_alt</span>
-                Réserver un voyage
-              </button>
-            )}
-            {role === "guide" && (
-              <button onClick={() => router.push(questionnairePath)}
-                className="mt-4 w-full bg-primary hover:bg-primary/90 text-slate-900 font-bold py-3 rounded-xl transition-all shadow-lg shadow-primary/20 flex items-center justify-center gap-2">
-                <span className="material-symbols-outlined">quiz</span>
-                {score === null ? "Passer l'évaluation" : "Voir mon score"}
-              </button>
-            )}
-            {role === "project" && (
-              <button onClick={() => router.push(questionnairePath)}
-                className="mt-4 w-full bg-primary hover:bg-primary/90 text-slate-900 font-bold py-3 rounded-xl transition-all shadow-lg shadow-primary/20 flex items-center justify-center gap-2">
-                <span className="material-symbols-outlined">quiz</span>
-                {score === null ? "Passer l'évaluation" : "Voir mon score"}
-              </button>
-            )}
+            {/* Le grand bouton menait au questionnaire quel que soit son
+                libellé. Il ouvre maintenant ce que la jauge juste au-dessus
+                laisse deviner : ce qui manque au profil. */}
+            <DetailCompletion
+              lignes={(profile as any)?.completion_details ?? []}
+              total={profile?.profile_completion ?? 0}
+            />
           </div>
         </aside>
 
@@ -1557,10 +1653,24 @@ export default function DashboardPage() {
                                   router.push(circuitId ? `${base}?tab=collaborations&openCollabByCircuit=${circuitId}` : `${base}?tab=collaborations`);
                                 } else if (n.type === "circuit_deleted") {
                                   router.push(`${base}?tab=collaborations`);
+                                } else if (n.type.startsWith("reservation_")) {
+                                  // Toutes les notifications de réservation mènent à la
+                                  // réservation — mais chaque rôle a son écran : le
+                                  // détail pour l'éco-voyageur, la liste à confirmer
+                                  // pour le guide ou le prestataire.
+                                  const reservationId = n.data?.reservation_id as string | undefined;
+                                  if (role === "guide") router.push("/dashboard/guide/reservations");
+                                  // Le prestataire porte le rôle « project » dans ce tableau de bord.
+                                  else if (role === "project") router.push("/dashboard/provider/reservations");
+                                  else router.push(
+                                    reservationId
+                                      ? `/dashboard/ecovoyageur/reservations/${reservationId}`
+                                      : "/dashboard/ecovoyageur/reservations",
+                                  );
                                 }
                               }}>
                                 <span className={`mt-0.5 material-symbols-outlined text-lg shrink-0 ${isUnread ? "text-primary" : "text-slate-400"}`}>
-                                  {n.type === "collaboration_invite" ? "handshake" : n.type === "collab_accepted" ? "check_circle" : n.type === "collab_declined" ? "cancel" : n.type === "collab_quit" ? "person_remove" : (n.type === "offer_deleted" || n.type === "circuit_deleted") ? "delete_forever" : (n.type === "offer_schedule_conflict" || n.type === "circuit_schedule_conflict") ? "event_busy" : (n.type === "offer_schedule_changed" || n.type === "circuit_schedule_changed") ? "event_available" : n.type === "collab_kicked" ? "person_remove" : "notifications"}
+                                  {n.type === "collaboration_invite" ? "handshake" : n.type === "collab_accepted" ? "check_circle" : n.type === "collab_declined" ? "cancel" : n.type === "collab_quit" ? "person_remove" : (n.type === "offer_deleted" || n.type === "circuit_deleted") ? "delete_forever" : (n.type === "offer_schedule_conflict" || n.type === "circuit_schedule_conflict") ? "event_busy" : (n.type === "offer_schedule_changed" || n.type === "circuit_schedule_changed") ? "event_available" : n.type === "collab_kicked" ? "person_remove" : n.type === "reservation_invite" ? "group_add" : n.type === "reservation_accepted" ? "how_to_reg" : n.type === "reservation_declined" ? "person_off" : n.type === "reservation_pending" ? "pending_actions" : n.type === "reservation_confirmed" ? "event_available" : n.type === "reservation_rejected" ? "event_busy" : n.type === "reservation_cancelled" ? "free_cancellation" : n.type === "reservation_collab" ? "groups" : "notifications"}
                                 </span>
                                 <div className="flex-1 min-w-0">
                                   <p className={`text-xs font-semibold truncate ${isUnread ? "text-slate-900 dark:text-white" : "text-slate-500 dark:text-slate-400"}`}>
@@ -1676,87 +1786,74 @@ export default function DashboardPage() {
                   </div>
                 )}
 
-                {/* Questionnaire banner */}
-                {score === null && (
+
+                {/* Stats grid */}
+                {/* Bannière questionnaire non complété.
+                     La condition portait sur le score final, qui vaut désormais 0
+                     et jamais `null` : la bannière ne pouvait plus s'afficher.
+                     Elle porte maintenant sur le fait réel — le questionnaire est
+                     passé ou il ne l'est pas. */}
+                {!((profile?.score_questionnaire ?? 0) > 0) && (
                   <div className="mb-6 p-5 bg-primary/10 border border-primary/20 rounded-2xl flex items-center justify-between">
                     <div className="flex items-center gap-3">
                       <span className="material-symbols-outlined text-primary text-2xl">quiz</span>
                       <div>
-                        <p className="font-bold text-slate-800">
-                          {role === "eco_traveler" ? "Passez votre test de durabilité" : "Passez votre évaluation de durabilité"}
-                        </p>
-                        <p className="text-sm text-slate-500 font-medium">
-                          {role === "eco_traveler"
-                            ? "Obtenez votre score initial et des recommandations personnalisées."
-                            : "Obtenez votre score et valorisez votre profil auprès des voyageurs."}
-                        </p>
+                        <p className="font-bold text-slate-800">Passez votre test de durabilité</p>
+                        <p className="text-sm text-slate-500 font-medium">Obtenez votre score initial et des recommandations personnalisées.</p>
                       </div>
                     </div>
-                    <button onClick={() => router.push(questionnairePath)}
-                      className="px-5 py-2.5 bg-primary text-slate-900 font-bold rounded-xl text-sm shadow-lg shadow-primary/20 hover:-translate-y-0.5 transition-all">
+                    <button
+                      onClick={() => router.push("/questionnaire/eco-traveler")}
+                      className="px-5 py-2.5 bg-primary text-slate-900 font-bold rounded-xl text-sm shadow-lg shadow-primary/20 hover:-translate-y-0.5 transition-all"
+                    >
                       Commencer →
                     </button>
                   </div>
                 )}
 
-                {/* Stats grid */}
-                <div className={`grid grid-cols-1 md:grid-cols-2 ${role === "eco_traveler" ? "lg:grid-cols-5" : "lg:grid-cols-4"} gap-6 mb-8`}>
+                {/* Trois colonnes : la carte de progression en occupe deux,
+                    les compteurs s'empilent dans la troisième. Étalés sur cinq
+                    colonnes, ils étaient trop étroits pour leur contenu et
+                    laissaient la carte écrasée. */}
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-5 mb-6 items-start">
 
-                  {/* Score card */}
-                  <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-primary/10 flex flex-col justify-between lg:col-span-2">
-                    <div className="flex justify-between items-start mb-2">
-                      <div>
-                        <p className="text-slate-500 text-sm font-medium">Score de durabilité</p>
-                        <h3 className={`text-3xl font-extrabold mt-1 ${getScoreColor(score)}`}>
-                          {score !== null ? score : "—"}
-                          {score !== null && <span className="text-slate-400 text-lg font-normal">/100</span>}
-                        </h3>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <div className="bg-primary/20 p-2 rounded-lg text-primary">
-                          <span className="material-symbols-outlined">analytics</span>
-                        </div>
-                        <button onClick={() => setShowScoreDetail((v) => !v)}
-                          className="text-xs text-slate-400 hover:text-primary font-bold transition-colors">
-                          <span className="material-symbols-outlined text-lg">{showScoreDetail ? "expand_less" : "expand_more"}</span>
-                        </button>
-                      </div>
-                    </div>
-                    <div className="w-full bg-slate-100 dark:bg-slate-800 h-2 rounded-full overflow-hidden">
-                      <div className={`h-full ${getBarColor(score)} rounded-full transition-all duration-1000`} style={{ width: scoreWidth }} />
-                    </div>
-                    <p className="text-xs font-bold mt-2" style={{ color: score !== null ? (score >= 60 ? "#22c55e" : "#f97316") : "#94a3b8" }}>
-                      {score !== null ? getScoreLabel(score, role) : "Questionnaire non complété"}
-                    </p>
-                    {showScoreDetail && <ScoreBreakdown profile={profile} role={role} />}
-                  </div>
+                  {/* Score et badge réunis : le badge nomme, le score chiffre,
+                      et le palier en cours dit ce qui reste à faire. */}
+                  <ScoreBadgeCard
+                    role={role === "project" ? "provider" : role}
+                    scoreInitial={profile.score_questionnaire}
+                  />
+
+                  <div className="space-y-3">
 
                   {/* eco_traveler stats */}
                   {role === "eco_traveler" && (
                     <>
-                      <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-primary/10 flex flex-col self-start">
+                      <div className="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-primary/10">
                         <div className="flex justify-between items-start">
                           <div>
                             <p className="text-slate-500 text-sm font-medium">Expériences créées</p>
-                            <h3 className="text-3xl font-extrabold mt-1">{publications.filter((p) => p.type === "experience").length}</h3>
+                            <h3 className="text-2xl font-extrabold mt-0.5">{publications.filter((p) => p.type === "experience").length}</h3>
                           </div>
                           <div className="bg-teal-500/10 p-2 rounded-lg text-teal-500"><span className="material-symbols-outlined">hiking</span></div>
                         </div>
                       </div>
-                      <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-primary/10 flex flex-col self-start">
+                      <div className="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-primary/10">
                         <div className="flex justify-between items-start">
                           <div>
                             <p className="text-slate-500 text-sm font-medium">Lieux créés</p>
-                            <h3 className="text-3xl font-extrabold mt-1">{publications.filter((p) => p.type === "place").length}</h3>
+                            <h3 className="text-2xl font-extrabold mt-0.5">{publications.filter((p) => p.type === "place").length}</h3>
                           </div>
                           <div className="bg-blue-500/10 p-2 rounded-lg text-blue-500"><span className="material-symbols-outlined">location_on</span></div>
                         </div>
                       </div>
-                      <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-primary/10 flex flex-col self-start">
+                      <div className="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-primary/10">
                         <div className="flex justify-between items-start">
                           <div>
                             <p className="text-slate-500 text-sm font-medium">Réservations</p>
-                            <h3 className="text-3xl font-extrabold mt-1">{profile.reservations_made ?? 0}</h3>
+                            {/* `reservations_made` vit dans Mongo et n'est jamais
+                                incrémenté : il annonçait zéro en permanence. */}
+                            <h3 className="text-2xl font-extrabold mt-0.5">{totalReservations}</h3>
                           </div>
                           <div className="bg-green-500/10 p-2 rounded-lg text-green-500"><span className="material-symbols-outlined">task_alt</span></div>
                         </div>
@@ -1767,20 +1864,20 @@ export default function DashboardPage() {
                   {/* guide stats */}
                   {role === "guide" && (
                     <>
-                      <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-primary/10 flex flex-col self-start">
+                      <div className="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-primary/10">
                         <div className="flex justify-between items-start">
                           <div>
                             <p className="text-slate-500 text-sm font-medium">Réservations gérées</p>
-                            <h3 className="text-3xl font-extrabold mt-1">{profile.reservations_handled ?? 0}</h3>
+                            <h3 className="text-2xl font-extrabold mt-0.5">{profile.reservations_handled ?? 0}</h3>
                           </div>
                           <div className="bg-blue-500/10 p-2 rounded-lg text-blue-500"><span className="material-symbols-outlined">event_available</span></div>
                         </div>
                       </div>
-                      <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-primary/10 flex flex-col self-start">
+                      <div className="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-primary/10">
                         <div className="flex justify-between items-start">
                           <div>
                             <p className="text-slate-500 text-sm font-medium">Avis reçus</p>
-                            <h3 className="text-3xl font-extrabold mt-1">{profile.feedback_received ?? 0}</h3>
+                            <h3 className="text-2xl font-extrabold mt-0.5">{profile.feedback_received ?? 0}</h3>
                           </div>
                           <div className="bg-green-500/10 p-2 rounded-lg text-green-500"><span className="material-symbols-outlined">star</span></div>
                         </div>
@@ -1791,84 +1888,42 @@ export default function DashboardPage() {
                   {/* project stats */}
                   {role === "project" && (
                     <>
-                      <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-primary/10 flex flex-col self-start">
+                      <div className="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-primary/10">
                         <div className="flex justify-between items-start">
                           <div>
                             <p className="text-slate-500 text-sm font-medium">Projets actifs</p>
-                            <h3 className="text-3xl font-extrabold mt-1">{profile.projects?.length ?? 0}</h3>
+                            <h3 className="text-2xl font-extrabold mt-0.5">{profile.projects?.length ?? 0}</h3>
                           </div>
                           <div className="bg-blue-500/10 p-2 rounded-lg text-blue-500"><span className="material-symbols-outlined">domain</span></div>
                         </div>
                       </div>
-                      <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-primary/10 flex flex-col self-start">
+                      <div className="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-primary/10">
                         <div className="flex justify-between items-start">
                           <div>
                             <p className="text-slate-500 text-sm font-medium">Réservations reçues</p>
-                            <h3 className="text-3xl font-extrabold mt-1">{profile.total_reservations ?? 0}</h3>
+                            <h3 className="text-2xl font-extrabold mt-0.5">{profile.total_reservations ?? 0}</h3>
                           </div>
                           <div className="bg-green-500/10 p-2 rounded-lg text-green-500"><span className="material-symbols-outlined">event_available</span></div>
                         </div>
                       </div>
                     </>
                   )}
+                  </div>
                 </div>
 
-                {/* Content + Badges */}
-                <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                {/* Contenu */}
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-5 items-start">
 
-                  {/* Left column: role-specific content */}
+                  {/* Colonne principale */}
                   <div className="lg:col-span-2">
 
-                    {/* eco_traveler: Plans de voyage */}
+                    {/* eco_traveler : ses vraies réservations.
+                        Trois voyages étaient écrits en dur ici — titres, dates,
+                        participants et photos d'illustration — sans aucun lien
+                        avec la plateforme : le tableau de bord annonçait un
+                        séjour confirmé à quelqu'un qui n'avait rien réservé. */}
                     {role === "eco_traveler" && (
-                      <>
-                        <div className="flex items-center justify-between mb-6">
-                          <h3 className="text-xl font-bold">Mes Plans de Voyage</h3>
-                          <a className="text-primary font-bold text-sm hover:underline" href="#">Voir tout</a>
-                        </div>
-                        <div className="space-y-4">
-                          {[
-                            { title: "Randonnée durable à Zaghouan", badge: "Randonnée", badgeColor: "bg-green-100 text-green-700", date: "14 - 15 Oct. • 4 participants", status: "Confirmé", statusColor: "bg-green-500", eco: "A+", icon: "hiking", tag: "Zéro déchet", img: "https://lh3.googleusercontent.com/aida-public/AB6AXuBD5akWau1kblm8fq7Tx2Gb_0_xLp3mQzhBkmRMTCwP4gTD9CSQAANQlL0YDLaTPuPJRU6KvcFPO6k2Z0XaqbQoKbMAOK5WBHeMHMnt1TRMgl1Y7aUZFQNg1FT4jZWgn0Wrxv71JI-UPJCAjt8_4-3bzG2SNsAgq_Ftpl-L1bToKH-hqsogDzYBKSTbxXhEQLfsVHEB_B4TUu3cTA9B7ioPh1f6qctmXGcTpXYceiy91_3s4bDfyCVRUFpnILZV0dgP9ZKtZF0fa6A" },
-                            { title: "Séjour nature à Aïn Draham", badge: "Plan partagé", badgeColor: "bg-blue-100 text-blue-700", date: "22 - 25 Oct. • 2 participants", status: "En cours", statusColor: "bg-orange-400", eco: "A", icon: "cottage", tag: "Éco-gîte", img: "https://lh3.googleusercontent.com/aida-public/AB6AXuBPCrg1ZmXVLbEPD-8lp6H0mdqw8OUDeijVrAZTFq0zto2v3-_cD4n4oGhCFYORXsbpOhhim9BsoK6fLjA3KZ4WXULIFZ4GtIDPiqVEGjsr2jqkm0Eo5SO102iyX57ppBgj1gpfLy_3nCiWbRpyYAzfzsG-z1YeqFFSsfqFDlXhUdy0YrGeHUEP4uCOZxSFvr0V9ZOTlmb9te0xg3vgZkiVH0xWtqyukLVEbUxYn580NOCZ7P712ArePj4isI0atUXHzpvfrtqTrpw" },
-                            { title: "Week-end éco en groupe à Tozeur", badge: "Groupe", badgeColor: "bg-orange-100 text-orange-700", date: "02 - 04 Nov. • 8 participants", status: "Confirmé", statusColor: "bg-green-500", eco: "A+", icon: "train", tag: "Transport collectif", img: "https://lh3.googleusercontent.com/aida-public/AB6AXuB5jT6WYwSYRRMZkPCNOBrnz44sPEOf3vt8vGQAXP_9oauhXfRuN3iCW8E7E6gc-OZQ8vsDzOUvVh_5xdOYt_rO_F8qZPcDl9P-dGlbHnCdip5hG5VauEsZxb7L4MFmkIgmuxDjB5jpLJ24b6cbwAGNiHXzgmm7GYixoWH_vRGfaPxQiDRFW6S80aZzKe_X0FtOCQKwgh_TcAdy4tAq9weqRrUYIrpoC7OXPXi8oF6ZKGnTcuPoGSJuouQ9yZ3yhw7ldps2FdgyNBg" },
-                          ].map((plan, idx) => (
-                            <div key={idx} className="bg-white dark:bg-slate-900 rounded-2xl p-4 border border-primary/5 hover:border-primary/30 transition-all group cursor-pointer">
-                              <div className="flex flex-col md:flex-row gap-6">
-                                <div className="w-full md:w-48 h-32 rounded-xl bg-slate-200 overflow-hidden shrink-0">
-                                  <div className="w-full h-full bg-cover bg-center group-hover:scale-110 transition-transform duration-500" style={{ backgroundImage: `url("${plan.img}")` }} />
-                                </div>
-                                <div className="flex-1">
-                                  <div className="flex justify-between items-start">
-                                    <div>
-                                      <span className={`inline-block px-2 py-0.5 text-[10px] font-bold rounded uppercase tracking-wider mb-2 ${plan.badgeColor}`}>{plan.badge}</span>
-                                      <h4 className="text-lg font-bold group-hover:text-primary transition-colors">{plan.title}</h4>
-                                      <p className="text-slate-500 text-sm flex items-center gap-1">
-                                        <span className="material-symbols-outlined text-sm">calendar_today</span> {plan.date}
-                                      </p>
-                                    </div>
-                                    <div className="flex flex-col items-end gap-2">
-                                      <span className={`px-2 py-1 rounded text-white text-[10px] font-bold uppercase ${plan.statusColor}`}>{plan.status}</span>
-                                      <div className="bg-green-100 dark:bg-green-900/30 px-3 py-1 rounded-full flex items-center gap-1">
-                                        <span className="material-symbols-outlined text-green-600 text-sm">eco</span>
-                                        <span className="text-green-600 text-xs font-bold">{plan.eco}</span>
-                                      </div>
-                                    </div>
-                                  </div>
-                                  <div className="mt-4 flex items-center justify-between border-t border-slate-50 dark:border-slate-800 pt-4">
-                                    <div className="flex items-center gap-1.5">
-                                      <span className="material-symbols-outlined text-slate-400 text-lg">{plan.icon}</span>
-                                      <span className="text-xs text-slate-500">{plan.tag}</span>
-                                    </div>
-                                    <button className="text-slate-400 hover:text-slate-900 dark:hover:text-white">
-                                      <span className="material-symbols-outlined">more_horiz</span>
-                                    </button>
-                                  </div>
-                                </div>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      </>
+                      <MesReservationsPanel organisees={organisees} invitations={invitations} />
                     )}
 
                     {/* guide: Spécialités & Circuits */}
@@ -2033,45 +2088,65 @@ export default function DashboardPage() {
                     )}
                   </div>
 
-                  {/* Right column: Badges */}
-                  <div>
-                    <h3 className="text-xl font-bold mb-6">Mes Badges</h3>
-                    <div className="bg-white dark:bg-slate-900 rounded-2xl p-6 border border-primary/10">
-                      {ECHELLE_PAR_ROLE[role ?? ""] ? (
-                        <>
-                          <BadgeGrid role={role ?? ""} details={false} />
-                          <a href="/dashboard/profile?onglet=badges" className="mt-3 inline-flex items-center gap-1 text-[11px] font-bold text-primary hover:underline">Voir le détail des paliers →</a>
-                        </>
+                  {/* Colonne d'appoint : les retombées de ce qui a été publié.
+                      Le nombre de publications figurait déjà dans les compteurs
+                      du haut ; ce qui manquait, c'est ce qu'elles ont suscité. */}
+                  {role === "eco_traveler" && (
+                    <div>
+                      <h3 className="text-lg font-bold mb-3">Interactions</h3>
+                      {!engagement ? (
+                        <div className="space-y-3">
+                          {[0, 1].map((i) => (
+                            <div key={i} className="h-[72px] rounded-2xl bg-white dark:bg-slate-900 border border-primary/5 animate-pulse" />
+                          ))}
+                        </div>
+                      ) : !engagement.experience && !engagement.place ? (
+                        <div className="bg-white dark:bg-slate-900 rounded-2xl border border-primary/5 p-6 text-center">
+                          <span className="material-symbols-outlined text-slate-300 text-3xl">insights</span>
+                          <p className="text-sm font-semibold text-slate-600 dark:text-slate-300 mt-1">Rien de publié</p>
+                          <p className="text-xs text-slate-400 mt-1 mb-4">
+                            Partagez un lieu ou une expérience pour suivre ses retombées.
+                          </p>
+                          <button
+                            onClick={() => setShowAddPublication(true)}
+                            className="px-4 py-2 rounded-xl bg-primary text-slate-900 text-xs font-extrabold hover:bg-primary/90"
+                          >
+                            Partager
+                          </button>
+                        </div>
                       ) : (
-                        /* Porteur de projet : barème non encore défini, ancienne grille conservée. */
-  <div className="grid grid-cols-2 gap-4">
-                          {badgeConfig.map((config) => {
-                            const obtained = obtainedBadgeLabels.has(config.label);
-                            const obtainedData = profile.badges.find((b) => b.label === config.label);
-                            return (
-                              <div key={config.label}
-                                title={obtained && obtainedData ? `Obtenu le ${new Date(obtainedData.obtained_at).toLocaleDateString("fr-FR")}` : config.description}
-                                className={`flex flex-col items-center text-center p-4 rounded-xl border-2 transition-all ${obtained ? "bg-slate-50 dark:bg-slate-800 border-primary/20" : "bg-slate-100/50 dark:bg-slate-800/50 border-dashed border-slate-200 dark:border-slate-700"}`}>
-                                <div className="size-16 flex items-center justify-center mb-2">
-                                  <span className={`material-symbols-outlined text-4xl transition-all ${obtained ? "text-primary" : "text-slate-300"}`}
-                                    style={obtained ? { fontVariationSettings: '"FILL" 1' } : {}}>
-                                    {config.icon}
-                                  </span>
-                                </div>
-                                <p className={`text-xs font-bold ${obtained ? "text-slate-700" : "text-slate-300"}`}>{config.label}</p>
-                                <p className={`text-[10px] font-bold uppercase mt-1 ${obtained ? "text-green-500" : "text-slate-300"}`}>
-                                  {obtained ? "Débloqué" : "Verrouillé"}
-                                </p>
-                                {!obtained && <p className="text-[9px] text-slate-300 mt-1 italic">{config.description}</p>}
-                              </div>
-                            );
-                          })}
+                        <div className="space-y-3">
+                          {engagement.experience && (
+                            <CarteInteractions
+                              eyebrow="Dernière expérience"
+                              icone="hiking"
+                              pub={engagement.experience}
+                              onOuvrir={() => setActiveItem("Mes Publications")}
+                              mesures={[
+                                { label: "J'aime", valeur: engagement.experience.likes, icone: "favorite", teinte: "text-rose-400" },
+                                { label: "Partages", valeur: engagement.experience.shares, icone: "share", teinte: "text-blue-400" },
+                                { label: "Commentaires", valeur: engagement.experience.comments, icone: "chat_bubble", teinte: "text-slate-400" },
+                              ]}
+                            />
+                          )}
+                          {engagement.place && (
+                            <CarteInteractions
+                              eyebrow="Dernier lieu"
+                              icone="location_on"
+                              pub={engagement.place}
+                              onOuvrir={() => setActiveItem("Mes Publications")}
+                              mesures={[
+                                { label: "Contributions", valeur: engagement.place.contributions ?? 0, icone: "handyman", teinte: "text-primary" },
+                                { label: "J'aime", valeur: engagement.place.likes, icone: "favorite", teinte: "text-rose-400" },
+                                { label: "Commentaires", valeur: engagement.place.comments, icone: "chat_bubble", teinte: "text-slate-400" },
+                              ]}
+                            />
+                          )}
                         </div>
                       )}
-
-                      
                     </div>
-                  </div>
+                  )}
+
                 </div>
               </>
             )}

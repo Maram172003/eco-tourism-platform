@@ -9,6 +9,11 @@
  * son propre nom, à gravir dans l'ordre. Un badge n'est acquis que si toutes
  * ses conditions le sont, et il faut tenir le précédent pour prétendre au
  * suivant.
+ *
+ * L'échelle produit aussi le **score de durabilité** (`scoreDurabilite`). Le
+ * questionnaire en donne la valeur de départ, puis l'avancement dans les
+ * paliers prend le relais. C'est pourquoi aucun critère ne peut porter sur le
+ * score lui-même : il en résulte.
  */
 
 export type BadgeStats = {
@@ -90,6 +95,53 @@ export function rangAtteint(echelle: Badge[], s: BadgeStats): number {
   return rang;
 }
 
+/**
+ * Avancement dans le palier en cours, entre 0 et 1.
+ *
+ * Chaque condition compte pour autant que les autres : trois conditions à
+ * moitié remplies valent une moitié de palier. Sans cela le score ne bougerait
+ * qu'au franchissement d'un barreau, par sauts de vingt points.
+ */
+export function progressionPalier(b: Badge, s: BadgeStats): number {
+  const criteres = b.criteres(s);
+  if (!criteres.length) return 0;
+  const part = criteres.reduce(
+    (t, c) => t + (c.requis > 0 ? Math.min(1, c.actuel / c.requis) : 1),
+    0,
+  );
+  return Math.min(1, part / criteres.length);
+}
+
+/**
+ * Score de durabilité — **produit** par la progression, et non plus consommé
+ * par elle.
+ *
+ * Le questionnaire n'est qu'une amorce : il donne un score de départ au compte
+ * qui vient d'être créé et n'a encore rien fait, et il sert à décrocher le
+ * premier palier. Dès qu'un palier est acquis, c'est l'échelle qui fait le
+ * score — chaque palier valant vingt points, plus l'avancement du palier en
+ * cours.
+ *
+ * Le score ne peut donc plus figurer parmi les critères des badges : il en
+ * dépend.
+ */
+export function scoreDurabilite(
+  echelle: Badge[],
+  s: BadgeStats,
+  scoreInitial: number | null | undefined,
+): number {
+  const rang = rangAtteint(echelle, s);
+  // Aucun palier acquis : le compte n'a rien fait, on montre le score d'amorce.
+  if (rang === 0) {
+    return typeof scoreInitial === "number" && Number.isFinite(scoreInitial)
+      ? Math.min(100, Math.round(scoreInitial))
+      : 0;
+  }
+  const enCours = echelle[rang];
+  const parEchelle = rang * 20 + (enCours ? progressionPalier(enCours, s) * 20 : 0);
+  return Math.min(100, Math.round(parEchelle));
+}
+
 /** Le badge en cours de conquête, ou `null` si la progression est terminée. */
 export function badgeEnCours(echelle: Badge[], s: BadgeStats): Badge | null {
   return echelle[rangAtteint(echelle, s)] ?? null;
@@ -132,7 +184,6 @@ function echellePro(nomFinal: string): Badge[] {
       couleur: TEINTES[2],
       criteres: (s) => [
         { label: "Publications notées 51 ou plus", actuel: publicationsAuNiveau(s, 51), requis: 5 },
-        { label: "Score du profil",                actuel: s.sustainability_score,      requis: 50 },
       ],
     },
     {
@@ -143,7 +194,6 @@ function echellePro(nomFinal: string): Badge[] {
       couleur: TEINTES[3],
       criteres: (s) => [
         { label: "Publications notées 71 ou plus", actuel: publicationsAuNiveau(s, 71), requis: 8 },
-        { label: "Score du profil",                actuel: s.sustainability_score,      requis: 65 },
       ],
     },
     {
@@ -154,7 +204,6 @@ function echellePro(nomFinal: string): Badge[] {
       couleur: TEINTES[4],
       criteres: (s) => [
         { label: "Publications notées 71 ou plus", actuel: publicationsAuNiveau(s, 71), requis: 12 },
-        { label: "Score du profil",                actuel: s.sustainability_score,      requis: 80 },
       ],
     },
   ];
@@ -197,7 +246,6 @@ const ECHELLE_VOYAGEUR: Badge[] = [
     criteres: (s) => [
       { label: "Lieux et expériences partagés", actuel: partages(s),            requis: 5 },
       { label: "Contributions sur des lieux",   actuel: s.contributions_made,   requis: 3 },
-      { label: "Score du profil",               actuel: s.sustainability_score, requis: 40 },
     ],
   },
   {
@@ -209,7 +257,6 @@ const ECHELLE_VOYAGEUR: Badge[] = [
     criteres: (s) => [
       { label: "Lieux et expériences partagés", actuel: partages(s),            requis: 10 },
       { label: "Contributions sur des lieux",   actuel: s.contributions_made,   requis: 10 },
-      { label: "Score du profil",               actuel: s.sustainability_score, requis: 55 },
     ],
   },
   {
@@ -222,7 +269,6 @@ const ECHELLE_VOYAGEUR: Badge[] = [
       { label: "Lieux et expériences partagés", actuel: partages(s),            requis: 20 },
       { label: "Contributions sur des lieux",   actuel: s.contributions_made,   requis: 20 },
       { label: "Votes reçus",                   actuel: s.contribution_votes,   requis: 20 },
-      { label: "Score du profil",               actuel: s.sustainability_score, requis: 70 },
     ],
   },
 ];

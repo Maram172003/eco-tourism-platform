@@ -7,6 +7,10 @@ import { Offer } from './entities/offer.entity';
 import { OfferSession } from './entities/offer-session.entity';
 import { OfferCollaboration } from './entities/offer-collaboration.entity';
 import { CreateOfferDto, OfferSustainabilityDto, UpdateOfferDto } from './dto/offer.dto';
+import {
+  extractConfirmationLabel,
+  normalizeConfirmationMode,
+} from '../common/confirmation.util';
 import { ProviderActivity } from '../provider-activity/entities/provider-activity.entity';
 import { ActivityDetails, ActivityDetailsDocument } from '../provider-activity/schemas/activity-details.schema';
 import { GuideAvailabilitySlot } from '../guide/entities/guide-availability.entity';
@@ -24,6 +28,33 @@ const CAPACITY_FIELD_NAMES = [
   'capacite_max', 'capacite_salle', 'nb_places', 'max_participants',
   'capacite_vehicule', 'nb_personnes_max', 'nb_lits', 'nombre_places',
 ];
+
+/**
+ * Sépare ce que le formulaire envoie en un seul champ : un code pour la
+ * colonne, l'intitulé choisi pour les détails.
+ *
+ * Le prestataire envoyait jusqu'ici l'intitulé directement dans
+ * `confirmation_mode` ; la colonne contenait alors « Sous 24h (validation
+ * manuelle) », que plus rien ne pouvait comparer à `'instant'`. Une offre à
+ * confirmation immédiate partait donc quand même en attente.
+ */
+function repartirConfirmation(
+  recu: string | null | undefined,
+  details: Record<string, any> | null | undefined,
+): { mode: string; details: Record<string, any> | null } {
+  let sortie: Record<string, any> | null = details ? { ...details } : null;
+  const intitule = extractConfirmationLabel(recu);
+  if (intitule) {
+    // On ne perd pas la nuance « sous 24h » / « sous 48h » / « devis » : elle
+    // n'a pas d'équivalent dans le code stocké en colonne.
+    sortie = { ...(sortie ?? {}), type_confirmation: intitule };
+  }
+  const mode =
+    normalizeConfirmationMode(recu) ??
+    normalizeConfirmationMode(sortie?.type_confirmation) ??
+    'manual';
+  return { mode, details: sortie };
+}
 
 @Injectable()
 export class OfferService {
@@ -79,6 +110,11 @@ export class OfferService {
       throw new BadRequestException('La date de fin doit être postérieure à la date de début.');
     }
 
+    // Le formulaire envoie l'intitulé en toutes lettres. La colonne garde un
+    // code — seul comparable — et l'intitulé exact rejoint les détails, d'où
+    // la fiche de l'offre et la réservation le reliront tel quel.
+    const confirmation = repartirConfirmation(dto.confirmation_mode, dto.details);
+
     const offer = this.repo.create({
       author_id: authorId,
       author_type: 'provider',
@@ -96,14 +132,14 @@ export class OfferService {
       availability_start: new Date(dto.availability_start),
       availability_end: new Date(dto.availability_end),
       fulfillment_mode: dto.fulfillment_mode ?? null,
-      confirmation_mode: dto.confirmation_mode ?? 'manual',
+      confirmation_mode: confirmation.mode,
       price_type: dto.price_type ?? 'per_person',
       capacity: dto.capacity ?? null,
       booking_deadline_hours: dto.booking_deadline_hours ?? null,
       confirmation_deadline_hours: dto.confirmation_deadline_hours ?? null,
       production_delay_days: dto.production_delay_days ?? null,
       deposit_percentage: dto.deposit_percentage ?? 0,
-      details: dto.details ?? null,
+      details: confirmation.details,
       images: dto.images?.length ? dto.images : null,
       inclusions: dto.inclusions ?? null,
       region: dto.region ?? null,
@@ -161,11 +197,54 @@ export class OfferService {
     });
   }
 
+  /**
+   * Collaborateurs d'une offre tels qu'un visiteur doit les voir.
+   *
+   * `details.collaborators` est un instantané écrit une seule fois, à la
+   * publication : un nom corrigé depuis, ou une invitation qui a changé d'état,
+   * n'y sont jamais reportés — l'offre publiée continue d'annoncer ce qui était
+   * vrai ce jour-là. La table des collaborations fait foi, on la relit donc.
+   *
+   * Et seules les collaborations acceptées sont publiées : qui a été invité et
+   * n'a pas encore répondu relève de la préparation de l'offre, pas du
+   * catalogue. L'identifiant du collaborateur n'a rien à y faire non plus.
+   */
+  private detailsPublics(
+    details: Record<string, any> | null | undefined,
+    collabs: OfferCollaboration[],
+  ): Record<string, any> | null {
+    if (!details) return details ?? null;
+    const publics = collabs
+      .filter((c) => c.status === 'accepted' || c.status === 'completed')
+      .map((c) => ({
+        name: c.invited_user_name ?? null,
+        section: c.section,
+        status: c.status,
+      }))
+      .filter((c) => c.name);
+    const sortie: Record<string, any> = { ...details };
+    if (publics.length > 0) sortie.collaborators = publics;
+    else delete sortie.collaborators;
+    return sortie;
+  }
+
   async findAllPublic(): Promise<any[]> {
     const offers = await this.repo.find({
       where: { status: 'approved' },
       order: { created_at: 'DESC' },
     });
+
+    // Une seule requête pour toutes les offres : la liste publique est
+    // parcourue en entier à chaque affichage du catalogue.
+    const collabRows = offers.length
+      ? await this.collabRepo.find({ where: { offer_id: In(offers.map((o) => o.id)) } })
+      : [];
+    const collabsParOffre = new Map<string, OfferCollaboration[]>();
+    for (const c of collabRows) {
+      const liste = collabsParOffre.get(c.offer_id) ?? [];
+      liste.push(c);
+      collabsParOffre.set(c.offer_id, liste);
+    }
 
     return Promise.all(
       offers.map(async (offer) => {
@@ -192,6 +271,10 @@ export class OfferService {
 
         return enrichOfferWithVariantFields({
           ...offer,
+          details: this.detailsPublics(
+            (offer as any).details,
+            collabsParOffre.get(offer.id) ?? [],
+          ),
           author_name,
           author_photo,
           org_name,
@@ -204,6 +287,9 @@ export class OfferService {
   async findById(id: string): Promise<Offer> {
     const offer = await this.repo.findOne({ where: { id } });
     if (!offer) throw new NotFoundException('Offre introuvable.');
+    // Route publique : mêmes collaborateurs que dans la liste du catalogue.
+    const collabs = await this.collabRepo.find({ where: { offer_id: id } });
+    (offer as any).details = this.detailsPublics((offer as any).details, collabs);
     return enrichOfferWithVariantFields(offer);
   }
 
@@ -257,10 +343,18 @@ export class OfferService {
     if (dto.max_group_size !== undefined) offer.max_group_size = dto.max_group_size ?? null;
     if (dto.min_age !== undefined) offer.min_age = dto.min_age ?? null;
     if (dto.cancellation_policy !== undefined) offer.cancellation_policy = dto.cancellation_policy ?? null;
-    if (dto.confirmation_mode !== undefined) offer.confirmation_mode = dto.confirmation_mode ?? 'manual';
+    // (le type de confirmation est réparti plus bas, avec les détails)
     if (dto.confirmation_deadline_hours !== undefined) offer.confirmation_deadline_hours = dto.confirmation_deadline_hours ?? null;
     if (dto.deposit_percentage !== undefined) offer.deposit_percentage = dto.deposit_percentage ?? null;
     if (dto.details !== undefined) offer.details = dto.details ?? null;
+    if (dto.confirmation_mode !== undefined || dto.details !== undefined) {
+      const maj = repartirConfirmation(
+        dto.confirmation_mode ?? offer.confirmation_mode,
+        (offer.details as Record<string, any> | null) ?? undefined,
+      );
+      offer.confirmation_mode = maj.mode;
+      offer.details = maj.details;
+    }
     if (dto.tags !== undefined) (offer as any).tags = dto.tags ?? null;
     // Le profil est déjà vérifié en tête de méthode : un PATCH ne peut donc plus
     // servir à contourner publishOffer() en forçant un statut diffusable.

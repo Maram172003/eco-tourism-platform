@@ -18,6 +18,8 @@ import { EcoTraveler } from '../eco-traveler/entities/eco-traveler.entity';
 import { User } from '../users/entities/user.entity';
 import { MailService } from '../mail/mail.service';
 import { NotificationService } from '../notifications/notification.service';
+import { isInstantConfirmation } from '../common/confirmation.util';
+import { resoudreRepartition, type Repartition } from '../common/payment-split.util';
 
 const HELD_STATUSES = ['confirmed'];
 const DUPLICATE_BLOCK_STATUSES = ['pending', 'confirmed'];
@@ -56,6 +58,31 @@ export class ReservationCircuitService {
       );
     }
     return { circuit: enriched, options };
+  }
+
+  /**
+   * Prix unitaire d'un circuit pour les options retenues.
+   *
+   * Exposé pour que la modification d'une réservation puisse rejouer le prix
+   * d'une formule changée sans dupliquer la construction des options, qui
+   * dépend des contributions des collaborateurs.
+   */
+  async resolveUnitPrice(
+    circuitId: string,
+    chosenKeys?: string[],
+  ): Promise<{ price: number | null; keys: string[] }> {
+    const circuit = await this.circuitRepo.findOne({ where: { id: circuitId, status: 'approved' } });
+    if (!circuit) throw new NotFoundException('Circuit introuvable ou non publié.');
+    const collabs = (await this.collabRepo.find({ where: { circuit_id: circuitId } })).filter(
+      (c) => c.status === 'accepted' || c.status === 'completed',
+    );
+    const options = buildBookableOptions(circuit, collabs);
+    const keys = resolveChosenOptions(circuit, options, { chosen_subtypes: chosenKeys });
+    const price = resolveBookingUnitPrice(options, keys);
+    if (price === null) {
+      throw new BadRequestException('Formule invalide ou prix manquant pour ce circuit.');
+    }
+    return { price, keys };
   }
 
   async getAvailability(
@@ -156,13 +183,33 @@ export class ReservationCircuitService {
     }
 
     const totalPrice = pricePerPerson * participantCount;
-    const shareAmount =
-      participantCount > 0 ? Math.round((totalPrice / participantCount) * 100) / 100 : null;
+    // Qui paie quoi — même règle que pour les offres. En solo il n'y a
+    // personne d'autre à faire payer : l'organisateur règle la totalité.
+    const enGroupe = dto.reservation_type === 'group';
+    const resultat = resoudreRepartition(
+      enGroupe ? dto.payment_split : 'equal',
+      totalPrice,
+      enGroupe ? invitedIds : [],
+      {
+        organisateur: dto.organizer_share ?? null,
+        invites: Object.fromEntries(
+          (dto.custom_shares ?? []).map((p) => [p.user_id ?? `email:${p.email}`, Number(p.amount)]),
+        ),
+      },
+    );
+    if (!resultat.ok) throw new BadRequestException(resultat.message);
+    const repartition: Repartition = resultat.repartition;
     const depositAmount = circuit.deposit_percentage
       ? Math.round(((totalPrice * circuit.deposit_percentage) / 100) * 100) / 100
       : null;
 
-    const isInstant = circuit.confirmation_mode === 'instant';
+    // Même lecture que pour les offres, pour que le statut créé ici et le mode
+    // annoncé au voyageur ne puissent pas diverger.
+    const isInstant = isInstantConfirmation(circuit as any);
+    // Comme pour les offres : un circuit réservé en groupe n'est transmis au
+    // prestataire qu'une fois tous les invités fixés.
+    const attendLeGroupe = enGroupe && invitedIds.length > 0;
+    const confirmeMaintenant = isInstant && !attendLeGroupe;
     const departureDate = addDaysYmd(reservationDateStr, Math.max(0, (circuit.nb_jours ?? 1) - 1));
 
     const reservation = this.reservationRepo.create({
@@ -171,7 +218,7 @@ export class ReservationCircuitService {
       session_id: null,
       organizer_id: organizerId,
       reservation_type: dto.reservation_type,
-      status: isInstant ? 'confirmed' : 'pending',
+      status: confirmeMaintenant ? 'confirmed' : 'pending',
       reservation_date: new Date(`${reservationDateStr}T12:00:00`),
       arrival_date: new Date(`${reservationDateStr}T12:00:00`),
       departure_date: new Date(`${departureDate}T12:00:00`),
@@ -181,6 +228,9 @@ export class ReservationCircuitService {
       deposit_amount: depositAmount,
       deposit_paid: false,
       payment_status: 'unpaid',
+      payment_split: enGroupe ? repartition.mode : null,
+      organizer_share: repartition.organisateur,
+      submitted_at: attendLeGroupe ? null : new Date(),
       notes: dto.notes ?? null,
       chosen_subtypes: chosenKeys,
       reservation_details: {
@@ -196,7 +246,7 @@ export class ReservationCircuitService {
 
     const saved = await this.reservationRepo.save(reservation);
 
-    if (isInstant) {
+    if (confirmeMaintenant) {
       await this.sweepPendingOverCapacity(circuit.id, reservationDateStr);
     }
 
@@ -206,11 +256,14 @@ export class ReservationCircuitService {
         user_id: userId,
         email: null,
         status: 'pending',
+        share_amount: repartition.invites[userId] ?? null,
       }),
     );
     if (participantRows.length) await this.participantRepo.save(participantRows);
 
-    await this.notifyAfterCreate(saved, circuit, organizerId, invitedIds, isInstant, shareAmount);
+    await this.notifyAfterCreate(
+      saved, circuit, organizerId, invitedIds, confirmeMaintenant, repartition, attendLeGroupe,
+    );
 
     if (isInstant) {
       await this.notifyCollaborators(saved, circuit, chosenKeys, options);
@@ -424,7 +477,9 @@ export class ReservationCircuitService {
     organizerId: string,
     invitedIds: string[],
     isInstant: boolean,
-    shareAmount: number | null,
+    repartition: Repartition,
+    /** Le groupe n'a pas fini de répondre : le prestataire n'est pas encore concerné. */
+    attendLeGroupe = false,
   ): Promise<void> {
     const listUrl = `${process.env.FRONTEND_URL}/dashboard/ecovoyageur/reservations/${reservation.id}`;
     const organizer = await this.userRepo.findOne({ where: { id: organizerId } });
@@ -434,11 +489,11 @@ export class ReservationCircuitService {
         .sendReservationConfirmedEmail(organizer.email, circuit.title, {
           total: reservation.total_price,
           participants: reservation.participant_count,
-          share: shareAmount,
+          share: repartition.organisateur,
           url: listUrl,
         })
         .catch(() => {});
-    } else if (!isInstant) {
+    } else if (!isInstant && !attendLeGroupe) {
       await this.notifService
         .create(circuit.provider_id, 'reservation_pending', {
           reservation_id: reservation.id,
@@ -459,7 +514,7 @@ export class ReservationCircuitService {
           circuit_id: circuit.id,
           offer_title: circuit.title,
           message: `Invitation au circuit « ${circuit.title} ».`,
-          share_amount: shareAmount,
+          share_amount: repartition.invites[uid] ?? null,
         })
         .catch(() => {});
     }

@@ -15,6 +15,7 @@ import { ReservationCircuitService } from './reservation-circuit.service';
 import { ReservationController } from './reservation.controller';
 import { MailModule } from '../mail/mail.module';
 import { NotificationModule } from '../notifications/notification.module';
+import { OfferCollaboration } from '../offer/entities/offer-collaboration.entity';
 
 @Module({
   imports: [
@@ -25,6 +26,7 @@ import { NotificationModule } from '../notifications/notification.module';
       OfferSession,
       Circuit,
       CircuitCollaboration,
+      OfferCollaboration,
       EcoTraveler,
       Guide,
       Provider,
