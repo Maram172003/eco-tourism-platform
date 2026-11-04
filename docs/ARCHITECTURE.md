@@ -95,7 +95,7 @@ Les documents MongoDB référencent les utilisateurs PostgreSQL par `user_id`. A
 
 ### Développement
 
-Le travail se fait sur une branche par fonctionnalité, puis passe par une pull request vers `main`. Aucune vérification n'est automatisée : `yarn dev` ne vérifie pas les types, et seul `yarn build` détecte certaines erreurs.
+Le travail se fait sur des branches par fonctionnalité. Des pull requests vers `main` ont été utilisées, mais pas systématiquement, et plusieurs commits sont arrivés directement sur `main`. Aucune vérification n'est automatisée : `yarn dev` ne vérifie pas les types, et seul `yarn build` détecte certaines erreurs.
 
 ### Déploiement
 
