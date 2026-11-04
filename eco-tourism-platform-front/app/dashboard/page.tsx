@@ -1462,6 +1462,144 @@ export default function DashboardPage() {
     );
   }
 
+  // Détail de la notification ouverte. Fonction à part (et non IIFE dans le JSX) :
+  // dans un composant de cette taille, TypeScript perd le rétrécissement de type d'une IIFE.
+  const renderExpandedNotif = () => {
+    const n = notifications.find((x) => x.id === expandedNotif);
+    if (!n) return null;
+    const responded = notifResponses[n.id];
+    const collabId = n.data.collab_id as string | undefined;
+    const offerId = n.data.offer_id as string | undefined;
+    const section = n.data.section as string | undefined;
+    const offer = offerId ? notifOffers[offerId] : undefined;
+    const sectionLabel: Record<string, string> = {
+      hebergement: "Hébergement", restauration: "Restauration",
+      transport: "Transport", guide: "Guidage", autre: "Autre",
+    };
+    const offerTypeLabel: Record<string, string> = {
+      eco_tour: "Éco-Tour", activity: "Activité", workshop: "Atelier",
+      transfer: "Transfert", sejour: "Séjour", circuit: "Circuit",
+      activite: "Activité", restauration: "Restauration",
+      hebergement: "Hébergement", autre: "Autre",
+    };
+    // Fetch l'offre si pas encore chargée
+    if (offerId && !offer && loadingOffer !== offerId) fetchNotifOffer(offerId);
+
+    return (
+      <div className="flex flex-col h-full">
+        {/* En-tête */}
+        <div className="px-8 py-5 border-b border-slate-100 dark:border-slate-800 shrink-0 flex items-center gap-4">
+          <span className="w-12 h-12 rounded-2xl bg-primary flex items-center justify-center text-white shrink-0">
+            <span className="material-symbols-outlined text-2xl">handshake</span>
+          </span>
+          <div className="flex-1 min-w-0">
+            <h2 className="text-lg font-bold leading-tight">Invitation à collaborer</h2>
+            <p className="text-xs text-slate-400 mt-0.5">
+              {new Date(n.created_at).toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long", hour: "2-digit", minute: "2-digit" })}
+            </p>
+          </div>
+          {section && (
+            <span className="shrink-0 px-3 py-1 rounded-full bg-primary/10 text-primary text-xs font-bold">
+              {sectionLabel[section] ?? section}
+            </span>
+          )}
+        </div>
+
+        {/* Corps scrollable */}
+        <div className="flex-1 overflow-y-auto px-8 py-6 space-y-6">
+
+          {/* ── Invitation info ── */}
+          <div className="flex items-start gap-3 p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/60">
+            <span className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
+              <span className="material-symbols-outlined text-base text-primary">person</span>
+            </span>
+            <div>
+              <p className="text-[11px] uppercase tracking-wide font-semibold text-slate-400">Invitation de</p>
+              <p className="font-bold text-slate-800 dark:text-white mt-0.5">{n.data.inviter_name ?? "—"}</p>
+              {n.data.message && (
+                <p className="text-sm text-slate-500 dark:text-slate-400 mt-1 italic">« {n.data.message} »</p>
+              )}
+            </div>
+          </div>
+
+          {/* ── Offre complète ── */}
+          {loadingOffer === offerId ? (
+            <div className="flex items-center justify-center py-8 gap-3 text-slate-400">
+              <span className="w-5 h-5 rounded-full border-2 border-primary border-t-transparent animate-spin" />
+              <span className="text-sm">Chargement de l&apos;offre…</span>
+            </div>
+          ) : offer ? (
+            <OfferDetailView offer={offer} />
+          ) : offerId && failedOfferIds.has(offerId) ? (
+            <div className="rounded-2xl border border-red-100 dark:border-red-900/40 bg-red-50 dark:bg-red-900/20 px-5 py-5 flex items-start gap-3">
+              <span className="material-symbols-outlined text-2xl text-red-400 shrink-0">error_outline</span>
+              <div>
+                <p className="font-bold text-red-700 dark:text-red-400 text-sm">Cette offre n&apos;est plus disponible</p>
+                <p className="text-xs text-red-500/80 dark:text-red-400/70 mt-1">L&apos;offre a peut-être été supprimée ou modifiée par son propriétaire.</p>
+              </div>
+            </div>
+          ) : (
+            <div className="rounded-2xl border border-slate-100 dark:border-slate-800 px-5 py-4">
+              <p className="text-sm font-bold text-slate-700 dark:text-slate-200">{n.data.offer_title ?? "Offre"}</p>
+            </div>
+          )}
+
+          {/* ── Boutons réponse ── */}
+          {offerId && failedOfferIds.has(offerId) ? (
+            <div className="flex items-center gap-3 rounded-2xl px-6 py-4 font-bold text-sm bg-slate-50 dark:bg-slate-800/60 text-slate-400 border border-slate-200 dark:border-slate-700">
+              <span className="material-symbols-outlined text-2xl">block</span>
+              Impossible de répondre — l&apos;offre n&apos;existe plus
+            </div>
+          ) : responded === "accepted" ? (
+            <div className="flex flex-col gap-3">
+              <div className="flex items-center gap-3 rounded-2xl px-6 py-4 font-bold text-sm bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-400 border border-green-200 dark:border-green-800">
+                <span className="material-symbols-outlined text-2xl">check_circle</span>
+                Invitation acceptée
+              </div>
+              {collabId && offerId && section && (
+                <button
+                  onClick={() => setCollabModal({ collabId, offerId, section, inviterName: n.data?.inviter_name as string | undefined })}
+                  className="w-full flex items-center justify-center gap-2 rounded-2xl bg-primary hover:bg-primary/90 active:scale-95 text-slate-900 font-bold py-3.5 transition-all text-sm"
+                >
+                  <span className="material-symbols-outlined text-xl">edit_note</span>
+                  Remplir / Modifier ma contribution
+                </button>
+              )}
+            </div>
+          ) : responded === "declined" ? (
+            <div className="flex items-center gap-3 rounded-2xl px-6 py-4 font-bold text-sm bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400 border border-red-200 dark:border-red-800">
+              <span className="material-symbols-outlined text-2xl">cancel</span>
+              Invitation refusée
+            </div>
+          ) : (
+            <div className="flex gap-3 pb-2">
+              <button
+                disabled={respondingNotif === n.id}
+                onClick={() => collabId && offerId && section && respondToInvite(n.id, collabId, offerId, section, "accepted")}
+                className="flex-1 flex items-center justify-center gap-2 rounded-2xl bg-green-500 hover:bg-green-600 active:scale-95 disabled:opacity-60 text-white font-bold py-3.5 transition-all text-sm shadow-lg shadow-green-200 dark:shadow-none"
+              >
+                {respondingNotif === n.id ? (
+                  <span className="w-4 h-4 rounded-full border-2 border-white border-t-transparent animate-spin" />
+                ) : (
+                  <span className="material-symbols-outlined text-xl">check_circle</span>
+                )}
+                Accepter &amp; Compléter ma partie
+              </button>
+              <button
+                disabled={respondingNotif === n.id}
+                onClick={() => collabId && offerId && section && respondToInvite(n.id, collabId, offerId, section, "declined")}
+                className="flex items-center justify-center gap-2 rounded-2xl bg-white dark:bg-slate-800 hover:bg-red-50 dark:hover:bg-red-900/20 active:scale-95 disabled:opacity-60 text-red-500 font-bold px-5 py-3.5 transition-all text-sm border border-red-200 dark:border-red-800"
+              >
+                <span className="material-symbols-outlined text-xl">cancel</span>
+                Refuser
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  };
+
   return (
     <div className="bg-background-light dark:bg-background-dark text-slate-900 dark:text-slate-100 min-h-screen">
       <div className="flex min-h-screen">
@@ -2582,141 +2720,8 @@ export default function DashboardPage() {
                       <span className="material-symbols-outlined text-6xl opacity-40">notifications</span>
                       <p className="text-sm text-slate-400">Sélectionnez une notification pour voir les détails</p>
                     </div>
-                  ) : (() => {
-                    const n = notifications.find((x) => x.id === expandedNotif);
-                    if (!n) return null;
-                    const responded = notifResponses[n.id];
-                    const collabId = n.data.collab_id as string | undefined;
-                    const offerId = n.data.offer_id as string | undefined;
-                    const section = n.data.section as string | undefined;
-                    const offer = offerId ? notifOffers[offerId] : undefined;
-                    const sectionLabel: Record<string, string> = {
-                      hebergement: "Hébergement", restauration: "Restauration",
-                      transport: "Transport", guide: "Guidage", autre: "Autre",
-                    };
-                    const offerTypeLabel: Record<string, string> = {
-                      eco_tour: "Éco-Tour", activity: "Activité", workshop: "Atelier",
-                      transfer: "Transfert", sejour: "Séjour", circuit: "Circuit",
-                      activite: "Activité", restauration: "Restauration",
-                      hebergement: "Hébergement", autre: "Autre",
-                    };
-                    // Fetch l'offre si pas encore chargée
-                    if (offerId && !offer && loadingOffer !== offerId) fetchNotifOffer(offerId);
-
-                    return (
-                      <div className="flex flex-col h-full">
-                        {/* En-tête */}
-                        <div className="px-8 py-5 border-b border-slate-100 dark:border-slate-800 shrink-0 flex items-center gap-4">
-                          <span className="w-12 h-12 rounded-2xl bg-primary flex items-center justify-center text-white shrink-0">
-                            <span className="material-symbols-outlined text-2xl">handshake</span>
-                          </span>
-                          <div className="flex-1 min-w-0">
-                            <h2 className="text-lg font-bold leading-tight">Invitation à collaborer</h2>
-                            <p className="text-xs text-slate-400 mt-0.5">
-                              {new Date(n.created_at).toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long", hour: "2-digit", minute: "2-digit" })}
-                            </p>
-                          </div>
-                          {section && (
-                            <span className="shrink-0 px-3 py-1 rounded-full bg-primary/10 text-primary text-xs font-bold">
-                              {sectionLabel[section] ?? section}
-                            </span>
-                          )}
-                        </div>
-
-                        {/* Corps scrollable */}
-                        <div className="flex-1 overflow-y-auto px-8 py-6 space-y-6">
-
-                          {/* ── Invitation info ── */}
-                          <div className="flex items-start gap-3 p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/60">
-                            <span className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
-                              <span className="material-symbols-outlined text-base text-primary">person</span>
-                            </span>
-                            <div>
-                              <p className="text-[11px] uppercase tracking-wide font-semibold text-slate-400">Invitation de</p>
-                              <p className="font-bold text-slate-800 dark:text-white mt-0.5">{n.data.inviter_name ?? "—"}</p>
-                              {n.data.message && (
-                                <p className="text-sm text-slate-500 dark:text-slate-400 mt-1 italic">« {n.data.message} »</p>
-                              )}
-                            </div>
-                          </div>
-
-                          {/* ── Offre complète ── */}
-                          {loadingOffer === offerId ? (
-                            <div className="flex items-center justify-center py-8 gap-3 text-slate-400">
-                              <span className="w-5 h-5 rounded-full border-2 border-primary border-t-transparent animate-spin" />
-                              <span className="text-sm">Chargement de l&apos;offre…</span>
-                            </div>
-                          ) : offer ? (
-                            <OfferDetailView offer={offer} />
-                          ) : offerId && failedOfferIds.has(offerId) ? (
-                            <div className="rounded-2xl border border-red-100 dark:border-red-900/40 bg-red-50 dark:bg-red-900/20 px-5 py-5 flex items-start gap-3">
-                              <span className="material-symbols-outlined text-2xl text-red-400 shrink-0">error_outline</span>
-                              <div>
-                                <p className="font-bold text-red-700 dark:text-red-400 text-sm">Cette offre n&apos;est plus disponible</p>
-                                <p className="text-xs text-red-500/80 dark:text-red-400/70 mt-1">L&apos;offre a peut-être été supprimée ou modifiée par son propriétaire.</p>
-                              </div>
-                            </div>
-                          ) : (
-                            <div className="rounded-2xl border border-slate-100 dark:border-slate-800 px-5 py-4">
-                              <p className="text-sm font-bold text-slate-700 dark:text-slate-200">{n.data.offer_title ?? "Offre"}</p>
-                            </div>
-                          )}
-
-                          {/* ── Boutons réponse ── */}
-                          {offerId && failedOfferIds.has(offerId) ? (
-                            <div className="flex items-center gap-3 rounded-2xl px-6 py-4 font-bold text-sm bg-slate-50 dark:bg-slate-800/60 text-slate-400 border border-slate-200 dark:border-slate-700">
-                              <span className="material-symbols-outlined text-2xl">block</span>
-                              Impossible de répondre — l&apos;offre n&apos;existe plus
-                            </div>
-                          ) : responded === "accepted" ? (
-                            <div className="flex flex-col gap-3">
-                              <div className="flex items-center gap-3 rounded-2xl px-6 py-4 font-bold text-sm bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-400 border border-green-200 dark:border-green-800">
-                                <span className="material-symbols-outlined text-2xl">check_circle</span>
-                                Invitation acceptée
-                              </div>
-                              {collabId && offerId && section && (
-                                <button
-                                  onClick={() => setCollabModal({ collabId, offerId, section, inviterName: n.data?.inviter_name as string | undefined })}
-                                  className="w-full flex items-center justify-center gap-2 rounded-2xl bg-primary hover:bg-primary/90 active:scale-95 text-slate-900 font-bold py-3.5 transition-all text-sm"
-                                >
-                                  <span className="material-symbols-outlined text-xl">edit_note</span>
-                                  Remplir / Modifier ma contribution
-                                </button>
-                              )}
-                            </div>
-                          ) : responded === "declined" ? (
-                            <div className="flex items-center gap-3 rounded-2xl px-6 py-4 font-bold text-sm bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400 border border-red-200 dark:border-red-800">
-                              <span className="material-symbols-outlined text-2xl">cancel</span>
-                              Invitation refusée
-                            </div>
-                          ) : (
-                            <div className="flex gap-3 pb-2">
-                              <button
-                                disabled={respondingNotif === n.id}
-                                onClick={() => collabId && offerId && section && respondToInvite(n.id, collabId, offerId, section, "accepted")}
-                                className="flex-1 flex items-center justify-center gap-2 rounded-2xl bg-green-500 hover:bg-green-600 active:scale-95 disabled:opacity-60 text-white font-bold py-3.5 transition-all text-sm shadow-lg shadow-green-200 dark:shadow-none"
-                              >
-                                {respondingNotif === n.id ? (
-                                  <span className="w-4 h-4 rounded-full border-2 border-white border-t-transparent animate-spin" />
-                                ) : (
-                                  <span className="material-symbols-outlined text-xl">check_circle</span>
-                                )}
-                                Accepter &amp; Compléter ma partie
-                              </button>
-                              <button
-                                disabled={respondingNotif === n.id}
-                                onClick={() => collabId && offerId && section && respondToInvite(n.id, collabId, offerId, section, "declined")}
-                                className="flex items-center justify-center gap-2 rounded-2xl bg-white dark:bg-slate-800 hover:bg-red-50 dark:hover:bg-red-900/20 active:scale-95 disabled:opacity-60 text-red-500 font-bold px-5 py-3.5 transition-all text-sm border border-red-200 dark:border-red-800"
-                              >
-                                <span className="material-symbols-outlined text-xl">cancel</span>
-                                Refuser
-                              </button>
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })()}
+                  ) : renderExpandedNotif()
+                  }
                 </div>
 
               </div>

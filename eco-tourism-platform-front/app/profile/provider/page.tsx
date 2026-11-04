@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { Suspense, useEffect, useRef, useState, type ComponentProps } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import CollaborationModal from "@/components/CollaborationModal";
 import OfferDetailView, { type OfferFull } from "@/components/offer/OfferDetailView";
@@ -1057,7 +1057,7 @@ function EditActivityFields({ categoryValue, subtypeValues, setSubtypes, dynFiel
  * (`embedded`), elle n'affiche que l'onglet demandé — les formulaires d'offre
  * et de circuit viennent avec.
  */
-export default function ProviderProfilePage({ embedded = false, forcedTab, openEditOnMount = false }: {
+function ProviderProfilePageContent({ embedded = false, forcedTab, openEditOnMount = false }: {
   embedded?: boolean;
   forcedTab?: Tab;
   /** Page Paramètres : n'affiche que le formulaire de modification, en flux. */
@@ -11099,5 +11099,14 @@ export default function ProviderProfilePage({ embedded = false, forcedTab, openE
         />
       )}
     </>
+  );
+}
+
+// useSearchParams() impose une frontière <Suspense> pour que `next build` puisse pré-générer la page.
+export default function ProviderProfilePage(props: ComponentProps<typeof ProviderProfilePageContent>) {
+  return (
+    <Suspense>
+      <ProviderProfilePageContent {...props} />
+    </Suspense>
   );
 }

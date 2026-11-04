@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { Suspense, useEffect, useRef, useState, type ComponentProps } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import CollaborationModal from "@/components/CollaborationModal";
 import OfferDetailView, { type OfferFull } from "@/components/offer/OfferDetailView";
@@ -463,7 +463,7 @@ function scrollToElement(id: string, onDone: () => void) {
  * Page de profil du guide. Montée telle quelle dans le tableau de bord
  * (`embedded`), elle n'affiche que l'onglet demandé.
  */
-export default function GuideProfilePage({ embedded = false, forcedTab, openEditOnMount = false }: {
+function GuideProfilePageContent({ embedded = false, forcedTab, openEditOnMount = false }: {
   embedded?: boolean;
   forcedTab?: Tab;
   /** Page Paramètres : n'affiche que le formulaire de modification, en flux. */
@@ -3838,5 +3838,14 @@ export default function GuideProfilePage({ embedded = false, forcedTab, openEdit
         />
       )}
     </>
+  );
+}
+
+// useSearchParams() impose une frontière <Suspense> pour que `next build` puisse pré-générer la page.
+export default function GuideProfilePage(props: ComponentProps<typeof GuideProfilePageContent>) {
+  return (
+    <Suspense>
+      <GuideProfilePageContent {...props} />
+    </Suspense>
   );
 }

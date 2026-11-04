@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { Suspense, useEffect, useRef, useState, type ComponentProps } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import dynamic from "next/dynamic";
 import {
@@ -211,7 +211,7 @@ function BotanicalCover() {
  * Page de profil de l'éco-voyageur. Montée dans la page Paramètres
  * (`embedded` + `openEditOnMount`) pour y fournir son formulaire.
  */
-export default function EcoTravelerProfilePage({ embedded = false, forcedTab, openEditOnMount = false }: {
+function EcoTravelerProfilePageContent({ embedded = false, forcedTab, openEditOnMount = false }: {
   embedded?: boolean;
   forcedTab?: Tab;
   openEditOnMount?: boolean;
@@ -2411,5 +2411,14 @@ export default function EcoTravelerProfilePage({ embedded = false, forcedTab, op
         </div>
       </div>
     </div>
+  );
+}
+
+// useSearchParams() impose une frontière <Suspense> pour que `next build` puisse pré-générer la page.
+export default function EcoTravelerProfilePage(props: ComponentProps<typeof EcoTravelerProfilePageContent>) {
+  return (
+    <Suspense>
+      <EcoTravelerProfilePageContent {...props} />
+    </Suspense>
   );
 }
